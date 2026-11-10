@@ -79,7 +79,8 @@ class ClaudeTests(unittest.TestCase):
 
     def test_history_unknown_state_and_search(self):
         path = self.transcript()
-        row = self.row(live=False)
+        with patch.object(bridge, 'cli_sessions', return_value=None):
+            row = self.row(live=False)
         self.assertEqual(row['title'], 'Observatory')
         self.assertEqual(row['state'], 'disconnected')
         info, messages = bridge.transcript(path)

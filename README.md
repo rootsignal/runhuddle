@@ -2,7 +2,7 @@
 
 **Your coding agents, together.** A native macOS app by [Rootsignal](https://rootsignal.io) for finding, monitoring, and returning to AI coding sessions across local projects.
 
-RunHuddle is an early preview. The app now bundles its runtime and dependencies; installed users do not need Python, Swift, or a source checkout. Developer ID signing and notarization are still pending, so this is not yet a trusted public download or Mac App Store release.
+RunHuddle is an early preview. The app now bundles its runtime and dependencies; installed users do not need Python, Swift, or a source checkout. Release installers are Developer ID signed and notarized by Apple. This is a direct download, not a Mac App Store release.
 
 ## What it does
 
@@ -12,7 +12,7 @@ RunHuddle is an early preview. The app now bundles its runtime and dependencies;
 - Focuses an existing terminal where it can identify one, with a chooser when it cannot.
 - Saves session metadata and handoffs across restarts; can resume a saved conversation or start fresh from a handoff.
 - Displays informational context-usage estimates for supported Codex sessions.
-- Offers reviewed Codex archive, restore, and permanent-delete actions.
+- Supports bulk archive, restore, and removal. Codex uses native cleanup; Claude and Copilot archives preserve history, with a separate Move history to Trash action.
 
 ## Integration status
 
@@ -30,13 +30,13 @@ RunHuddle observes local agents. It does not supply model access or bypass provi
 
 Requires macOS 14 or newer. The current package is for Apple Silicon; Intel builds have not been verified.
 
-1. Open the `RunHuddle-0.3.0-arm64.dmg` produced by the build below.
+1. Download the Apple Silicon `.dmg` from [GitHub Releases](https://github.com/rootsignal/runhuddle/releases), then open it.
 2. Drag **RunHuddle** to **Applications** and open it there.
-3. RunHuddle checks for local agents automatically. Open the app. Copilot tracking is enabled automatically when its CLI or a session is detected. A one-time notice explains that already-open Copilot sessions need one restart/resume; new sessions connect automatically.
+3. RunHuddle checks for local agents automatically. Copilot tracking is enabled automatically when its CLI or a session is detected. A one-time notice explains that already-open Copilot sessions need one restart/resume; new sessions connect automatically.
 
-Your agent CLIs and accounts are installed separately. No Python installation, shell changes, or source checkout are needed to run the app. Reopen setup anytime from **Connections…** in the menu bar. Install the app at its permanent location before enabling hooks; after moving the app, reconnect in Connections.
+Your agent CLIs and accounts are installed separately. No Python installation, shell changes, or source checkout are needed to run the app. View connection status anytime from **Connections…** in the menu bar. Install the app at its permanent location before enabling hooks; after moving the app, reconnect in Connections.
 
-This preview is ad-hoc signed, not notarized. A downloaded copy may be blocked by macOS. Do not disable Gatekeeper globally. A signed public download is the next distribution step.
+Apple notarization tickets are attached to release installers. No Gatekeeper workaround is needed.
 
 ## Build and install from source
 
@@ -110,20 +110,30 @@ Tracking does not grant permissions, inject prompts, or require a separate model
 3. When using **Go to terminal**, allow Automation access to Terminal or Ghostty if prompted. Unknown or ambiguous matches open a chooser; a second terminal opens only when explicitly requested.
 4. Optionally enable **Open at Login** from the menu. macOS may require confirmation in Login Items settings.
 
-The app is ad-hoc signed for local development. Do not disable Gatekeeper globally. Signed/notarized distribution is future work.
+Source builds are ad-hoc signed for local development; release downloads use Developer ID signing and Apple notarization.
 
 ## Update and uninstall
 
-Quit RunHuddle before updating:
+For an installed release, choose **Quit** in the RunHuddle menu bar, download the new DMG from [Releases](https://github.com/rootsignal/runhuddle/releases), and drag the app into the same Applications folder, replacing the previous copy. Open it again. Names, notes, handoffs, and tracking settings are preserved. Closing the window alone does not quit the app. There is no in-app updater yet.
+
+For a source checkout, quit RunHuddle and run:
 
 ```sh
 git pull --ff-only
 python3 scripts/install_local.py --open
 ```
 
-For Copilot users, use **Connect agents** after moving the app or changing the hook integration. Updates at the same app path preserve hook paths.
+Copilot hook paths are checked automatically. **Connections…** shows errors and offers retry. Updates at the same app path preserve hook paths; older Copilot processes need one restart/resume to load newly installed hooks.
 
 To uninstall, turn off Open at Login, quit the app, and remove `~/Applications/RunHuddle.app`. Remove `~/.copilot/hooks/agent-session-manager.json` if installed. For Claude, remove only hook commands invoking `claude_bridge.py` from `~/.claude/settings.json`; preserve your other hooks and settings. Local data remains in `~/Library/Application Support/Agent Session Manager/`; delete that folder only if you also want to remove saved names, notes, handoffs, and the search index. Uninstalling RunHuddle does not delete provider sessions.
+
+## Manage old sessions
+
+Click **Select sessions**, check rows or choose **Select all results**, then use **Actions**. Selection can span filters. Each action shows eligible sessions and reasons for skipped selections.
+
+Archive only closed (Saved) sessions. Codex uses its native archive; Claude and Copilot are hidden in RunHuddle while their original histories remain available. Find them in Archived and restore them anytime. A session detected running again returns automatically to the main list.
+
+Removal requires archiving first. Codex deletion is permanent. Claude and Copilot **Move history to Trash** removes the reviewed session history files, not project files. Export handoffs you want to keep first. Running sessions and sessions whose live status cannot be verified are skipped. Histories are rechecked before removal; partial failures are reported.
 
 ## Build and test without installing
 
@@ -144,12 +154,12 @@ open dist/RunHuddle.app
 - Some archived histories may not be available as local files. Search shows incomplete coverage when detected.
 - Context usage is a last-reported estimate and can decrease after compaction. It is not a restart countdown.
 - Saved sessions preserve conversation identity, not running shell processes.
-- The development bundle retains its original bundle identifier and storage paths to preserve existing local installations. Release identity, migration, Developer ID signing, notarization, and App Store feasibility still need work. Bundled third-party license notices are included in the app’s Resources directory.
+- The development bundle retains its original bundle identifier and storage paths to preserve existing local installations. Mac App Store distribution has not been implemented. Bundled third-party license notices are included in the app’s Resources directory.
 
 See [development and integration notes](docs/DEVELOPMENT.md) for implementation details and validation history.
 
 ## Publishing plans and licensing
 
-RunHuddle is now packaged as a standalone Mac app. This public repository is a development preview, not a release announcement.
+RunHuddle is distributed as an early-preview standalone Mac app. See [release automation](docs/RELEASING.md) for the signing setup and GitHub Actions workflow.
 
 Copyright © 2026 Rootsignal. All rights reserved. No open-source license has been selected for this repository.

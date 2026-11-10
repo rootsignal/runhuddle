@@ -23,7 +23,7 @@ subprocess.run([str(generator), str(iconset)], check=True)
 subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(resources / "RunHuddle.icns")], check=True)
 bridge = resources / "bridge"
 bridge.mkdir()
-for name in ("codex_bridge.py", "copilot_bridge.py", "claude_bridge.py", "context_usage.py", "history_search.py"):
+for name in ("codex_bridge.py", "copilot_bridge.py", "claude_bridge.py", "local_cleanup.py", "context_usage.py", "history_search.py"):
     shutil.copy2(root / "scripts" / name, bridge / name)
 runtime = bundle(root, resources)
 sign_nested(runtime)
@@ -31,7 +31,7 @@ info = {
     "CFBundleExecutable": "SessionManager", "CFBundleIdentifier": "local.rickbaker.agent-sessions",
     "CFBundleName": "RunHuddle", "CFBundleDisplayName": "RunHuddle",
     "CFBundleIconFile": "RunHuddle",
-    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.3.0", "CFBundleVersion": "3",
+    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.4.0", "CFBundleVersion": "4",
     "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True,
     "NSAppleEventsUsageDescription": "Find and focus your existing AI session in Terminal or Ghostty, or open a new terminal when requested.",
 }

@@ -216,7 +216,8 @@ def snapshot():
         hooks = {sid: json.loads(data) for sid, data in db.execute('SELECT id,data FROM states')}
         observed = {sid: json.loads(data) for sid, data in db.execute('SELECT id,data FROM discovered')}
     listing = {}
-    for entry in cli_sessions() or []:
+    inventory = cli_sessions()
+    for entry in inventory or []:
         try:
             result = listed_session(entry)
             if result:
@@ -261,6 +262,8 @@ def snapshot():
                 state, reason = data.get('state', 'disconnected'), data.get('reason', '')
         elif data.get('identity'):
             state, reason = 'saved', 'The tracked Claude process has exited.'
+        elif inventory is not None:
+            state, reason = 'saved', 'Not listed by Claude as a running session.'
         else:
             state, reason = 'disconnected', 'History found; live status unknown. This Claude version may need tracking hooks loaded in the session.'
         identity = data.get('identity')

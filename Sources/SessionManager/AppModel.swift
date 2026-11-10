@@ -17,7 +17,7 @@ enum Bridge {
         return try await Task.detached {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: python)
-            let script = provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : provider == "Claude" ? "claude_bridge.py" : "codex_bridge.py"
+            let script = provider == "LocalCleanup" ? "local_cleanup.py" : provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : provider == "Claude" ? "claude_bridge.py" : "codex_bridge.py"
             process.arguments = ["-E", "-s", "-B", root + "/" + script] + arguments
             process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
             let output = Pipe(), errors = Pipe()
@@ -88,6 +88,10 @@ struct CopilotTrackingStatus: Decodable {
     @Published var terminalSession: Session?
     @Published var terminalTargets: [TerminalTarget] = []
     @Published var terminalMessage = ""
+    @Published var bulkMode = false
+    @Published var bulkSelection: Set<String> = []
+    @Published var bulkReview: BulkCleanupReview?
+    @Published var localCleanupState = LocalCleanupState()
     @Published var cleanupPlan: CleanupPlan?
     @Published var cleaning = false
     @Published var cleanupMessage: String?
@@ -105,6 +109,7 @@ struct CopilotTrackingStatus: Decodable {
             store = try Store(path: folder.appendingPathComponent("sessions.sqlite").path)
             sessions = try store?.load([Session].self, key: "sessions") ?? []
             sessions = Recovery.restore(sessions)
+            localCleanupState = try store?.load(LocalCleanupState.self, key: "localCleanupState") ?? LocalCleanupState()
             briefs = try store?.load([String: SessionBrief].self, key: "sessionBriefs") ?? [:]
             displayNames = try store?.load([String: String].self, key: "displayNames") ?? [:]
             drafts = try store?.load([String: String].self, key: "drafts") ?? [:]
@@ -181,6 +186,18 @@ struct CopilotTrackingStatus: Decodable {
                 fetched += Recovery.offline(sessions.filter { $0.provider == tool }, reason: "Live connection unavailable.")
                 status.append("\(tool) unavailable: \(error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines))")
             }
+        }
+        var local = localCleanupState
+        for row in fetched where [.working, .idle, .needsInput].contains(row.state) {
+            local.archived.remove(row.id)
+            local.removed.remove(row.id)
+        }
+        do { try store?.save(local, key: "localCleanupState"); localCleanupState = local }
+        catch { self.error = "Could not save local archive state: \(error.localizedDescription)" }
+        fetched.removeAll { local.removed.contains($0.id) }
+        for index in fetched.indices where local.archived.contains(fetched[index].id) {
+            fetched[index].state = .archived
+            fetched[index].reason = "Archived in RunHuddle; agent history is preserved."
         }
         recentAlerts = Array(recentAlerts.prefix(8))
         sessions = fetched + sessions.filter(\.simulated)
@@ -321,6 +338,7 @@ struct CopilotTrackingStatus: Decodable {
             cleanupPlan = nil
             cleanupMessage = "\(plan.title) request completed."
             if plan.action == "delete" {
+                for id in ids { _ = try await Bridge.run(["forget", "Codex", id], provider: "LocalCleanup") }
                 for id in affected {
                     historyTasks[id]?.cancel()
                     historyTasks.removeValue(forKey: id)
@@ -345,6 +363,134 @@ struct CopilotTrackingStatus: Decodable {
         cleaning = false
         await refresh()
     }
+    func prepareBulkCleanup(_ operation: String, rows requested: [Session]) async {
+        guard !cleaning && !refreshing else { return }
+        await refresh()
+        cleaning = true
+        defer { cleaning = false }
+        var entries: [BulkCleanupReview.Entry] = []
+        var skipped: [String] = []
+        for old in requested {
+            let name = displayName(for: old)
+            guard let row = sessions.first(where: { $0.id == old.id }), !row.simulated else {
+                skipped.append("\(name): unavailable or simulated"); continue
+            }
+            let eligible = operation == "archive" ? row.state == .saved : row.state == .archived
+            guard eligible else {
+                skipped.append("\(name): \(operation == "delete" ? "archive first; running or unknown sessions cannot be removed" : "running, unknown, or not eligible for this action")")
+                continue
+            }
+            do {
+                var native: CleanupPlan?
+                var local: LocalHistoryPlan?
+                if row.provider == "Codex" {
+                    let data = try await Bridge.run(["plan", row.sessionID, "--operation", operation])
+                    native = try JSONDecoder().decode(CleanupPlan.self, from: data)
+                } else if operation == "delete" {
+                    let data = try await Bridge.run(["plan", row.provider, row.sessionID], provider: "LocalCleanup")
+                    local = try JSONDecoder().decode(LocalHistoryPlan.self, from: data)
+                }
+                entries.append(.init(session: row, name: name, native: native, local: local))
+            } catch { skipped.append("\(name): \(error.localizedDescription.split(separator: "\n").last.map(String.init) ?? "Could not verify session")") }
+        }
+        var covered: Set<String> = []
+        entries = entries.sorted { $0.count > $1.count }.filter { entry in
+            let ids = Set(entry.native?.affected.map { "Codex:" + $0.id } ?? [entry.id])
+            guard covered.isDisjoint(with: ids) else {
+                skipped.append("\(entry.name): included through another selected Codex conversation"); return false
+            }
+            covered.formUnion(ids)
+            return true
+        }
+        bulkReview = BulkCleanupReview(operation: operation, entries: entries, skipped: skipped)
+    }
+
+    func applyBulkCleanup(_ review: BulkCleanupReview) async {
+        guard !cleaning && !refreshing else { return }
+        cleaning = true
+        var completed = 0
+        var failures: [String] = []
+        for entry in review.entries {
+            do {
+                let row = entry.session
+                var affected = Set([row.id])
+                if let native = entry.native {
+                    let ids = native.affected.map(\.id)
+                    let encoded = String(data: try JSONEncoder().encode(ids), encoding: .utf8)!
+                    _ = try await Bridge.run(["apply", native.threadID, "--operation", review.operation, "--expected-ids", encoded])
+                    affected = Set(ids.map { "Codex:" + $0 })
+                    if review.operation == "delete" {
+                        for id in ids { _ = try await Bridge.run(["forget", "Codex", id], provider: "LocalCleanup") }
+                    }
+                } else {
+                    var local = localCleanupState
+                    guard let store else { throw NSError(domain: "Cleanup", code: 1, userInfo: [NSLocalizedDescriptionKey: "Local storage is unavailable"]) }
+                    if review.operation == "restore" {
+                        local.archived.remove(row.id)
+                    } else if review.operation == "archive" {
+                        let data = try await Bridge.run(["snapshot"], provider: row.provider)
+                        let current = try JSONDecoder().decode([Session].self, from: data)
+                        guard current.contains(where: { $0.id == row.id && $0.state == .saved }) else {
+                            throw NSError(domain: "Cleanup", code: 1, userInfo: [NSLocalizedDescriptionKey: "Session is no longer confirmed closed"])
+                        }
+                        local.archived.insert(row.id)
+                    } else if let plan = entry.local {
+                        let data = try await Bridge.run(["validate", row.provider, row.sessionID, "--expected", plan.fingerprint], provider: "LocalCleanup")
+                        let checked = try JSONDecoder().decode(LocalHistoryPlan.self, from: data)
+                        guard checked.paths == plan.paths else { throw NSError(domain: "Cleanup", code: 1, userInfo: [NSLocalizedDescriptionKey: "History paths changed; review again"]) }
+                        let paths = plan.paths
+                        try await Task.detached {
+                            for path in paths {
+                                let url = URL(fileURLWithPath: path)
+                                guard try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
+                                    throw NSError(domain: "Cleanup", code: 1, userInfo: [NSLocalizedDescriptionKey: "History target became a symlink"])
+                                }
+                                try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                            }
+                        }.value
+                        local.archived.remove(row.id)
+                        local.removed.insert(row.id)
+                        // Save the tombstone before optional cache cleanup; it prevents old agent indexes resurrecting the row.
+                        try store.save(local, key: "localCleanupState")
+                        localCleanupState = local
+                        _ = try await Bridge.run(["forget", row.provider, row.sessionID], provider: "LocalCleanup")
+                    }
+                    try store.save(local, key: "localCleanupState")
+                    localCleanupState = local
+                }
+                if review.operation == "delete" { try removeLocalNotes(affected) }
+                bulkSelection.subtract(affected)
+                recentAlerts.removeAll { affected.contains($0.session.id) }
+                if review.operation == "delete", let selection, affected.contains(selection) { self.selection = nil }
+                completed += entry.count
+            } catch {
+                failures.append("\(entry.name): \(error.localizedDescription.split(separator: "\n").last.map(String.init) ?? "Cleanup failed"). Some files may already have moved; check Trash before retrying.")
+            }
+        }
+        bulkReview = nil
+        cleaning = false
+        cleanupMessage = "Cleanup completed for \(completed) sessions; \(review.skipped.count) selections skipped; \(failures.count) failed."
+        await refresh()
+        if !failures.isEmpty { error = failures.joined(separator: "\n\n") }
+    }
+
+    private func removeLocalNotes(_ ids: Set<String>) throws {
+        for id in ids {
+            historyTasks[id]?.cancel()
+            historyTasks.removeValue(forKey: id)
+            briefs.removeValue(forKey: id)
+            displayNames.removeValue(forKey: id)
+            drafts.removeValue(forKey: id)
+            contexts.removeValue(forKey: id)
+            historyErrors.removeValue(forKey: id)
+            historyMatches.removeValue(forKey: id)
+        }
+        try store?.save(contexts, key: "handoffContexts")
+        try store?.save(displayNames, key: "displayNames")
+        try store?.save(briefs, key: "sessionBriefs")
+        try store?.save(drafts, key: "drafts")
+    }
+
     func draft(for row: Session) -> String { drafts[row.id] ?? row.handoff }
     func seedDemo() {
         guard !sessions.contains(where: \.simulated) else { return }

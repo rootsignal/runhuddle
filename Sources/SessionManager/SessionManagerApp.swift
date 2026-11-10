@@ -121,6 +121,10 @@ extension SessionState {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) var openWindow
+    private func bulk(_ operation: String) {
+        let rows = model.sessions.filter { model.bulkSelection.contains($0.id) }
+        Task { await model.prepareBulkCleanup(operation, rows: rows) }
+    }
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 20) {
@@ -207,9 +211,34 @@ struct ContentView: View {
                                 Text(model.historySearchStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             }.padding(.horizontal, 16)
                         }
+                        HStack {
+                            Button(model.bulkMode ? "Done selecting" : "Select sessions") {
+                                model.bulkMode.toggle()
+                                if !model.bulkMode { model.bulkSelection.removeAll() }
+                            }
+                            if model.bulkMode {
+                                Text("\(model.bulkSelection.count) selected").font(.caption)
+                                Button("Select all results") { model.bulkSelection.formUnion(model.visible.filter { !$0.simulated }.map(\.id)) }
+                                Button("Clear") { model.bulkSelection.removeAll() }
+                                Menu("Actions") {
+                                    Button("Archive…") { bulk("archive") }
+                                    Button("Restore…") { bulk("restore") }
+                                    Button("Remove archived histories…", role: .destructive) { bulk("delete") }
+                                }.disabled(model.bulkSelection.isEmpty)
+                            }
+                            Spacer()
+                        }.padding(12).disabled(model.cleaning || model.refreshing)
                         List(selection: $model.selection) {
                             ForEach(model.visible) { row in
-                                SessionRow(row: row).tag(row.id)
+                                HStack {
+                                    if model.bulkMode {
+                                        Toggle("Select session", isOn: Binding(
+                                            get: { model.bulkSelection.contains(row.id) },
+                                            set: { if $0 { model.bulkSelection.insert(row.id) } else { model.bulkSelection.remove(row.id) } }
+                                        )).labelsHidden().toggleStyle(.checkbox).disabled(row.simulated || model.cleaning)
+                                    }
+                                    SessionRow(row: row)
+                                }.tag(row.id)
                                     .contextMenu {
                                         Button("Rename…") { model.beginRename(row) }
                                         if model.displayNames[row.id] != nil {
@@ -247,6 +276,7 @@ struct ContentView: View {
         }
         .onChange(of: model.query) { _, _ in model.scheduleHistorySearch() }
         .onAppear { model.openMainWindow = { openWindow(id: "main") } }
+        .sheet(item: $model.bulkReview) { BulkCleanupView(review: $0) }
         .sheet(isPresented: $model.showSetup) { AgentSetupView() }
         .sheet(item: $model.renameSession) { row in
             VStack(alignment: .leading, spacing: 16) {
@@ -405,6 +435,19 @@ struct SessionDetail: View {
                     } else {
                         Button("Archive…") { Task { await model.prepareCleanup("archive", row: row) } }
                             .disabled(row.state != .saved)
+                        if row.state != .saved {
+                            Text("Close the agent session before archiving.").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }.disabled(model.cleaning || model.refreshing)
+            }
+            if !row.simulated && row.provider != "Codex" {
+                HStack {
+                    if row.state == .archived {
+                        Button("Restore…") { Task { await model.prepareBulkCleanup("restore", rows: [row]) } }
+                        Button("Move history to Trash…", role: .destructive) { Task { await model.prepareBulkCleanup("delete", rows: [row]) } }
+                    } else {
+                        Button("Archive…") { Task { await model.prepareBulkCleanup("archive", rows: [row]) } }.disabled(row.state != .saved)
                         if row.state != .saved {
                             Text("Close the agent session before archiving.").font(.caption).foregroundStyle(.secondary)
                         }
