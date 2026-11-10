@@ -142,6 +142,15 @@ struct ContentView: View {
                     Text("Copilot").tag("Copilot")
                 }.labelsHidden()
                 Button("Connections…") { model.showSetup = true }
+                if let notice = model.copilotConnectionNotice {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(notice).font(.caption)
+                        Button("Got it") { model.dismissCopilotNotice() }.font(.caption)
+                    }
+                }
+                if model.copilotConnectionError != nil {
+                    Button("Copilot connection needs attention") { model.showSetup = true }.font(.caption)
+                }
                 DisclosureGroup("Demo sessions") {
                     Toggle("Show Claude demo", isOn: $model.showDemo)
                         .onChange(of: model.showDemo) { _, enabled in

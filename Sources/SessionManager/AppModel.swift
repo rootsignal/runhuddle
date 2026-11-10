@@ -35,8 +35,18 @@ enum Bridge {
     }
 }
 
+struct CopilotTrackingStatus: Decodable {
+    var configured: Bool
+    var lastEvent: Double?
+}
+
 @MainActor final class AppModel: ObservableObject {
-    @Published var showSetup = !UserDefaults.standard.bool(forKey: "agentSetupCompleted")
+    @Published var showSetup = false
+    @Published var copilotConnectionError: String?
+    @Published var connectingCopilot = false
+    @Published var copilotConnectionNotice: String? = UserDefaults.standard.bool(forKey: "copilotNoticePending")
+        ? "Copilot tracking is ready. New sessions connect automatically. Restart/resume existing sessions to track them too." : nil
+    private var attemptedCopilotConnection = false
     @Published var sessions: [Session] = []
     @Published var selection: String? {
         didSet {
@@ -175,9 +185,37 @@ enum Bridge {
         recentAlerts = Array(recentAlerts.prefix(8))
         sessions = fetched + sessions.filter(\.simulated)
         connection = status.joined(separator: " · ")
+        await ensureCopilotTracking()
         lastRefresh = Date()
         do { try store?.save(fetched, key: "sessions") }
         catch { self.error = "Could not save the session index: \(error.localizedDescription)" }
+    }
+
+    func dismissCopilotNotice() {
+        copilotConnectionNotice = nil
+        UserDefaults.standard.set(false, forKey: "copilotNoticePending")
+    }
+
+    func ensureCopilotTracking(retry: Bool = false) async {
+        guard !connectingCopilot, retry || !attemptedCopilotConnection else { return }
+        let paths = [NSHomeDirectory() + "/.local/bin/copilot", "/opt/homebrew/bin/copilot", "/usr/local/bin/copilot", NSHomeDirectory() + "/.npm-global/bin/copilot"]
+            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { String($0) + "/copilot" }
+        guard sessions.contains(where: { $0.provider == "Copilot" && !$0.simulated }) || paths.contains(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return }
+        guard Bundle.main.bundleURL.pathExtension == "app", !Bundle.main.bundlePath.hasPrefix("/Volumes/") else { return }
+        attemptedCopilotConnection = true
+        connectingCopilot = true
+        copilotConnectionError = nil
+        defer { connectingCopilot = false }
+        do {
+            let data = try await Bridge.run(["diagnostics"], provider: "Copilot")
+            let status = try JSONDecoder().decode(CopilotTrackingStatus.self, from: data)
+            guard !status.configured else { return }
+            _ = try await Bridge.run(["install-hooks"], provider: "Copilot")
+            copilotConnectionNotice = "Copilot tracking is ready. New sessions connect automatically. Restart/resume existing sessions to track them too."
+            UserDefaults.standard.set(true, forKey: "copilotNoticePending")
+        } catch {
+            copilotConnectionError = "Copilot tracking could not be enabled: \(error.localizedDescription)"
+        }
     }
 
     func purpose(for row: Session) -> String {

@@ -1,16 +1,10 @@
 import SwiftUI
 
-private struct CopilotTrackingStatus: Decodable {
-    var configured: Bool
-    var lastEvent: Double?
-}
-
 struct AgentSetupView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
     @ViewState private var installed: [String: String] = [:]
     @ViewState private var busy = false
-    @ViewState private var connected = false
     @ViewState private var message: String?
     @ViewState private var copilot: CopilotTrackingStatus?
     private var onDiskImage: Bool { Bundle.main.bundlePath.hasPrefix("/Volumes/") }
@@ -22,7 +16,7 @@ struct AgentSetupView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Connect your agents").font(.title.bold())
+            Text("Connections").font(.title.bold())
             Text("RunHuddle finds your installed coding agents and local sessions automatically.")
                 .foregroundStyle(.secondary)
             ForEach(["Codex", "Claude", "Copilot"], id: \.self) { provider in
@@ -38,18 +32,25 @@ struct AgentSetupView: View {
             }
             if detected.isEmpty {
                 Text("Install and sign in to your preferred coding agent, then choose Check again.")
-            } else if !connected {
-                Text("Connect agents enables activity tracking for detected Claude and Copilot installations. Your existing settings are preserved.")
-                    .font(.callout).foregroundStyle(.secondary)
+
             }
             if onDiskImage {
                 Text("Drag RunHuddle to Applications and open it there to connect your agents.").foregroundStyle(.orange)
             }
+            if let error = model.copilotConnectionError {
+                Text(error).font(.callout).foregroundStyle(.orange)
+                Button("Retry Copilot connection") { Task { await model.ensureCopilotTracking(retry: true); await detect() } }
+                    .disabled(model.connectingCopilot)
+            }
+            if let notice = model.copilotConnectionNotice { Text(notice).font(.callout) }
             if let message { Text(message).font(.callout).textSelection(.enabled) }
             DisclosureGroup("Connection details") {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(installed.keys.sorted(), id: \.self) { name in
                         Text("\(name): \(installed[name] ?? "")").textSelection(.enabled)
+                    }
+                    if detected.contains("Claude") {
+                        Button("Enable Claude compatibility hooks") { Task { await connect() } }.disabled(busy || onDiskImage)
                     }
                     Text("Codex uses its shared local server. Claude uses its live session list when supported, with hooks as a fallback. Copilot hooks load when its CLI starts.")
                 }.font(.caption).foregroundStyle(.secondary)
@@ -57,13 +58,8 @@ struct AgentSetupView: View {
             HStack {
                 Button("Check again") { Task { await detect() } }.disabled(busy)
                 Spacer()
-                if !connected && !detected.isEmpty {
-                    Button("Later") { finish() }.disabled(busy)
-                    Button(busy ? "Connecting…" : "Connect agents") { Task { await connect() } }
-                        .keyboardShortcut(.defaultAction).disabled(busy || onDiskImage)
-                } else {
-                    Button("Open RunHuddle") { finish() }.keyboardShortcut(.defaultAction).disabled(busy)
-                }
+                Button("Done") { finish() }.keyboardShortcut(.defaultAction).disabled(busy)
+
             }
         }.padding(24).frame(width: 520).task { await detect() }
     }
@@ -87,27 +83,15 @@ struct AgentSetupView: View {
     private func connect() async {
         busy = true; message = nil
         defer { busy = false }
-        let providers = ["Claude", "Copilot"].filter { detected.contains($0) }
-        var failures: [String] = []
-        var copilotEnabled = false
-        for provider in providers {
-            do {
-                _ = try await Bridge.run(["install-hooks"], provider: provider)
-                if provider == "Copilot" { copilotEnabled = true }
-            } catch { failures.append("\(provider): \(error.localizedDescription)") }
-        }
-        connected = failures.isEmpty
-        var notes: [String] = []
-        if copilotEnabled {
-            notes.append("Copilot is ready. Restart/resume any Copilot sessions that were already open once; new sessions connect automatically.")
-        } else if connected {
-            notes.append("Ready. Supported agents will appear as RunHuddle discovers their sessions.")
-        }
-        message = (notes + failures).joined(separator: "\n\n")
+        do {
+            _ = try await Bridge.run(["install-hooks"], provider: "Claude")
+            message = "Claude compatibility hooks enabled. Older Claude versions may need a restart/resume to load them."
+        } catch { message = error.localizedDescription }
         await detect()
         await model.refresh()
     }
     private func detect() async {
+        await model.ensureCopilotTracking()
         let paths = [NSHomeDirectory() + "/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", NSHomeDirectory() + "/.npm-global/bin"]
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
         installed = [:]

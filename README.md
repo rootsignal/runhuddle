@@ -32,7 +32,7 @@ Requires macOS 14 or newer. The current package is for Apple Silicon; Intel buil
 
 1. Open the `RunHuddle-0.3.0-arm64.dmg` produced by the build below.
 2. Drag **RunHuddle** to **Applications** and open it there.
-3. The first-launch setup screen checks for local agents. Choose **Connect agents** once. New sessions connect automatically; already-open Copilot sessions need one restart/resume to load their hooks.
+3. RunHuddle checks for local agents automatically. Open the app. Copilot tracking is enabled automatically when its CLI or a session is detected. A one-time notice explains that already-open Copilot sessions need one restart/resume; new sessions connect automatically.
 
 Your agent CLIs and accounts are installed separately. No Python installation, shell changes, or source checkout are needed to run the app. Reopen setup anytime from **Connections…** in the menu bar. Install the app at its permanent location before enabling hooks; after moving the app, reconnect in Connections.
 
@@ -91,13 +91,13 @@ Compatibility with other Codex versions, independent servers, and remote machine
 
 ### Connect Copilot CLI
 
-Open **Connections…** from the RunHuddle menu and choose **Connect agents**. Alternatively, add `--copilot-hooks` to the source installer command. This creates `~/.copilot/hooks/agent-session-manager.json` (or `$COPILOT_HOME/hooks/…`) pointing to the installed app's bundled interpreter and collector. Unrelated hook files are preserved. Restart existing Copilot sessions to load the hooks. The hooks observe activity; they never grant permissions or inject prompts.
+Copilot tracking is configured automatically after detection. **Connections…** shows its status and offers a retry if configuration failed. Alternatively, add `--copilot-hooks` to the source installer command. This creates `~/.copilot/hooks/agent-session-manager.json` (or `$COPILOT_HOME/hooks/…`) pointing to the installed app's bundled interpreter and collector. Unrelated hook files are preserved. Restart existing Copilot sessions to load the hooks. The hooks observe activity; they never grant permissions or inject prompts.
 
 An empty session can appear before its first prompt. When its CLI is open but live activity cannot be verified, RunHuddle explains that status rather than claiming it is idle or working.
 
 ### Connect Claude Code
 
-Open **Connections…** and choose **Connect agents**. RunHuddle merges observational hooks into `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), preserving other settings and hooks and saving a backup before changing the file. Supported Claude versions expose existing interactive and background sessions through `claude agents --json --all`, so those sessions are discovered automatically without restarting. Hooks remain a fallback for older versions; those sessions may need to reload hooks or restart/resume.
+Supported Claude versions connect automatically. For older versions, open **Connections… → Connection details → Enable Claude compatibility hooks**. RunHuddle merges observational hooks into `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), preserving other settings and hooks and saving a backup before changing the file. Supported Claude versions expose existing interactive and background sessions through `claude agents --json --all`, so those sessions are discovered automatically without restarting. Hooks remain a fallback for older versions; those sessions may need to reload hooks or restart/resume.
 
 History is discovered from local project transcripts. Without live-list or hook/process evidence, a session is labeled **Disconnected** with an explanation that its live status is unknown. Verified running sessions show Working, Needs input, or Idle; ended sessions and tracked processes that have exited show Saved. PID and process start time are checked to avoid stale state after reboot or PID reuse. Child-agent events do not change the main session's state.
 
