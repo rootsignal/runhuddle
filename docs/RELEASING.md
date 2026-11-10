@@ -6,7 +6,7 @@
 
 The workflow uses GitHub's Apple Silicon macos-15 runner ([runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)). Intel releases are not validated.
 
-## One-time GitHub setup
+## Optional GitHub signing setup
 
 Create a GitHub environment named **release**. Restrict it to main and optionally require a maintainer review. Add these environment secrets:
 
@@ -29,7 +29,7 @@ The workflow uses team C65AQBMSBJ and identity Developer ID Application: RootSig
 
 Use a new version for each release. The workflow fails if the release tag exists instead of replacing published artifacts. Failed notarization requires investigation before retrying; do not distribute unapproved output.
 
-## Local release fallback
+## Recommended: release from this Mac
 
 With the Developer ID identity installed and credentials stored in the RunHuddle Keychain profile:
 
@@ -41,3 +41,11 @@ bash scripts/notarize.sh
 ```
 
 Only upload the resulting notarized DMG and checksum from dist/. The app zip is a submission artifact, not the installer.
+
+For the complete local flow, including tests and uploading a draft release:
+
+```sh
+bash scripts/release-local.sh
+```
+
+Use a clean, committed checkout already pushed to GitHub. The selected Python must have scripts/requirements.txt installed. This uses the existing Mac Keychain profile and leaves signing credentials on this Mac. Review and publish the draft in GitHub Releases. GitHub Checks still runs automatically; the optional Release workflow is unused unless its secrets are configured.
