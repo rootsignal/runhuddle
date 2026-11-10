@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -24,6 +25,7 @@ def database():
     STATE.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(STATE, timeout=1)
     db.execute('CREATE TABLE IF NOT EXISTS states (id TEXT PRIMARY KEY, timestamp REAL, data TEXT)')
+    db.execute('CREATE TABLE IF NOT EXISTS discovered (id TEXT PRIMARY KEY, data TEXT)')
     os.chmod(STATE, 0o600)
     try:
         with db:
@@ -150,12 +152,92 @@ def transcript(path):
     return info, messages
 
 
+def cli_sessions():
+    candidates = [Path.home() / '.local/bin/claude', Path('/opt/homebrew/bin/claude'),
+                  Path('/usr/local/bin/claude'), Path.home() / '.npm-global/bin/claude']
+    on_path = shutil.which('claude')
+    if on_path:
+        candidates.append(Path(on_path))
+    executable = next((p for p in candidates if p.is_file() and os.access(p, os.X_OK)), None)
+    if not executable:
+        return None
+    try:
+        result = subprocess.run([str(executable), 'agents', '--json', '--all'], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=4, cwd=Path.home())
+        if result.returncode:
+            return None
+        value = json.loads(result.stdout)
+        if not isinstance(value, list):
+            return None
+        return [row for row in value if isinstance(row, dict)]
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def listed_session(entry):
+    sid = entry.get('sessionId')
+    if not isinstance(sid, str) or not sid or Path(sid).name != sid:
+        return None
+    data = {'source': 'listing', 'updated': time.time()}
+    for source, target in [('cwd', 'cwd'), ('name', 'title')]:
+        if isinstance(entry.get(source), str) and entry[source]:
+            data[target] = entry[source]
+    pid = entry.get('pid')
+    if pid is not None and (not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1):
+        return None
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 1:
+        before = process_info(pid)
+        if not before or not is_claude(before[2], pid):
+            return None
+        tty = subprocess.run(['/bin/ps', '-p', str(pid), '-o', 'tty='], capture_output=True, text=True, timeout=1).stdout.strip()
+        if process_info(pid) != before:
+            return None
+        data['identity'] = {'pid': pid, 'start': before[1], 'tty': '/dev/' + tty if tty and tty != '??' else ''}
+        # Background state can describe work between turns; waiting takes priority.
+        if entry.get('status') == 'waiting' or entry.get('state') == 'blocked':
+            state = 'needsInput'
+        elif entry.get('status') == 'busy' or entry.get('state') == 'working':
+            state = 'working'
+        elif entry.get('status') == 'idle' or entry.get('state') == 'done':
+            state = 'idle'
+        else:
+            state = 'disconnected'
+        detail = entry.get('waitingFor') if isinstance(entry.get('waitingFor'), str) else ''
+        data.update(state=state, reason='Claude live session list' + (': ' + detail if detail else ''))
+    elif entry.get('state') in ('done', 'failed', 'stopped'):
+        data.update(state='saved', reason='Claude reports a completed or stopped background session.')
+    else:
+        return None
+    return sid, data
+
+
 def snapshot():
     with database() as db:
         hooks = {sid: json.loads(data) for sid, data in db.execute('SELECT id,data FROM states')}
+        observed = {sid: json.loads(data) for sid, data in db.execute('SELECT id,data FROM discovered')}
+    listing = {}
+    for entry in cli_sessions() or []:
+        try:
+            result = listed_session(entry)
+            if result:
+                sid, data = result
+                # Avoid choosing arbitrarily when the same conversation is open twice.
+                if sid in listing:
+                    data.update(state='disconnected', reason='This Claude conversation is open in multiple processes.', identity=None)
+                previous = observed.get(sid, {})
+                if all(data.get(key) == previous.get(key) for key in ('state', 'identity', 'title', 'cwd', 'reason')):
+                    data['updated'] = previous.get('updated', data['updated'])
+                listing[sid] = data
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            continue
+    if listing:
+        with database() as db:
+            for sid, data in listing.items():
+                db.execute('INSERT OR REPLACE INTO discovered VALUES (?,?)', (sid, json.dumps(data)))
     files, rows = paths(), []
-    for sid in sorted(hooks.keys() | files.keys()):
-        data = dict(hooks.get(sid, {}))
+    for sid in sorted(hooks.keys() | files.keys() | listing.keys() | observed.keys()):
+        latest = max([hooks.get(sid, {}), observed.get(sid, {})], key=lambda d: d.get('updated', 0))
+        data = dict(latest)
         path = files.get(sid)
         if path:
             try:
@@ -164,15 +246,24 @@ def snapshot():
                 data['updated'] = max(data.get('updated', 0), path.stat().st_mtime)
             except FileNotFoundError:
                 continue
-        identity = data.get('identity')
-        if data.get('state') == 'saved':
+        if sid in listing:
+            updated = data.get('updated', 0)
+            data.update(listing[sid])
+            data['updated'] = max(updated, data['updated'])
+            state, reason = data['state'], data['reason']
+        elif data.get('state') == 'saved':
             state, reason = 'saved', 'Claude session ended.'
-        elif live(identity):
-            state, reason = data.get('state', 'disconnected'), data.get('reason', '')
-        elif identity:
+        elif live(data.get('identity')):
+            if latest.get('source') == 'listing':
+                # A previous CLI observation is evidence of a process, not current activity.
+                state, reason = 'disconnected', 'Claude process is open, but its current activity could not be refreshed.'
+            else:
+                state, reason = data.get('state', 'disconnected'), data.get('reason', '')
+        elif data.get('identity'):
             state, reason = 'saved', 'The tracked Claude process has exited.'
         else:
-            state, reason = 'disconnected', 'History found; live status unknown. Enable Claude tracking and restart or resume the CLI session.'
+            state, reason = 'disconnected', 'History found; live status unknown. This Claude version may need tracking hooks loaded in the session.'
+        identity = data.get('identity')
         cwd = data.get('cwd', '')
         rows.append(dict(provider='Claude', sessionID=sid, title=data.get('title', 'Claude session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),

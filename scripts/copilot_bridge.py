@@ -231,9 +231,23 @@ def install_hooks():
     return path
 
 
+def diagnostics():
+    configured = False
+    try:
+        config = json.loads((HOME / 'hooks/agent-session-manager.json').read_text())
+        configured = all(any(entry.get('exec') == sys.executable and
+                            entry.get('args') == ['-E', '-s', '-B', str(Path(__file__).resolve()), 'hook', event]
+                            for entry in config.get('hooks', {}).get(event, [])) for event in EVENTS)
+    except (OSError, ValueError, TypeError):
+        pass
+    with database() as db:
+        last = db.execute('SELECT MAX(timestamp) FROM states').fetchone()[0]
+    return {'configured': configured, 'lastEvent': last}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['snapshot', 'history', 'hook', 'install-hooks'])
+    parser.add_argument('command', choices=['snapshot', 'history', 'hook', 'install-hooks', 'diagnostics'])
     parser.add_argument('argument', nargs='?')
     args = parser.parse_args()
     if args.command == 'hook':
@@ -245,6 +259,8 @@ def main():
         return
     if args.command == 'install-hooks':
         print(install_hooks())
+    elif args.command == 'diagnostics':
+        print(json.dumps(diagnostics()))
     elif args.command == 'snapshot':
         print(json.dumps(snapshot()))
     else:

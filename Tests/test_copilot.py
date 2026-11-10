@@ -50,6 +50,13 @@ class CopilotTests(unittest.TestCase):
         with patch.object(bridge, 'live', return_value=True):
             return bridge.snapshot()[0]
 
+    def test_diagnostics_distinguishes_configuration_from_received_events(self):
+        self.assertEqual(bridge.diagnostics(), {'configured': False, 'lastEvent': None})
+        bridge.install_hooks()
+        self.assertEqual(bridge.diagnostics(), {'configured': True, 'lastEvent': None})
+        self.send('sessionStart', 5000)
+        self.assertEqual(bridge.diagnostics(), {'configured': True, 'lastEvent': 5.0})
+
     def test_lifecycle_and_actual_permission(self):
         self.send('userPromptSubmitted', prompt='Implement feature')
         self.assertEqual(self.row()['state'], 'working')

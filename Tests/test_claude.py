@@ -19,6 +19,9 @@ class ClaudeTests(unittest.TestCase):
         self.patch = patch.multiple(bridge, HOME=self.home, STATE=self.home / 'tracker.sqlite')
         self.patch.start()
         self.addCleanup(self.patch.stop)
+        listing_patch = patch.object(bridge, 'cli_sessions', return_value=[])
+        listing_patch.start()
+        self.addCleanup(listing_patch.stop)
         self.identity = {'pid': 42, 'start': 'now', 'tty': '/dev/ttys001'}
 
     def send(self, event, **kwargs):
@@ -113,6 +116,49 @@ class ClaudeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 bridge.install_hooks()
             self.assertEqual(path.read_text(), content)
+
+    def listed(self, status='idle', **kwargs):
+        entry = {'sessionId': 'example', 'pid': 42, 'cwd': '/tmp/project', 'name': 'Existing terminal', 'status': status, **kwargs}
+        with patch.object(bridge, 'process_info', return_value=(1, 'now', '/bin/claude')), \
+             patch.object(bridge.subprocess, 'run', return_value=type('Result', (), {'stdout': 'ttys001'})()):
+            return bridge.listed_session(entry)
+
+    def test_listing_maps_live_activity(self):
+        for status, state in [('busy', 'working'), ('waiting', 'needsInput'), ('idle', 'idle')]:
+            sid, row = self.listed(status)
+            self.assertEqual(sid, 'example')
+            self.assertEqual(row['state'], state)
+            self.assertEqual(row['identity']['tty'], '/dev/ttys001')
+        self.assertEqual(self.listed('idle', state='working')[1]['state'], 'working')
+
+    def test_existing_session_overrides_old_saved_hook(self):
+        self.send('SessionEnd')
+        entry = self.listed('busy')
+        with patch.object(bridge, 'cli_sessions', return_value=[{}]), patch.object(bridge, 'listed_session', return_value=entry):
+            row = bridge.snapshot()[0]
+        self.assertEqual(row['state'], 'working')
+        self.assertEqual(row['title'], 'Existing terminal')
+        self.assertEqual(row['terminalTTY'], '/dev/ttys001')
+        self.assertEqual(self.row(live=False)['state'], 'saved')
+        self.assertEqual(self.row(live=True)['state'], 'disconnected')
+
+    def test_discovers_session_without_history_or_hooks(self):
+        entry = self.listed('idle')
+        with patch.object(bridge, 'cli_sessions', return_value=[{}]), patch.object(bridge, 'listed_session', return_value=entry):
+            self.assertEqual(bridge.snapshot()[0]['state'], 'idle')
+        self.assertEqual(self.row(live=False)['state'], 'saved')
+
+    def test_listing_rejects_dead_process_and_missing_id(self):
+        with patch.object(bridge, 'process_info', return_value=None):
+            self.assertIsNone(bridge.listed_session({'sessionId': 'example', 'pid': 42, 'status': 'busy'}))
+        self.assertIsNone(bridge.listed_session({'pid': 42, 'status': 'busy'}))
+
+    def test_duplicate_processes_are_not_arbitrarily_selected(self):
+        entry = self.listed('idle')
+        with patch.object(bridge, 'cli_sessions', return_value=[{}, {}]), patch.object(bridge, 'listed_session', return_value=entry):
+            row = bridge.snapshot()[0]
+        self.assertEqual(row['state'], 'disconnected')
+        self.assertIsNone(row['terminalTTY'])
 
     def test_malformed_message_is_ignored(self):
         self.assertIsNone(bridge.message({'type': 'user', 'message': 'broken'}))

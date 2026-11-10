@@ -4,6 +4,14 @@ Historical implementation notes and validation snapshots. For current installati
 
 Native macOS session tracker with live Codex discovery and simulated Claude Code sessions. The first local development app is implemented; Claude live integration remains pending paid access and validation.
 
+## Automatic discovery and connection flow
+
+Claude snapshots now query the supported `claude agents --json --all` interface, validate reported live processes, and map busy/waiting/idle plus background work states. This recognizes sessions opened before RunHuddle, including sessions without transcript files yet, and supersedes old Saved records after a resume. The last observed process identity is retained to recognize exit; stale live-list activity is never presented as current when a later query fails. Duplicate live processes for one conversation remain unresolved rather than selecting an arbitrary terminal.
+
+First launch detects CLIs and local sessions, with a single **Connect agents** action to configure detected Claude/Copilot hooks. Connections shows whether Copilot is merely configured or has actually delivered an event. Copilot reads hook configuration at startup; its already-open sessions need one restart/resume. Removed stale demo/account-warning text from the sidebar. Claude archive/delete remains unimplemented; this change does not delete provider history.
+
+Validation includes 22 Swift tests and 55 Python tests. Automatic discovery tests cover pre-existing sessions, old Saved hooks, missing history, live-state mapping, process exit, unavailable live status, and ambiguous duplicate processes. The installed Claude CLI accepts the JSON query locally; authenticated multi-session validation still depends on the other Mac.
+
 ## Claude integration (0.3.0)
 
 Claude project transcripts are discovered from `CLAUDE_CONFIG_DIR` or `~/.claude`. Root conversation text feeds latest activity, handoffs, and local history search. Tool results, thinking, and subagent transcripts are excluded from search.

@@ -48,7 +48,7 @@ struct MenuContent: View {
             Divider()
         }
         Button("Open RunHuddle") { showWindow() }
-        Button("Agent setup…") { model.showSetup = true; showWindow() }
+        Button("Connections…") { model.showSetup = true; showWindow() }
         Button(model.refreshing ? "Refreshing…" : "Refresh") { Task { await model.refresh() } }
             .disabled(model.refreshing || model.cleaning)
         Toggle("Open at Login", isOn: Binding(get: { loginItem.enabled }, set: { loginItem.setEnabled($0) }))
@@ -141,18 +141,14 @@ struct ContentView: View {
                     Text("Claude").tag("Claude")
                     Text("Copilot").tag("Copilot")
                 }.labelsHidden()
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Claude integration").font(.subheadline.bold())
-                    Text("Live validation pending. Explore the workflow with simulated sessions.")
-                        .font(.caption).foregroundStyle(.secondary)
+                Button("Connections…") { model.showSetup = true }
+                DisclosureGroup("Demo sessions") {
                     Toggle("Show Claude demo", isOn: $model.showDemo)
                         .onChange(of: model.showDemo) { _, enabled in
                             if enabled { model.seedDemo() }
                             else if model.selected?.simulated == true { model.selection = nil }
                         }
-                }
-                Text("Copilot CLI: restart existing CLI sessions to load tracker hooks. GitHub account access is required.")
-                    .font(.caption).foregroundStyle(.secondary)
+                }.font(.caption)
                 Spacer()
                 if !model.recentAlerts.isEmpty {
                     Text("RECENT ACTIVITY").font(.caption.bold()).foregroundStyle(.secondary)
