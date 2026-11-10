@@ -19,6 +19,30 @@ class CopilotTests(unittest.TestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
 
+    def test_install_hooks_migrates_legacy_and_disables_bytecode(self):
+        legacy = self.home / 'old checkout/copilot_bridge.py'
+        legacy.parent.mkdir()
+        legacy.write_text(Path(bridge.__file__).read_text())
+        path = self.home / 'hooks/agent-session-manager.json'
+        path.parent.mkdir()
+        path.write_text(json.dumps({'version': 1, 'hooks': {'agentStop': [
+            {'type': 'command', 'exec': '/old/python', 'args': [str(legacy), 'hook', 'agentStop']} ]}}))
+        bridge.install_hooks()
+        config = json.loads(path.read_text())
+        for event, entries in config['hooks'].items():
+            self.assertEqual(entries[0]['args'], ['-E', '-s', '-B', str(Path(bridge.__file__).resolve()), 'hook', event])
+        bridge.install_hooks()  # Reinstallation is safe.
+
+    def test_install_hooks_preserves_unrelated_collector(self):
+        path = self.home / 'hooks/agent-session-manager.json'
+        path.parent.mkdir()
+        original = json.dumps({'version': 1, 'hooks': {'agentStop': [
+            {'type': 'command', 'exec': '/bin/echo', 'args': ['hello']} ]}})
+        path.write_text(original)
+        with self.assertRaises(RuntimeError):
+            bridge.install_hooks()
+        self.assertEqual(path.read_text(), original)
+
     def send(self, event, timestamp=1000, **kwargs):
         bridge.record(event, dict(sessionId='example', timestamp=timestamp, cwd='/tmp/project', **kwargs), {'pid': 123, 'start': 'now'})
 

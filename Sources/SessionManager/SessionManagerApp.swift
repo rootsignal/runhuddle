@@ -48,6 +48,7 @@ struct MenuContent: View {
             Divider()
         }
         Button("Open RunHuddle") { showWindow() }
+        Button("Agent setup…") { model.showSetup = true; showWindow() }
         Button(model.refreshing ? "Refreshing…" : "Refresh") { Task { await model.refresh() } }
             .disabled(model.refreshing || model.cleaning)
         Toggle("Open at Login", isOn: Binding(get: { loginItem.enabled }, set: { loginItem.setEnabled($0) }))
@@ -241,6 +242,7 @@ struct ContentView: View {
         }
         .onChange(of: model.query) { _, _ in model.scheduleHistorySearch() }
         .onAppear { model.openMainWindow = { openWindow(id: "main") } }
+        .sheet(isPresented: $model.showSetup) { AgentSetupView() }
         .sheet(item: $model.renameSession) { row in
             VStack(alignment: .leading, spacing: 16) {
                 Text("Rename session").font(.title2.bold())

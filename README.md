@@ -2,7 +2,7 @@
 
 **Your coding agents, together.** A native macOS app by [Rootsignal](https://rootsignal.io) for finding, monitoring, and returning to AI coding sessions across local projects.
 
-RunHuddle is an early source-built preview. A packaged standalone app is planned; there is no signed/notarized release or Mac App Store build yet.
+RunHuddle is an early preview. The app now bundles its runtime and dependencies; installed users do not need Python, Swift, or a source checkout. Developer ID signing and notarization are still pending, so this is not yet a trusted public download or Mac App Store release.
 
 ## What it does
 
@@ -26,24 +26,21 @@ RunHuddle is an early source-built preview. A packaged standalone app is planned
 
 RunHuddle observes local agents. It does not supply model access or bypass provider authentication. Activity excerpts and search are local; AI-generated summaries are not enabled.
 
-## Install locally from source
+## Install the standalone app
 
-### Requirements
+Requires macOS 14 or newer. The current package is for Apple Silicon; Intel builds have not been verified.
 
-- macOS 14 or newer. Development has been validated on Apple Silicon; Intel builds are not yet verified.
-- Xcode or compatible Command Line Tools providing **Swift 6 or newer**.
-- **Python 3.11 or newer**, with `venv` and `pip`.
-- Git and internet access to fetch Python dependencies.
-- A supported agent CLI installed and authenticated separately.
+1. Open the `RunHuddle-0.2.0-arm64.dmg` produced by the build below.
+2. Drag **RunHuddle** to **Applications** and open it there.
+3. The first-launch setup screen checks for local agents. If you use Copilot CLI, choose **Enable Copilot tracking**, then restart existing Copilot sessions.
 
-Check your tools:
+Your agent CLIs and accounts are installed separately. No Python installation, shell changes, or source checkout are needed to run the app. Reopen setup anytime from **Agent setup…** in the menu bar. Install the app at its permanent location before enabling hooks; after moving the app, use **Update Copilot tracking**.
 
-```sh
-swift --version
-python3 --version
-```
+This preview is ad-hoc signed, not notarized. A downloaded copy may be blocked by macOS. Do not disable Gatekeeper globally. A signed public download is the next distribution step.
 
-Clone into a permanent location, then build and install:
+## Build and install from source
+
+Builders need macOS 14+, Swift 6+ (Xcode or compatible Command Line Tools), Python 3.12+, Git, and internet access. These requirements apply only to building the app.
 
 ```sh
 git clone https://github.com/rootsignal/runhuddle.git
@@ -51,15 +48,17 @@ cd runhuddle
 python3 scripts/install_local.py --open
 ```
 
-The installer creates `.venv`, installs pinned Python dependencies, builds the app, generates its icon, ad-hoc signs it, and copies it to `~/Applications/RunHuddle.app`. It does not require `sudo`, install agent CLIs, change your shell, or enable Open at Login.
+The installer downloads a checksum-verified, pinned standalone Python runtime, installs pinned dependencies into it, builds and ad-hoc signs the app, and installs it in `~/Applications`. It does not need `sudo`. The installed app runs independently of the checkout.
 
-**Keep the checkout and `.venv` in place.** This development bundle references them. Copying the `.app` alone to another machine will not work. If you move the checkout, rebuild/reinstall and reinstall any Copilot hooks.
-
-To choose another application directory:
+To generate a drag-to-Applications disk image:
 
 ```sh
-python3 scripts/install_local.py --destination "$HOME/Applications" --open
+bash scripts/build-app.sh
+python3 scripts/verify_standalone.py
+bash scripts/package-dmg.sh
 ```
+
+The DMG and SHA-256 checksum are written to `dist/`. Build on the target architecture; the runtime packager supports arm64 and x86_64, but only arm64 has been validated.
 
 ### Connect Codex
 
@@ -82,13 +81,7 @@ Compatibility with other Codex versions, independent servers, and remote machine
 
 ### Connect Copilot CLI
 
-If you use Copilot, install the tracker hooks explicitly:
-
-```sh
-.venv/bin/python scripts/copilot_bridge.py install-hooks
-```
-
-Alternatively, add `--copilot-hooks` to the installer command. This creates `~/.copilot/hooks/agent-session-manager.json` (or `$COPILOT_HOME/hooks/…`) without replacing unrelated hook files. Restart existing Copilot sessions to load the hooks. The hooks observe activity; they never grant permissions or inject prompts.
+Open **Agent setup…** from the RunHuddle menu and choose **Enable Copilot tracking**. Alternatively, add `--copilot-hooks` to the source installer command. This creates `~/.copilot/hooks/agent-session-manager.json` (or `$COPILOT_HOME/hooks/…`) pointing to the installed app's bundled interpreter and collector. Unrelated hook files are preserved. Restart existing Copilot sessions to load the hooks. The hooks observe activity; they never grant permissions or inject prompts.
 
 An empty session can appear before its first prompt. When its CLI is open but live activity cannot be verified, RunHuddle explains that status rather than claiming it is idle or working.
 
@@ -110,7 +103,7 @@ git pull --ff-only
 python3 scripts/install_local.py --open
 ```
 
-For Copilot users, reinstall hooks after moving the checkout or changing the hook integration.
+For Copilot users, use **Update Copilot tracking** after moving the app or changing the hook integration. Updates at the same app path preserve hook paths.
 
 To uninstall, turn off Open at Login, quit the app, and remove `~/Applications/RunHuddle.app`. Remove `~/.copilot/hooks/agent-session-manager.json` if installed. Local data remains in `~/Library/Application Support/Agent Session Manager/`; delete that folder only if you also want to remove saved names, notes, handoffs, and the search index. Uninstalling RunHuddle does not delete provider sessions.
 
@@ -133,12 +126,12 @@ open dist/RunHuddle.app
 - Some archived histories may not be available as local files. Search shows incomplete coverage when detected.
 - Context usage is a last-reported estimate and can decrease after compaction. It is not a restart countdown.
 - Saved sessions preserve conversation identity, not running shell processes.
-- The development bundle retains its original bundle identifier and storage paths to preserve existing local installations. Release identity, migration, bundled dependencies, signing, notarization, and App Store feasibility still need work.
+- The development bundle retains its original bundle identifier and storage paths to preserve existing local installations. Release identity, migration, Developer ID signing, notarization, and App Store feasibility still need work. Bundled third-party license notices are included in the app’s Resources directory.
 
 See [development and integration notes](docs/DEVELOPMENT.md) for implementation details and validation history.
 
 ## Publishing plans and licensing
 
-RunHuddle is intended to become a standalone Mac app. This public repository is a development preview, not a release announcement.
+RunHuddle is now packaged as a standalone Mac app. This public repository is a development preview, not a release announcement.
 
 Copyright © 2026 Rootsignal. All rights reserved. No open-source license has been selected for this repository.

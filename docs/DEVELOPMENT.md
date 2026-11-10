@@ -4,7 +4,15 @@ Historical implementation notes and validation snapshots. For current installati
 
 Native macOS session tracker with live Codex discovery and simulated Claude Code sessions. The first local development app is implemented; Claude live integration remains pending paid access and validation.
 
-## Run
+## Standalone packaging (0.2.0)
+
+`build-app.sh` packages a checksum-pinned Python 3.13.18 runtime plus pinned websockets/PyYAML wheels. All bridge scripts and third-party license notices live inside the app. The app and Copilot hooks invoke the interpreter with `-E -s -B`, so Python environment overrides, user packages, and bytecode writes do not affect the signed runtime. Source development still uses `.venv`.
+
+First launch checks standard CLI locations and the Codex socket. Copilot setup is opt-in and points at the installed app; existing source collector hooks can migrate without replacing unrelated collectors. CLI detection does not prove authentication. Claude remains demo-only.
+
+Validation: 22 Swift tests, 36 Python tests (also run with bundled Python), relocated app with empty HOME and system-only PATH, runtime dependency/symlink checks, hook invocation and FTS search, signature after execution, read-only DMG mount, and a live Codex snapshot from the installed app. Apple Silicon only has been exercised. Current build is ad-hoc signed; Developer ID signing and notarization remain pending.
+
+## Original source preview (historical)
 
 Open `dist/RunHuddle.app` after building:
 

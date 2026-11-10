@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import yaml
 
 HOME = Path(os.environ.get('COPILOT_HOME', Path.home() / '.copilot'))
@@ -192,6 +193,44 @@ def snapshot():
     return rows
 
 
+def owned_hook(entry, event):
+    args = entry.get('args', [])
+    while args and args[0] in ('-E', '-s', '-B'):
+        args = args[1:]
+    if entry.get('type') != 'command' or len(args) != 3 or args[1:] != ['hook', event]:
+        return False
+    script = Path(args[0])
+    if script == Path(__file__).resolve():
+        return True
+    # Recognize the original source installer, while refusing unrelated collectors.
+    try:
+        return script.name == 'copilot_bridge.py' and '"""Read-only Copilot transcript adapter; hooks write only tracker-owned state."""' in script.read_text()[:200]
+    except OSError:
+        return False
+
+
+def install_hooks():
+    path = HOME / 'hooks/agent-session-manager.json'
+    config = {'version': 1, 'hooks': {event: [{'type': 'command', 'exec': sys.executable,
+              'args': ['-E', '-s', '-B', str(Path(__file__).resolve()), 'hook', event], 'timeoutSec': 5}] for event in EVENTS}}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        old = json.loads(path.read_text())
+        groups = old.get('hooks', {})
+        if not groups or any(event not in EVENTS or not entries or
+                            any(not owned_hook(entry, event) for entry in entries)
+                            for event, entries in groups.items()):
+            raise RuntimeError('Existing hooks are not owned by this tracker: ' + str(path))
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as file:
+        temporary = Path(file.name)
+        file.write(json.dumps(config, indent=2) + '\n')
+    try:
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=['snapshot', 'history', 'hook', 'install-hooks'])
@@ -205,17 +244,7 @@ def main():
             pass
         return
     if args.command == 'install-hooks':
-        path = HOME / 'hooks/agent-session-manager.json'
-        config = {'version': 1, 'hooks': {event: [{'type': 'command', 'exec': sys.executable,
-                  'args': [str(Path(__file__).resolve()), 'hook', event], 'timeoutSec': 5}] for event in EVENTS}}
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists():
-            old = json.loads(path.read_text())
-            entries = [entry for group in old.get('hooks', {}).values() for entry in group]
-            if not entries or any(str(Path(__file__).resolve()) not in entry.get('args', []) for entry in entries):
-                raise RuntimeError('Existing hooks are not owned by this tracker: ' + str(path))
-        path.write_text(json.dumps(config, indent=2) + '\n')
-        print(path)
+        print(install_hooks())
     elif args.command == 'snapshot':
         print(json.dumps(snapshot()))
     else:

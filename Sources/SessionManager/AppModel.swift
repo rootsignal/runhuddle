@@ -5,15 +5,21 @@ import UserNotifications
 
 enum Bridge {
     static var root: String {
-        Bundle.main.object(forInfoDictionaryKey: "ProjectRoot") as? String ?? FileManager.default.currentDirectoryPath
+        if let path = Bundle.main.resourceURL?.appendingPathComponent("bridge").path,
+           FileManager.default.fileExists(atPath: path + "/codex_bridge.py") { return path }
+        return FileManager.default.currentDirectoryPath + "/scripts"
     }
     static func run(_ arguments: [String], provider: String = "Codex") async throws -> Data {
         let root = root
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("python/bin/python3").path
+        let python = bundled.flatMap { FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil }
+            ?? FileManager.default.currentDirectoryPath + "/.venv/bin/python"
         return try await Task.detached {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: root + "/.venv/bin/python")
+            process.executableURL = URL(fileURLWithPath: python)
             let script = provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : "codex_bridge.py"
-            process.arguments = [root + "/scripts/" + script] + arguments
+            process.arguments = ["-E", "-s", "-B", root + "/" + script] + arguments
+            process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
             let output = Pipe(), errors = Pipe()
             process.standardOutput = output; process.standardError = errors
             try process.run()
@@ -30,6 +36,7 @@ enum Bridge {
 }
 
 @MainActor final class AppModel: ObservableObject {
+    @Published var showSetup = !UserDefaults.standard.bool(forKey: "agentSetupCompleted")
     @Published var sessions: [Session] = []
     @Published var selection: String? {
         didSet {
@@ -303,7 +310,7 @@ enum Bridge {
     func draft(for row: Session) -> String { drafts[row.id] ?? row.handoff }
     func seedDemo() {
         guard !sessions.contains(where: \.simulated) else { return }
-        let root = Bridge.root
+        let root = NSHomeDirectory()
         for (index, event) in [ClaudeEvent.permission, .prompt, .stop].enumerated() {
             sessions.append(Session(provider: "Claude", sessionID: "demo-\(index)",
                                     title: ["Review a proposed command", "Implement project search", "Prepare a handoff"][index],

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and install the source-based RunHuddle preview without sudo."""
+"""Build and install the standalone RunHuddle preview without sudo."""
 import argparse
 import os
 import platform
@@ -25,8 +25,8 @@ def main():
         parser.error('RunHuddle requires macOS 14 or later.')
     if tuple(int(part) for part in platform.mac_ver()[0].split('.')[:1]) < (14,):
         parser.error('RunHuddle requires macOS 14 or later.')
-    if sys.version_info < (3, 11):
-        parser.error('Python 3.11 or later is required.')
+    if sys.version_info < (3, 12):
+        parser.error('Python 3.12 or later is required.')
     for command in ('swift', 'swiftc', 'iconutil', 'codesign'):
         if not shutil.which(command):
             parser.error(f'{command} is missing. Install Xcode or compatible Command Line Tools (Swift 6+).')
@@ -42,10 +42,6 @@ def main():
         if existing.get('CFBundleIdentifier') != 'local.rickbaker.agent-sessions':
             parser.error('Destination contains a different app; choose another destination.')
     os.chdir(root)
-    python = root / '.venv/bin/python'
-    if not python.exists():
-        run(sys.executable, '-m', 'venv', root / '.venv')
-    run(python, '-m', 'pip', 'install', '-r', root / 'scripts/requirements.txt')
     run('/bin/bash', root / 'scripts/build-app.sh')
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.runhuddle-install-', dir=destination) as temp:
@@ -61,8 +57,9 @@ def main():
                 backup.rename(app)
             raise
     if args.copilot_hooks:
-        run(python, root / 'scripts/copilot_bridge.py', 'install-hooks')
-    print(f'Installed: {app}\nKeep this checkout and .venv at {root}; this preview depends on them.')
+        run(app / 'Contents/Resources/python/bin/python3', '-E', '-s', '-B',
+            app / 'Contents/Resources/bridge/copilot_bridge.py', 'install-hooks')
+    print(f'Installed: {app}\nThis app is self-contained; the checkout is no longer needed to run it.')
     if args.open:
         run('/usr/bin/open', app)
 
