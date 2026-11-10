@@ -33,6 +33,23 @@ class CopilotTests(unittest.TestCase):
             self.assertEqual(entries[0]['args'], ['-E', '-s', '-B', str(Path(bridge.__file__).resolve()), 'hook', event])
         bridge.install_hooks()  # Reinstallation is safe.
 
+    def test_repair_deleted_app_path_and_keep_backup(self):
+        old = self.home / 'Old Applications/RunHuddle.app/Contents/Resources'
+        path = self.home / 'hooks/agent-session-manager.json'
+        path.parent.mkdir()
+        original = json.dumps({'version': 1, 'hooks': {'agentStop': [{
+            'type': 'command', 'exec': str(old / 'python/bin/python3'),
+            'args': ['-E', '-s', '-B', str(old / 'bridge/copilot_bridge.py'), 'hook', 'agentStop']} ]}})
+        path.write_text(original)
+        self.assertFalse(old.exists())
+        bridge.install_hooks()
+        self.assertTrue(bridge.diagnostics()['configured'])
+        backups = list(path.parent.glob('*.runhuddle-backup-*'))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), original)
+        self.assertFalse(bridge.owned_hook({'type': 'command', 'exec': '/bin/other',
+            'args': [str(old / 'bridge/copilot_bridge.py'), 'hook', 'agentStop']}, 'agentStop'))
+
     def test_install_hooks_preserves_unrelated_collector(self):
         path = self.home / 'hooks/agent-session-manager.json'
         path.parent.mkdir()

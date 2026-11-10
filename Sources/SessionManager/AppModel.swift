@@ -28,7 +28,8 @@ enum Bridge {
             process.waitUntilExit()
             guard process.terminationStatus == 0 else {
                 let detail = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "Connection failed"
-                throw NSError(domain: provider, code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
+                let summary = detail.split(separator: "\n").last.map(String.init) ?? "Connection failed"
+                throw NSError(domain: provider, code: 1, userInfo: [NSLocalizedDescriptionKey: summary])
             }
             return data
         }.value
@@ -50,7 +51,7 @@ struct CopilotTrackingStatus: Decodable {
     private var attemptedClaudeRepair = false
     @Published var claudeRepairError: String?
     @Published var claudeRepairNotice: String? = UserDefaults.standard.bool(forKey: "claudeRepairNoticePending")
-        ? "Claude tracking paths were updated. Restart/resume already-open Claude sessions to reload their hooks." : nil
+        ? "Claude tracking paths were updated. Fully exit already-open Claude processes, then launch Claude again from your shell to reload hooks. Using /resume inside an existing process may retain old paths." : nil
     private struct ClaudeRepairResult: Decodable { let repaired: Bool }
     @Published var sessions: [Session] = []
     @Published var selection: String? {
@@ -234,7 +235,7 @@ struct CopilotTrackingStatus: Decodable {
             let data = try await Bridge.run(["repair-hooks"], provider: "Claude")
             if try JSONDecoder().decode(ClaudeRepairResult.self, from: data).repaired {
                 UserDefaults.standard.set(true, forKey: "claudeRepairNoticePending")
-                claudeRepairNotice = "Claude tracking paths were updated. Restart/resume already-open Claude sessions to reload their hooks."
+                claudeRepairNotice = "Claude tracking paths were updated. Fully exit already-open Claude processes, then launch Claude again from your shell to reload hooks. Using /resume inside an existing process may retain old paths."
             }
         } catch { claudeRepairError = "Claude tracking paths could not be repaired: \(error.localizedDescription)" }
     }

@@ -433,7 +433,7 @@ struct SessionDetail: View {
                 Button { model.resume(row) } label: {
                     HStack(spacing: 6) {
                         if model.navigatingTerminal { ProgressView().controlSize(.small) }
-                        Text(model.navigatingTerminal ? model.terminalProgress : "Go to terminal")
+                        Text(model.navigatingTerminal ? model.terminalProgress : row.state == .disconnected ? "Locate or resume…" : "Go to terminal")
                     }
                 }
                     .buttonStyle(.borderedProminent)

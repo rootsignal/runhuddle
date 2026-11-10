@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import yaml
 
 HOME = Path(os.environ.get('COPILOT_HOME', Path.home() / '.copilot'))
@@ -202,6 +203,10 @@ def owned_hook(entry, event):
     script = Path(args[0])
     if script == Path(__file__).resolve():
         return True
+    if script.parts[-4:] == ('Contents', 'Resources', 'bridge', 'copilot_bridge.py'):
+        app = script.parents[3]
+        if app.name == 'RunHuddle.app' and entry.get('exec') == str(app / 'Contents/Resources/python/bin/python3'):
+            return True
     # Recognize the original source installer, while refusing unrelated collectors.
     try:
         return script.name == 'copilot_bridge.py' and '"""Read-only Copilot transcript adapter; hooks write only tracker-owned state."""' in script.read_text()[:200]
@@ -214,8 +219,9 @@ def install_hooks():
     config = {'version': 1, 'hooks': {event: [{'type': 'command', 'exec': sys.executable,
               'args': ['-E', '-s', '-B', str(Path(__file__).resolve()), 'hook', event], 'timeoutSec': 5}] for event in EVENTS}}
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        old = json.loads(path.read_text())
+    before = path.read_bytes() if path.exists() else None
+    if before is not None:
+        old = json.loads(before)
         groups = old.get('hooks', {})
         if not groups or any(event not in EVENTS or not entries or
                             any(not owned_hook(entry, event) for entry in entries)
@@ -225,6 +231,12 @@ def install_hooks():
         temporary = Path(file.name)
         file.write(json.dumps(config, indent=2) + '\n')
     try:
+        if (path.read_bytes() if path.exists() else None) != before:
+            raise RuntimeError('Copilot hooks changed during setup; retry.')
+        if before is not None:
+            backup = path.with_name(path.name + '.runhuddle-backup-' + str(time.time_ns()))
+            backup.write_bytes(before)
+            backup.chmod(0o600)
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)

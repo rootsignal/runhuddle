@@ -77,8 +77,7 @@ def record(event, payload, identity=None, stamp=None):
              'PermissionRequest': 'needsInput', 'PostToolUse': 'working', 'PostToolUseFailure': 'working',
              'Stop': 'idle', 'StopFailure': 'needsInput', 'SessionEnd': 'saved',
              'Elicitation': 'needsInput', 'ElicitationResult': 'working'}.get(event)
-    if event == 'SessionStart' and payload.get('source') == 'compact':
-        state = 'working'
+    compact = event == 'SessionStart' and payload.get('source') == 'compact'
     if event == 'PreToolUse' and payload.get('tool_name') == 'AskUserQuestion':
         state = 'needsInput'
     if event == 'Notification':
@@ -93,6 +92,8 @@ def record(event, payload, identity=None, stamp=None):
         if old and old[0] > stamp:
             return
         data = json.loads(old[1]) if old else {}
+        if compact:
+            state = data.get('state', 'disconnected')
         pending = data.get('pending', {})
         key = payload.get('tool_use_id') or payload.get('elicitation_id') or 'prompt'
         if state == 'needsInput' and event != 'StopFailure':
@@ -100,7 +101,7 @@ def record(event, payload, identity=None, stamp=None):
         elif event in ('PostToolUse', 'PostToolUseFailure', 'ElicitationResult'):
             pending.pop(key, None)
             pending.pop('prompt', None)
-        elif event in ('SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'SessionEnd'):
+        elif not compact and event in ('SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'SessionEnd'):
             pending = {}
         if pending and state in ('working', 'idle'):
             state = 'needsInput'
@@ -124,6 +125,8 @@ def message(event):
     body = data.get('content')
     if isinstance(body, list):
         body = '\n'.join(p.get('text', '') for p in body if isinstance(p, dict) and p.get('type') == 'text' and isinstance(p.get('text'), str))
+    if isinstance(body, str) and event['type'] == 'user' and body.lstrip().startswith('<task-notification>'):
+        return None  # Internal background-task notices are not the user's request.
     return (event['type'], body) if isinstance(body, str) and body.strip() else None
 
 
@@ -203,7 +206,16 @@ def listed_session(entry):
         else:
             state = 'disconnected'
         detail = entry.get('waitingFor') if isinstance(entry.get('waitingFor'), str) else ''
-        data.update(state=state, reason='Claude live session list' + (': ' + detail if detail else ''))
+        reported = entry.get('status') or entry.get('state') or 'unknown'
+        reason = f'Claude reports {reported} · process {pid}'
+        if data['identity']['tty']:
+            reason += ' · ' + data['identity']['tty']
+        else:
+            reason += ' · no controlling terminal'
+            if entry.get('kind') == 'interactive':
+                state = 'disconnected'
+                reason += '. Current interactive activity cannot be confirmed.'
+        data.update(state=state, reason=reason + (': ' + detail if detail else ''))
     elif entry.get('state') in ('done', 'failed', 'stopped'):
         data.update(state='saved', reason='Claude reports a completed or stopped background session.')
     else:

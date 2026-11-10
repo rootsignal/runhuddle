@@ -58,6 +58,12 @@ class ClaudeTests(unittest.TestCase):
         self.send('StopFailure')
         self.assertEqual(self.row()['state'], 'needsInput')
         self.send('SessionStart', source='compact')
+        self.assertEqual(self.row()['state'], 'needsInput')
+        self.send('Stop')
+        self.send('SessionStart', source='compact')
+        self.assertEqual(self.row()['state'], 'idle')
+        self.send('UserPromptSubmit')
+        self.send('SessionStart', source='compact')
         self.assertEqual(self.row()['state'], 'working')
 
     def test_out_of_order_events(self):
@@ -179,6 +185,26 @@ class ClaudeTests(unittest.TestCase):
         with patch.object(bridge, 'cli_sessions', return_value=[{}]), patch.object(bridge, 'listed_session', return_value=entry):
             self.assertEqual(bridge.snapshot()[0]['state'], 'idle')
         self.assertEqual(self.row(live=False)['state'], 'saved')
+
+    def test_detached_interactive_process_does_not_claim_confirmed_work(self):
+        entry = {'sessionId': 'example', 'pid': 42, 'kind': 'interactive', 'status': 'busy'}
+        with patch.object(bridge, 'process_info', return_value=(1, 'now', '/bin/claude')), \
+             patch.object(bridge.subprocess, 'run', return_value=type('Result', (), {'stdout': '??'})()):
+            _, row = bridge.listed_session(entry)
+            self.assertEqual(row['state'], 'disconnected')
+            self.assertIn('reports busy', row['reason'])
+            self.assertIn('no controlling terminal', row['reason'])
+            entry['kind'] = 'background'
+            self.assertEqual(bridge.listed_session(entry)[1]['state'], 'working')
+
+    def test_background_task_notice_does_not_replace_user_preview(self):
+        path = self.transcript()
+        with path.open('a') as file:
+            file.write('\n' + json.dumps({'type': 'user', 'message': {'content':
+                '<task-notification><status>stopped</status><summary>Background command stopped</summary></task-notification>'}}) + '\n')
+        info, messages = bridge.transcript(path)
+        self.assertEqual(info['preview'], 'Build a telescope')
+        self.assertFalse(any('task-notification' in item for item in messages))
 
     def test_listing_rejects_dead_process_and_missing_id(self):
         with patch.object(bridge, 'process_info', return_value=None):
