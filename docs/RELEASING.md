@@ -65,3 +65,5 @@ This verifies the feed signature, publishes the release, then commits the exact 
 For optional GitHub release builds, add SPARKLE_PRIVATE_KEY as an environment secret containing a Sparkle private-key export. This is not configured on GitHub; local signing remains the recommended workflow. The GitHub workflow creates a draft with its signed appcast; publishing the feed still uses the local script above.
 
 Initial 0.4.x users must install the 0.5.0 DMG once. Thereafter Sparkle can replace the existing app in place and relaunch it. Automatic checks are opt-in in Connections; automatic installation is disabled.
+
+The local release flow also runs scripts/test_updater.py against a separate signed fixture bundle. It checks rejection of a modified feed and an actual download/install/relaunch, without reading RunHuddle session data or installing agent hooks. It needs the existing Developer ID identity and Sparkle Keychain key. Put user-facing release notes in docs/releases/VERSION.md; they are embedded in the signed update feed.

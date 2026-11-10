@@ -15,6 +15,7 @@ swift test --build-system native
 "$python" -m unittest discover -s Tests -p 'test_*.py'
 bash scripts/build-app.sh
 "$python" scripts/verify_standalone.py
+"$python" scripts/test_updater.py
 bash scripts/notarize.sh
 bash scripts/generate-update-feed.sh
 version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' dist/RunHuddle.app/Contents/Info.plist)
