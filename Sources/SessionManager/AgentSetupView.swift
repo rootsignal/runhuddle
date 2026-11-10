@@ -6,6 +6,7 @@ struct AgentSetupView: View {
     @State private var socketFound = false
     @State private var hooksFound = false
     @State private var installing = false
+    @State private var installingClaude = false
     @State private var message: String?
 
     private var onDiskImage: Bool { Bundle.main.bundlePath.hasPrefix("/Volumes/") }
@@ -45,18 +46,28 @@ struct AgentSetupView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Claude Code").font(.headline)
                     executable("claude")
-                    Text("Live integration is coming later. Current Claude sessions are demo data only.")
+                    Text("Enable activity tracking, then restart or resume existing Claude sessions. Conversation history is discovered automatically.")
+                    Button(installingClaude ? "Enabling…" : "Enable or update Claude tracking") {
+                        installingClaude = true; message = nil
+                        Task {
+                            do {
+                                _ = try await Bridge.run(["install-hooks"], provider: "Claude")
+                                message = "Claude tracking enabled. Restart or resume existing Claude sessions to load hooks."
+                            } catch { message = error.localizedDescription }
+                            installingClaude = false; detect()
+                        }
+                    }.disabled(installingClaude || onDiskImage)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
             }
             if onDiskImage { Text("Drag RunHuddle to Applications and open it there before enabling tracking.").foregroundStyle(.orange) }
             if let message { Text(message).font(.callout).textSelection(.enabled) }
             HStack {
-                Button("Check again") { detect() }.disabled(installing)
+                Button("Check again") { detect() }.disabled(installing || installingClaude)
                 Spacer()
                 Button("Done") {
                     UserDefaults.standard.set(true, forKey: "agentSetupCompleted")
                     dismiss()
-                }.keyboardShortcut(.defaultAction).disabled(installing)
+                }.keyboardShortcut(.defaultAction).disabled(installing || installingClaude)
             }
         }.padding(24).frame(width: 520).onAppear { detect() }
     }

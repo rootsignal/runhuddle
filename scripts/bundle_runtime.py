@@ -1,5 +1,6 @@
 """Bundle a pinned relocatable Python; only the builder needs developer tools."""
 import hashlib
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -63,4 +64,6 @@ def sign_nested(runtime):
             with path.open('rb') as file:
                 is_code = file.read(4) in magic
             if is_code:
-                subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(path)], check=True, capture_output=True)
+                identity = os.environ.get('RUNHUDDLE_SIGN_IDENTITY', '-')
+                flags = ['--options', 'runtime', '--timestamp'] if identity != '-' else []
+                subprocess.run(['/usr/bin/codesign', '--force', '--sign', identity, *flags, str(path)], check=True, capture_output=True)

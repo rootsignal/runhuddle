@@ -15,10 +15,14 @@ Drag RunHuddle to Applications, then open it there.
 Requires macOS 14 or newer and a supported coding agent installed separately.
 Python and all RunHuddle dependencies are included.
 
-This development preview is not yet Developer ID signed or notarized.
-macOS may block a downloaded copy. Do not disable Gatekeeper globally.
 Source and setup details: https://github.com/rootsignal/runhuddle
 NOTICE
+if ! /usr/bin/xcrun stapler validate "$app" >/dev/null 2>&1; then
+  echo 'This development preview is not notarized. macOS may block a downloaded copy. Do not disable Gatekeeper globally.' >> "$stage/Read Me.txt"
+fi
 /usr/bin/hdiutil create -volname RunHuddle -srcfolder "$stage" -ov -format UDZO "$image"
+if [[ -n "${RUNHUDDLE_SIGN_IDENTITY:-}" ]]; then
+  /usr/bin/codesign --force --sign "$RUNHUDDLE_SIGN_IDENTITY" --timestamp "$image"
+fi
 /usr/bin/shasum -a 256 "$image" > "$image.sha256"
 echo "$image"

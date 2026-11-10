@@ -9,6 +9,7 @@ import re
 import sqlite3
 from codex_bridge import Client, list_rows
 from copilot_bridge import HOME as COPILOT_HOME
+from claude_bridge import paths as claude_paths, message as claude_message
 
 INDEX = Path.home() / 'Library/Application Support/Agent Session Manager/history-search.sqlite'
 
@@ -21,6 +22,8 @@ def initialize(db):
 def message(event, provider):
     if not isinstance(event, dict):
         return None
+    if provider == 'Claude':
+        return claude_message(event)
     if provider == 'Codex':
         data = event.get('payload')
         if event.get('type') != 'response_item' or not isinstance(data, dict) or data.get('type') != 'message':
@@ -100,6 +103,8 @@ def main():
         warnings.append('Codex unavailable; searching its cached history.')
     sources.update({'Copilot:' + p.parent.name: p for p in (COPILOT_HOME / 'session-state').glob('*/events.jsonl')})
     complete.add('Copilot')
+    sources.update({'Claude:' + sid: path for sid, path in claude_paths().items()})
+    complete.add('Claude')
     INDEX.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(INDEX, timeout=10) as db:
         initialize(db)

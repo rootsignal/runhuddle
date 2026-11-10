@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--destination', type=Path, default=Path.home() / 'Applications', help='Applications directory (default: ~/Applications)')
     parser.add_argument('--copilot-hooks', action='store_true', help='Install observational Copilot CLI hooks')
     parser.add_argument('--open', action='store_true', help='Launch after installing')
+    parser.add_argument('--claude-hooks', action='store_true', help='Install observational Claude Code hooks')
     args = parser.parse_args()
     if sys.platform != 'darwin':
         parser.error('RunHuddle requires macOS 14 or later.')
@@ -59,6 +60,9 @@ def main():
     if args.copilot_hooks:
         run(app / 'Contents/Resources/python/bin/python3', '-E', '-s', '-B',
             app / 'Contents/Resources/bridge/copilot_bridge.py', 'install-hooks')
+    if args.claude_hooks:
+        run(app / 'Contents/Resources/python/bin/python3', '-E', '-s', '-B',
+            app / 'Contents/Resources/bridge/claude_bridge.py', 'install-hooks')
     print(f'Installed: {app}\nThis app is self-contained; the checkout is no longer needed to run it.')
     if args.open:
         run('/usr/bin/open', app)

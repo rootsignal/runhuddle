@@ -17,7 +17,7 @@ enum Bridge {
         return try await Task.detached {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: python)
-            let script = provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : "codex_bridge.py"
+            let script = provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : provider == "Claude" ? "claude_bridge.py" : "codex_bridge.py"
             process.arguments = ["-E", "-s", "-B", root + "/" + script] + arguments
             process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
             let output = Pipe(), errors = Pipe()
@@ -149,7 +149,7 @@ enum Bridge {
         defer { refreshing = false }
         var fetched: [Session] = []
         var status: [String] = []
-        for tool in ["Codex", "Copilot"] {
+        for tool in ["Codex", "Copilot", "Claude"] {
             do {
                 let data = try await Bridge.run(["snapshot"], provider: tool)
                 let rows = try JSONDecoder().decode([Session].self, from: data)

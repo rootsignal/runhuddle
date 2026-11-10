@@ -1,0 +1,125 @@
+import json
+from pathlib import Path
+import shlex
+import sqlite3
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+import claude_bridge as bridge
+from history_search import initialize, index_file, search
+
+
+class ClaudeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='claude tests ')
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.patch = patch.multiple(bridge, HOME=self.home, STATE=self.home / 'tracker.sqlite')
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        self.identity = {'pid': 42, 'start': 'now', 'tty': '/dev/ttys001'}
+
+    def send(self, event, **kwargs):
+        bridge.record(event, {'session_id': 'example', 'cwd': '/tmp/project', **kwargs}, self.identity)
+
+    def row(self, live=True):
+        with patch.object(bridge, 'live', return_value=live):
+            return bridge.snapshot()[0]
+
+    def test_lifecycle(self):
+        for event, state in [('SessionStart', 'idle'), ('UserPromptSubmit', 'working'),
+                             ('PermissionRequest', 'needsInput'), ('PostToolUse', 'working'),
+                             ('Stop', 'idle'), ('SessionEnd', 'saved')]:
+            self.send(event)
+            self.assertEqual(self.row()['state'], state)
+        self.assertEqual(self.row()['terminalTTY'], None)
+
+    def test_question_parallel_tools_and_subagent_isolation(self):
+        self.send('PreToolUse', tool_name='AskUserQuestion', tool_use_id='question')
+        self.send('PostToolUse', tool_use_id='other')
+        self.assertEqual(self.row()['state'], 'needsInput')
+        self.send('Stop', agent_id='child')
+        self.assertEqual(self.row()['state'], 'needsInput')
+        self.send('PostToolUse', tool_use_id='question')
+        self.assertEqual(self.row()['state'], 'working')
+
+    def test_exit_and_pid_reuse(self):
+        self.send('UserPromptSubmit')
+        self.assertEqual(self.row(live=False)['state'], 'saved')
+        with patch.object(bridge, 'process_info', return_value=(1, 'different start', '/bin/claude')):
+            self.assertFalse(bridge.live(self.identity))
+
+    def test_failure_and_compaction(self):
+        self.send('StopFailure')
+        self.assertEqual(self.row()['state'], 'needsInput')
+        self.send('SessionStart', source='compact')
+        self.assertEqual(self.row()['state'], 'working')
+
+    def test_out_of_order_events(self):
+        bridge.record('Stop', {'session_id': 'example'}, self.identity, stamp=200)
+        bridge.record('UserPromptSubmit', {'session_id': 'example'}, self.identity, stamp=100)
+        self.assertEqual(self.row()['state'], 'idle')
+
+    def transcript(self):
+        path = self.home / 'projects/project/example.jsonl'
+        path.parent.mkdir(parents=True)
+        items = [
+            {'type': 'user', 'cwd': '/tmp/project', 'message': {'content': 'Build a telescope'}},
+            {'type': 'assistant', 'message': {'content': [{'type': 'thinking', 'thinking': 'hidden'}, {'type': 'text', 'text': 'Lens installed'}]}},
+            {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'content': 'private tool output'}]}},
+            {'type': 'custom-title', 'customTitle': 'Observatory'},
+        ]
+        path.write_text(''.join(json.dumps(item) + '\n' for item in items) + '{partial')
+        return path
+
+    def test_history_unknown_state_and_search(self):
+        path = self.transcript()
+        row = self.row(live=False)
+        self.assertEqual(row['title'], 'Observatory')
+        self.assertEqual(row['state'], 'disconnected')
+        info, messages = bridge.transcript(path)
+        self.assertEqual(messages, ['User: Build a telescope', 'Assistant: Lens installed'])
+        db = sqlite3.connect(':memory:')
+        self.addCleanup(db.close)
+        with db:
+            initialize(db)
+            index_file(db, 'Claude:example', path)
+            self.assertTrue(search(db, 'telescope'))
+            self.assertFalse(search(db, 'hidden'))
+
+    def test_install_preserves_other_settings_and_hooks(self):
+        path = self.home / 'settings.json'
+        other = {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'echo unrelated'}]}
+        original = {'theme': 'dark', 'permissions': {'deny': ['Bash(rm *)']}, 'hooks': {'PreToolUse': [other]}}
+        path.write_text(json.dumps(original))
+        bridge.install_hooks()
+        bridge.install_hooks()
+        config = json.loads(path.read_text())
+        self.assertEqual(config['permissions'], original['permissions'])
+        self.assertEqual(config['hooks']['PreToolUse'][0], other)
+        self.assertEqual(len(config['hooks']['PreToolUse']), 2)
+        for event in bridge.EVENTS:
+            args = shlex.split(config['hooks'][event][-1]['hooks'][0]['command'])
+            self.assertEqual(args[-2:], ['hook', event])
+            self.assertIn('-B', args)
+        self.assertTrue(list(self.home.glob('settings.runhuddle-backup-*.json')))
+
+    def test_invalid_settings_are_not_overwritten(self):
+        path = self.home / 'settings.json'
+        for content in ('{broken', '{"disableAllHooks":true}'):
+            path.write_text(content)
+            with self.assertRaises(ValueError):
+                bridge.install_hooks()
+            self.assertEqual(path.read_text(), content)
+
+    def test_malformed_message_is_ignored(self):
+        self.assertIsNone(bridge.message({'type': 'user', 'message': 'broken'}))
+        self.assertIsNone(bridge.message({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': None}]}}))
+
+    def test_subagent_transcripts_not_discovered(self):
+        path = self.home / 'projects/project/session/subagents/agent-child.jsonl'
+        path.parent.mkdir(parents=True)
+        path.write_text('{}\n')
+        self.assertFalse(bridge.paths())

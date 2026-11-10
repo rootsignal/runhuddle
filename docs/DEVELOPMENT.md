@@ -4,6 +4,22 @@ Historical implementation notes and validation snapshots. For current installati
 
 Native macOS session tracker with live Codex discovery and simulated Claude Code sessions. The first local development app is implemented; Claude live integration remains pending paid access and validation.
 
+## Claude integration (0.3.0)
+
+Claude project transcripts are discovered from `CLAUDE_CONFIG_DIR` or `~/.claude`. Root conversation text feeds latest activity, handoffs, and local history search. Tool results, thinking, and subagent transcripts are excluded from search.
+
+The optional setup action merges command hooks into Claude settings and preserves unrelated hooks, permissions, and other settings, with a private backup. Hooks emit no output or decisions and fail open. SessionStart, prompt/tool events, permission/question/elicitation requests, Stop/StopFailure, and SessionEnd drive status. The collector records its Claude ancestor PID/start time and terminal TTY; snapshots verify that identity. Historical sessions without a tracked process show explicit unknown status, rather than asserting they are closed. A restart/resume is required to load hooks in existing sessions.
+
+Validation: 22 Swift tests and 46 Python tests. Claude CLI 2.1.322 invoked the installed-format hooks during a real unauthenticated startup/exit and recorded its process identity. Authenticated work/approval/completion on a real account is still pending. Fixture tests cover lifecycle, questions with parallel tools, subagent isolation, stale/reordered events, PID reuse, compaction, history/search, and non-destructive settings merging. The standalone relocation check includes Claude hook setup/execution.
+
+The hook contract is documented in [Claude's official hooks reference](https://code.claude.com/docs/en/hooks). Transcript storage is a local implementation detail and may change between Claude versions.
+
+## Developer ID distribution
+
+Set `RUNHUDDLE_SIGN_IDENTITY` to a Developer ID Application identity when building. Nested Mach-O components and the main app are signed with hardened runtime and a secure timestamp; the main app has the Apple Events entitlement for terminal navigation. Certificates and private keys are never stored in the repository.
+
+After configuring a `RunHuddle` notarytool Keychain profile, run `scripts/notarize.sh` with the same identity environment variable. It submits the app, staples and assesses it, builds/signs the DMG, submits/staples the DMG, and regenerates its checksum. `RUNHUDDLE_NOTARY_PROFILE` can select a different profile. Do not publish a package unless notarization and Gatekeeper assessment succeed.
+
 ## Standalone packaging (0.2.0)
 
 `build-app.sh` packages a checksum-pinned Python 3.13.18 runtime plus pinned websockets/PyYAML wheels. All bridge scripts and third-party license notices live inside the app. The app and Copilot hooks invoke the interpreter with `-E -s -B`, so Python environment overrides, user packages, and bytecode writes do not affect the signed runtime. Source development still uses `.venv`.

@@ -32,6 +32,13 @@ with tempfile.TemporaryDirectory(prefix='runhuddle standalone ') as temp:
     entry = config['hooks']['agentStop'][0]
     assert str(app) in entry['exec'] and '-B' in entry['args']
     assert run(entry['exec'], *entry['args'], input='{}') == ''
+    assert json.loads(bridge('claude_bridge.py', 'snapshot')) == []
+    bridge('claude_bridge.py', 'install-hooks')
+    claude = json.loads((home / '.claude/settings.json').read_text())
+    import shlex
+    command = shlex.split(claude['hooks']['SessionStart'][0]['hooks'][0]['command'])
+    assert str(app) in command[0] and '-B' in command
+    assert run(*command, input='{}') == ''
     bridge('history_search.py', 'search', 'standalone')
     for path in resources.rglob('*'):
         if path.is_symlink():
