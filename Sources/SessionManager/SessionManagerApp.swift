@@ -5,7 +5,7 @@ import SessionCore
     @StateObject private var model = AppModel()
     @StateObject private var loginItem = LoginItem()
     var body: some Scene {
-        WindowGroup("RunHuddle", id: "main") {
+        Window("RunHuddle", id: "main") {
             ContentView().environmentObject(model)
                 .frame(minWidth: 1000, minHeight: 640)
         }
