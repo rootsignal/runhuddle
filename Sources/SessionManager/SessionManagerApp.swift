@@ -411,7 +411,10 @@ struct ContentView: View {
                 Spacer()
                 Text("\(model.count(for: title))")
                     .foregroundStyle(.secondary).monospacedDigit()
-            }.padding(9).background(model.filter == title ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            }.frame(maxWidth: .infinity, alignment: .leading)
+                .padding(9)
+                .contentShape(Rectangle())
+                .background(model.filter == title ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).accessibilityLabel(title).accessibilityValue("\(model.count(for: title)) sessions")
     }
 }
