@@ -36,14 +36,13 @@ import SessionCore
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { continue }
             let items = app == "Terminal" ? "w.tabs()" : "w.terminals()"
             let fields = app == "Terminal" ? "[String(w.id()), t.tty(), t.customTitle(), '']" : "[String(w.id()), String(t.id()), t.name(), t.workingDirectory()]"
-            let filter = app == "Terminal" ? "if (!t.processes().some(p => ['codex', 'claude', 'copilot'].includes(p))) continue;" : ""
+
             let source = """
             var app = Application(\(literal(bundleID)));
             var rows = [];
             if (app.running()) {
                 for (var w of app.windows()) {
                     for (var t of \(items)) {
-                        \(filter)
                         rows.push(\(fields));
                     }
                 }
@@ -55,7 +54,12 @@ import SessionCore
                 for row in rows where row.count == 4 {
                     targets.append(TerminalTarget(app: app, window: row[0], identity: row[1], title: row[2], cwd: row[3]))
                 }
-            } catch { errors.append("\(app): \(error.localizedDescription)") }
+            } catch {
+                let detail = error.localizedDescription
+                errors.append(detail.contains("-1743")
+                    ? "Allow RunHuddle to control \(app) in macOS Automation settings, then refresh."
+                    : "\(app): \(detail)")
+            }
         }
         return (targets, errors)
     }

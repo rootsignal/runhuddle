@@ -20,4 +20,14 @@ final class SessionPresentationTests: XCTestCase {
         XCTAssertEqual(SessionPresentation.excerpt("One two three four", limit: 10), "One two…")
         XCTAssertEqual(SessionPresentation.excerpt(""), "")
     }
+    func testDetachedStatusDoesNotClaimWorkHasStopped() {
+        var row = Session(provider: "Claude", sessionID: "x", title: "Test", cwd: "/tmp", state: .disconnected)
+        row.reason = "Process has no controlling terminal"
+        XCTAssertEqual(SessionPresentation.statusSummary(row), "Terminal detached · current activity is unconfirmed")
+        row.reason = "Provider unavailable"
+        XCTAssertEqual(SessionPresentation.statusSummary(row), "Live status could not be confirmed")
+        row.state = .working
+        XCTAssertEqual(SessionPresentation.statusSummary(row), "Claude reports work in progress")
+    }
+
 }

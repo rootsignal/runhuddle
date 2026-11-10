@@ -24,6 +24,24 @@ public struct TerminalTarget: Identifiable, Hashable {
         if !cwd.isEmpty && URL(fileURLWithPath: cwd).standardized.path != URL(fileURLWithPath: row.cwd).standardized.path { return false }
         return title == row.title + " | " + folder || (!cwd.isEmpty && title == row.title)
     }
+    public func matchRank(for row: Session) -> Int {
+        if app == "Terminal", let tty = row.terminalTTY, !tty.isEmpty,
+           [.working, .idle, .needsInput].contains(row.state), identity == tty { return 0 }
+        return matches(row) ? 1 : 2
+    }
+    public func matchLabel(for row: Session) -> String {
+        switch matchRank(for: row) {
+        case 0: return "Matches the session’s terminal"
+        case 1: return "Matching title · verify before opening"
+        default: return "Other terminal"
+        }
+    }
+    public static func ordered(_ targets: [TerminalTarget], for row: Session) -> [TerminalTarget] {
+        targets.sorted {
+            let left = $0.matchRank(for: row), right = $1.matchRank(for: row)
+            return left == right ? $0.id < $1.id : left < right
+        }
+    }
     public static func uniqueMatch(for row: Session, sessions: [Session], targets: [TerminalTarget]) -> TerminalTarget? {
         if let tty = row.terminalTTY, !tty.isEmpty, row.state != .saved, row.state != .disconnected {
             let matches = targets.filter { $0.app == "Terminal" && $0.identity == tty }

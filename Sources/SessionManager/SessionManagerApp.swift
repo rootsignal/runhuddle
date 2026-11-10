@@ -126,6 +126,7 @@ extension SessionState {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) var openWindow
+    @ViewState private var confirmTerminalResume = false
     private func bulk(_ operation: String) {
         let rows = model.sessions.filter { model.bulkSelection.contains($0.id) }
         Task { await model.prepareBulkCleanup(operation, rows: rows) }
@@ -202,9 +203,9 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if model.cleaning { ProgressView().controlSize(.small) }
+                    if model.cleaning { ProgressView().controlSize(.small); Text(model.cleanupProgress).font(.caption).foregroundStyle(.secondary) }
                     Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
-                        .help("Refresh live sessions")
+                        .help(model.refreshing ? "Checking activity…" : "Refresh live sessions").disabled(model.refreshing || model.cleaning)
                 }.padding(24)
                 HSplitView {
                     VStack(spacing: 0) {
@@ -222,9 +223,11 @@ struct ContentView: View {
                                 if !model.bulkMode { model.bulkSelection.removeAll() }
                             }
                             if model.bulkMode {
-                                Text("\(model.bulkSelection.count) selected").font(.caption)
-                                Button("Select all results") { model.bulkSelection.formUnion(model.visible.filter { !$0.simulated }.map(\.id)) }
-                                Button("Clear") { model.bulkSelection.removeAll() }
+                                Text("\(model.bulkSelection.count)").font(.caption).monospacedDigit().help("Selected sessions, including selections in other filters")
+                                Menu("Selection") {
+                                    Button("Select all results") { model.bulkSelection.formUnion(model.visible.filter { !$0.simulated }.map(\.id)) }
+                                    Button("Clear selection") { model.bulkSelection.removeAll() }
+                                }
                                 Menu("Actions") {
                                     Button("Archive…") { bulk("archive") }
                                     Button("Restore…") { bulk("restore") }
@@ -262,7 +265,10 @@ struct ContentView: View {
                 Divider()
                 HStack {
                     Button("Connections…") { model.showSetup = true }.buttonStyle(.plain)
-                    if let message = model.cleanupMessage { Text(message).lineLimit(1) }
+                    if let message = model.cleanupMessage {
+                        Text(message).lineLimit(2).help(message)
+                        Button { model.cleanupMessage = nil } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).help("Dismiss cleanup result")
+                    }
                     Spacer()
                     if model.refreshing { Text("Checking activity…") }
                     else if let date = model.lastRefresh { Text("Updated \(date, style: .time)") }
@@ -332,21 +338,37 @@ struct ContentView: View {
                     Text("No accessible terminal tabs were found. You can resume in a new Terminal window below.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
-                List(model.terminalTargets.sorted { $0.matches(row) && !$1.matches(row) }) { target in
+                if !model.terminalTargets.isEmpty {
+                List(TerminalTarget.ordered(model.terminalTargets, for: row)) { target in
                     Button { model.focusTerminal(target) } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("\(target.app) · \(target.title.isEmpty ? "Untitled terminal" : target.title)")
-                            Text("\(target.identity)\(target.matches(row) ? " · title matches this session" : "")").font(.caption).foregroundStyle(.secondary)
+                            Text(target.matchLabel(for: row)).font(.caption).foregroundStyle(.secondary)
+                            Text(target.identity).font(.caption2).foregroundStyle(.secondary)
                         }.padding(4)
                     }.buttonStyle(.plain).disabled(model.navigatingTerminal)
                 }.frame(height: 240)
+                }
+                if model.terminalMessage.contains("Automation settings") {
+                    Button("Open Automation settings…") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") { NSWorkspace.shared.open(url) }
+                    }
+                }
                 HStack {
                     Button("Refresh") { model.refreshTerminals() }
                     Spacer()
                     Button("Cancel") { model.terminalSession = nil }
-                    Button(row.state == .saved ? "Resume in Terminal" : "Open another Terminal window") { model.openAnotherTerminal(row) }
+                    Button(row.state == .saved ? "Resume in Terminal" : "Open another Terminal window…") {
+                        if row.state == .saved { model.openAnotherTerminal(row) }
+                        else { confirmTerminalResume = true }
+                    }
                 }.disabled(model.navigatingTerminal)
             }.padding(24).frame(width: 640).interactiveDismissDisabled(model.navigatingTerminal)
+            .confirmationDialog("Resume in another terminal?", isPresented: $confirmTerminalResume) {
+                Button("Resume in another Terminal window") { model.openAnotherTerminal(row) }
+            } message: {
+                Text("This session may still have a running process. Resuming opens another terminal; it does not stop the existing process.")
+            }
         }
     }
     private var nowSections: [(title: String, rows: [Session])] {
@@ -424,6 +446,7 @@ struct SessionRow: View {
                 }
                 Spacer()
                 Text(Date(timeIntervalSince1970: row.updated), style: .relative).foregroundStyle(.secondary)
+                    .help("Time since recorded activity or a status change. This is not the last connection check.")
             }.font(.caption)
         }.padding(.vertical, 9).accessibilityElement(children: .combine)
     }
@@ -449,6 +472,10 @@ struct SessionDetail: View {
                     .help("Rename session").accessibilityLabel("Rename session")
             }
             Text("\(row.project) · \(SessionPresentation.statusSummary(row))").font(.callout).foregroundStyle(.secondary)
+            if row.state == .disconnected {
+                Text("Check the agent or locate its terminal before resuming. Recorded history is still available below.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 Button { model.resume(row) } label: {
                     HStack(spacing: 6) {

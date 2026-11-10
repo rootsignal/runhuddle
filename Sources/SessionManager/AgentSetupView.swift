@@ -18,6 +18,8 @@ struct AgentSetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Connections").font(.title.bold())
+            ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
             Text("RunHuddle finds your installed coding agents and local sessions automatically.")
                 .foregroundStyle(.secondary)
             ForEach(["Codex", "Claude", "Copilot"], id: \.self) { provider in
@@ -87,6 +89,8 @@ struct AgentSetupView: View {
                     Button("Send test alert") { Task { await model.testNotification() } }
                 }
             }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxHeight: 500)
             HStack {
                 Button("Check again") { Task { await detect() } }.disabled(busy)
                 Spacer()

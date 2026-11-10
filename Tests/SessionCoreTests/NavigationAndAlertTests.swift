@@ -38,4 +38,17 @@ final class NavigationAndAlertTests: XCTestCase {
         XCTAssertFalse(TerminalTarget(app: "Ghostty", window: "w", identity: "pane", title: "Implement feature", cwd: "/other/repo").matches(row(.idle)))
         XCTAssertFalse(TerminalTarget(app: "Terminal", window: "w", identity: "tty", title: "Different task | repo").matches(row(.idle)))
     }
+    func testChooserRanksLiveTTYBeforeTitleAndKeepsOtherTabs() {
+        var session = row(.idle)
+        session.terminalTTY = "/dev/ttys003"
+        let exact = TerminalTarget(app: "Terminal", window: "3", identity: "/dev/ttys003", title: "Shell")
+        let title = TerminalTarget(app: "Terminal", window: "2", identity: "/dev/ttys002", title: "Implement feature | repo")
+        let other = TerminalTarget(app: "Terminal", window: "1", identity: "/dev/ttys001", title: "Shell")
+        XCTAssertEqual(TerminalTarget.ordered([other, title, exact], for: session), [exact, title, other])
+        session.state = .saved
+        XCTAssertEqual(exact.matchRank(for: session), 2)
+        XCTAssertEqual(TerminalTarget.ordered([exact, other, title], for: session), [title, other, exact])
+        XCTAssertEqual(TerminalTarget.ordered([title, exact, other], for: session), [title, other, exact])
+    }
+
 }

@@ -102,7 +102,8 @@ struct CopilotTrackingStatus: Decodable {
     @Published var bulkReview: BulkCleanupReview?
     @Published var localCleanupState = LocalCleanupState()
     @Published var cleanupPlan: CleanupPlan?
-    @Published var cleaning = false
+    @Published var cleanupProgress = ""
+    @Published var cleaning = false { didSet { if !cleaning { cleanupProgress = "" } } }
     @Published var cleanupMessage: String?
     private var store: Store?
     private var timer: Task<Void, Never>?
@@ -391,8 +392,10 @@ struct CopilotTrackingStatus: Decodable {
         guard !cleaning else { return false }
         cleaning = true
         if refreshing {
+            cleanupProgress = "Waiting for the current status check…"
             await withCheckedContinuation { refreshWaiters.append($0) }
         }
+        cleanupProgress = "Preparing cleanup review…"
         return true
     }
 
@@ -448,7 +451,8 @@ struct CopilotTrackingStatus: Decodable {
         defer { cleaning = false }
         var entries: [BulkCleanupReview.Entry] = []
         var skipped: [String] = []
-        for old in requested {
+        for (index, old) in requested.enumerated() {
+            cleanupProgress = "Reviewing session \(index + 1) of \(requested.count)…"
             let name = displayName(for: old)
             guard let row = sessions.first(where: { $0.id == old.id }), !row.simulated else {
                 skipped.append("\(name): unavailable or simulated"); continue
@@ -487,7 +491,8 @@ struct CopilotTrackingStatus: Decodable {
         guard await beginCleanup() else { return }
         var completed = 0
         var failures: [String] = []
-        for entry in review.entries {
+        for (index, entry) in review.entries.enumerated() {
+            cleanupProgress = "Processing session \(index + 1) of \(review.entries.count)…"
             do {
                 let row = entry.session
                 var affected = Set([row.id])
@@ -541,7 +546,7 @@ struct CopilotTrackingStatus: Decodable {
                 if review.operation == "delete", let selection, affected.contains(selection) { self.selection = nil }
                 completed += entry.count
             } catch {
-                failures.append("\(entry.name): \(error.localizedDescription.split(separator: "\n").last.map(String.init) ?? "Cleanup failed"). Some files may already have moved; check Trash before retrying.")
+                failures.append("\(entry.name): \(error.localizedDescription.split(separator: "\n").last.map(String.init) ?? "Cleanup failed"). Some changes may already have completed. Refresh before retrying.")
             }
         }
         bulkReview = nil
@@ -670,7 +675,7 @@ struct CopilotTrackingStatus: Decodable {
         let result = await TerminalNavigator.discover()
         terminalTargets = result.targets
         terminalMessage = result.errors.isEmpty
-            ? "Choose an existing tab or pane. If the session isn't open, you can explicitly open another terminal."
+            ? "Choose an existing tab or pane to bring it forward without sending a prompt."
             : result.errors.joined(separator: "\n")
     }
     func focusTerminal(_ target: TerminalTarget) {
@@ -710,10 +715,19 @@ struct CopilotTrackingStatus: Decodable {
         guard FileManager.default.fileExists(atPath: cwd, isDirectory: &directory), directory.boolValue else {
             error = "The saved project folder no longer exists: \(cwd)"; return
         }
-        let escaped = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        var details: NSDictionary?
-        NSAppleScript(source: "tell application \"Terminal\"\nactivate\ndo script \"\(escaped)\"\nend tell")?.executeAndReturnError(&details)
-        if let details { error = "Could not open Terminal: \(details)" }
+        guard !navigatingTerminal else { return }
+        navigatingTerminal = true
+        terminalProgress = "Opening Terminal…"
+        Task { @MainActor in
+            defer { navigatingTerminal = false; terminalProgress = "" }
+            do {
+                _ = try await TerminalNavigator.run("""
+                    var app = Application("com.apple.Terminal");
+                    app.doScript(\(TerminalNavigator.literal(command)));
+                    app.activate();
+                    """)
+            } catch { self.error = "Could not confirm that Terminal opened: \(error.localizedDescription). Check Terminal before trying again." }
+        }
     }
     func export(_ row: Session) async {
         await appendHistory(row)

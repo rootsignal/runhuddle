@@ -74,7 +74,7 @@ struct BulkCleanupView: View {
             HStack {
                 Button("Cancel") { model.bulkReview = nil }.disabled(model.cleaning)
                 Spacer()
-                if model.cleaning { ProgressView().controlSize(.small) }
+                if model.cleaning { ProgressView().controlSize(.small); Text(model.cleanupProgress).font(.caption) }
                 Button(review.operation == "delete" ? "Confirm removal" : "Confirm", role: review.operation == "delete" ? .destructive : nil) {
                     Task { await model.applyBulkCleanup(review) }
                 }.disabled(model.cleaning || review.entries.isEmpty)

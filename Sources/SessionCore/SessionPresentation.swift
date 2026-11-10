@@ -25,7 +25,11 @@ public enum SessionPresentation {
         case .idle: return "Ready for your next prompt"
         case .saved: return "Saved · resume when you’re ready"
         case .archived: return "Archived · history preserved until removal"
-        case .disconnected: return "Live status could not be confirmed"
+        case .disconnected:
+            if row.reason.localizedCaseInsensitiveContains("no controlling terminal") {
+                return "Terminal detached · current activity is unconfirmed"
+            }
+            return "Live status could not be confirmed"
         }
     }
 }
