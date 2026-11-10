@@ -22,7 +22,7 @@ After configuring a `RunHuddle` notarytool Keychain profile, run `scripts/notari
 
 ## Standalone packaging (0.2.0)
 
-`build-app.sh` packages a checksum-pinned Python 3.13.18 runtime plus pinned websockets/PyYAML wheels. All bridge scripts and third-party license notices live inside the app. The app and Copilot hooks invoke the interpreter with `-E -s -B`, so Python environment overrides, user packages, and bytecode writes do not affect the signed runtime. Source development still uses `.venv`.
+`build-app.sh` packages a checksum-pinned Python 3.13.18 runtime plus pinned websockets/PyYAML wheels. Downloads use macOS curl with TLS verification and HTTPS-only redirects. Wheels are chosen for the bundled interpreter, hash-checked against PyPI metadata, and installed with pip in isolated, offline mode; the build does not make HTTPS requests through Python. All bridge scripts and third-party license notices live inside the app. The app and Copilot hooks invoke the interpreter with `-E -s -B`, so Python environment overrides, user packages, and bytecode writes do not affect the signed runtime. Source development still uses `.venv`.
 
 First launch checks standard CLI locations and the Codex socket. Copilot setup is opt-in and points at the installed app; existing source collector hooks can migrate without replacing unrelated collectors. CLI detection does not prove authentication. Claude remains demo-only.
 

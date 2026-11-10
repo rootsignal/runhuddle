@@ -66,6 +66,8 @@ The build script explicitly uses SwiftPM's native backend. If an older checkout 
 
 If an older checkout reports `SwiftUIMacros.StateMacro` / `plugin for module 'SwiftUIMacros' not found`, pull the latest code. RunHuddle explicitly selects SwiftUI's existing state property wrapper so it does not require the newer State macro plugin. The subsequent immutable-self and missing-binding errors are consequences of that same plugin failure.
 
+Runtime, license, and dependency downloads use `/usr/bin/curl` with TLS verification and HTTPS-only redirects. The runtime is checked against a pinned SHA-256; wheels are checked against PyPI's HTTPS metadata and installed offline. This avoids relying on an asdf/Homebrew Python certificate store during packaging. If an older checkout fails inside `urllib` with `CERTIFICATE_VERIFY_FAILED`, pull the latest version and retry. A certificate error from system curl itself still needs the Mac's trusted certificate configuration corrected.
+
 If `python3` reports “No version is set,” your version manager must select an installed Python 3.12+ before starting the installer. The packaging step reuses that same interpreter. Quit RunHuddle from its menu-bar **Quit** item before updating; closing the main window leaves the app running.
 
 ### Connect Codex
