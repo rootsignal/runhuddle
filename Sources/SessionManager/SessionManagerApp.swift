@@ -155,6 +155,16 @@ struct ContentView: View {
                 if model.copilotConnectionError != nil {
                     Button("Copilot connection needs attention") { model.showSetup = true }.font(.caption)
                 }
+                if let notice = model.claudeRepairNotice {
+                    Text(notice).font(.caption)
+                    Button("Got it") {
+                        model.claudeRepairNotice = nil
+                        UserDefaults.standard.set(false, forKey: "claudeRepairNoticePending")
+                    }.font(.caption)
+                }
+                if model.claudeRepairError != nil {
+                    Button("Claude connection needs attention") { model.showSetup = true }.font(.caption)
+                }
                 #if DEBUG
                 DisclosureGroup("Demo sessions") {
                     Toggle("Show Claude demo", isOn: $model.showDemo)

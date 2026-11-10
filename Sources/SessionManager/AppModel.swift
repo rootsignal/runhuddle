@@ -47,6 +47,11 @@ struct CopilotTrackingStatus: Decodable {
     @Published var copilotConnectionNotice: String? = UserDefaults.standard.bool(forKey: "copilotNoticePending")
         ? "Copilot tracking is ready. New sessions connect automatically. Restart/resume existing sessions to track them too." : nil
     private var attemptedCopilotConnection = false
+    private var attemptedClaudeRepair = false
+    @Published var claudeRepairError: String?
+    @Published var claudeRepairNotice: String? = UserDefaults.standard.bool(forKey: "claudeRepairNoticePending")
+        ? "Claude tracking paths were updated. Restart/resume already-open Claude sessions to reload their hooks." : nil
+    private struct ClaudeRepairResult: Decodable { let repaired: Bool }
     @Published var sessions: [Session] = []
     @Published var selection: String? {
         didSet {
@@ -209,6 +214,7 @@ struct CopilotTrackingStatus: Decodable {
         sessions = fetched + sessions.filter(\.simulated)
         connection = status.joined(separator: " · ")
         await ensureCopilotTracking()
+        await repairClaudeTracking()
         lastRefresh = Date()
         do { try store?.save(fetched, key: "sessions") }
         catch { self.error = "Could not save the session index: \(error.localizedDescription)" }
@@ -217,6 +223,20 @@ struct CopilotTrackingStatus: Decodable {
     func dismissCopilotNotice() {
         copilotConnectionNotice = nil
         UserDefaults.standard.set(false, forKey: "copilotNoticePending")
+    }
+
+    func repairClaudeTracking(retry: Bool = false) async {
+        guard retry || !attemptedClaudeRepair else { return }
+        guard Bundle.main.bundleURL.pathExtension == "app", !Bundle.main.bundlePath.hasPrefix("/Volumes/") else { return }
+        attemptedClaudeRepair = true
+        claudeRepairError = nil
+        do {
+            let data = try await Bridge.run(["repair-hooks"], provider: "Claude")
+            if try JSONDecoder().decode(ClaudeRepairResult.self, from: data).repaired {
+                UserDefaults.standard.set(true, forKey: "claudeRepairNoticePending")
+                claudeRepairNotice = "Claude tracking paths were updated. Restart/resume already-open Claude sessions to reload their hooks."
+            }
+        } catch { claudeRepairError = "Claude tracking paths could not be repaired: \(error.localizedDescription)" }
     }
 
     func ensureCopilotTracking(retry: Bool = false) async {

@@ -281,6 +281,12 @@ def owned(command):
         if not (len(args) == 7 and args[1:4] == ['-E', '-s', '-B'] and args[5] == 'hook' and args[6] in EVENTS):
             return False
         script = Path(args[4])
+        # Old app copies may already be deleted. Recognize our exact bundle layout
+        # and paired interpreter without needing to read a file that no longer exists.
+        if script.parts[-4:] == ('Contents', 'Resources', 'bridge', 'claude_bridge.py'):
+            app = script.parents[3]
+            if app.name == 'RunHuddle.app' and Path(args[0]) == app / 'Contents/Resources/python/bin/python3':
+                return True
         return script == Path(__file__).resolve() or (script.name == 'claude_bridge.py' and
             'RunHuddle Claude observer. Never approves tools or injects context.' in script.read_text()[:200])
     except (ValueError, TypeError, OSError):
@@ -324,9 +330,33 @@ def install_hooks():
     return path
 
 
+def repair_hooks():
+    path = HOME / 'settings.json'
+    if not path.exists():
+        return {'repaired': False}
+    config = json.loads(path.read_text())
+    if config.get('disableAllHooks'):
+        return {'repaired': False}
+    hooks = config.get('hooks', {})
+    if not isinstance(hooks, dict):
+        raise ValueError('Claude hooks settings are not an object; no changes made.')
+    found, stale = False, False
+    for event in EVENTS:
+        expected = [sys.executable, '-E', '-s', '-B', str(Path(__file__).resolve()), 'hook', event]
+        owned_commands = [h['command'] for group in hooks.get(event, []) for h in group.get('hooks', [])
+                          if owned(h.get('command'))]
+        if owned_commands:
+            found = True
+            stale |= len(owned_commands) != 1 or any(shlex.split(c) != expected for c in owned_commands)
+    if found and stale:
+        install_hooks()
+        return {'repaired': True}
+    return {'repaired': False}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['snapshot', 'history', 'hook', 'install-hooks'])
+    parser.add_argument('command', choices=['snapshot', 'history', 'hook', 'install-hooks', 'repair-hooks'])
     parser.add_argument('argument', nargs='?')
     args = parser.parse_args()
     if args.command == 'hook':
@@ -335,6 +365,8 @@ def main():
             record(args.argument, json.loads(sys.stdin.read(10 * 1024 * 1024)), owner(), stamp)
         except Exception:
             pass
+    elif args.command == 'repair-hooks':
+        print(json.dumps(repair_hooks()))
     elif args.command == 'install-hooks':
         print(install_hooks())
     elif args.command == 'snapshot':

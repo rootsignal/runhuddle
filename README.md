@@ -99,6 +99,8 @@ An empty session can appear before its first prompt. When its CLI is open but li
 
 Supported Claude versions connect automatically. For older versions, open **Connections… → Connection details → Enable Claude compatibility hooks**. RunHuddle merges observational hooks into `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), preserving other settings and hooks and saving a backup before changing the file. Supported Claude versions expose existing interactive and background sessions through `claude agents --json --all`, so those sessions are discovered automatically without restarting. Hooks remain a fallback for older versions; those sessions may need to reload hooks or restart/resume.
 
+When an existing RunHuddle hook points to an old app location, RunHuddle repairs its own hook paths automatically, backs up Claude settings, and asks you to restart/resume already-open Claude sessions. Unrelated hooks are preserved; disabled hooks are not re-enabled.
+
 History is discovered from local project transcripts. Without live-list or hook/process evidence, a session is labeled **Disconnected** with an explanation that its live status is unknown. Verified running sessions show Working, Needs input, or Idle; ended sessions and tracked processes that have exited show Saved. PID and process start time are checked to avoid stale state after reboot or PID reuse. Child-agent events do not change the main session's state.
 
 Tracking does not grant permissions, inject prompts, or require a separate model API key. Claude still needs its own authentication. Custom CLI installations that cannot be identified may show unknown live status. No Claude context-window percentage is inferred from transcript size.

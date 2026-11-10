@@ -110,6 +110,37 @@ class ClaudeTests(unittest.TestCase):
             self.assertIn('-B', args)
         self.assertTrue(list(self.home.glob('settings.runhuddle-backup-*.json')))
 
+    def test_repair_missing_old_app_preserves_other_hooks(self):
+        old = self.home / 'Old Applications/RunHuddle.app/Contents/Resources'
+        command = shlex.join([str(old / 'python/bin/python3'), '-E', '-s', '-B',
+                              str(old / 'bridge/claude_bridge.py'), 'hook', 'SessionEnd'])
+        unrelated = {'type': 'command', 'command': 'echo unrelated'}
+        path = self.home / 'settings.json'
+        path.write_text(json.dumps({'theme': 'dark', 'hooks': {'SessionEnd': [
+            {'hooks': [{'type': 'command', 'command': command}, unrelated]}]}}))
+        self.assertFalse(old.exists())
+        self.assertTrue(bridge.repair_hooks()['repaired'])
+        result = json.loads(path.read_text())
+        self.assertEqual(result['theme'], 'dark')
+        self.assertEqual(result['hooks']['SessionEnd'][0]['hooks'], [unrelated])
+        self.assertNotIn(str(old), path.read_text())
+        before = path.read_bytes()
+        backups = list(self.home.glob('settings.runhuddle-backup-*.json'))
+        self.assertFalse(bridge.repair_hooks()['repaired'])
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(list(self.home.glob('settings.runhuddle-backup-*.json')), backups)
+
+    def test_repair_does_not_opt_in_or_override_disabled_hooks(self):
+        path = self.home / 'settings.json'
+        self.assertFalse(bridge.repair_hooks()['repaired'])
+        self.assertFalse(path.exists())
+        for config in [{'theme': 'dark'}, {'disableAllHooks': True}]:
+            path.write_text(json.dumps(config))
+            before = path.read_bytes()
+            self.assertFalse(bridge.repair_hooks()['repaired'])
+            self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(bridge.owned('/usr/bin/python3 -E -s -B /unrelated/claude_bridge.py hook SessionEnd'))
+
     def test_invalid_settings_are_not_overwritten(self):
         path = self.home / 'settings.json'
         for content in ('{broken', '{"disableAllHooks":true}'):

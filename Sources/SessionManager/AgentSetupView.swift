@@ -42,6 +42,11 @@ struct AgentSetupView: View {
                 Button("Retry Copilot connection") { Task { await model.ensureCopilotTracking(retry: true); await detect() } }
                     .disabled(model.connectingCopilot)
             }
+            if let error = model.claudeRepairError {
+                Text(error).font(.callout).foregroundStyle(.orange)
+                Button("Repair Claude tracking paths") { Task { await model.repairClaudeTracking(retry: true) } }
+            }
+            if let notice = model.claudeRepairNotice { Text(notice).font(.callout) }
             if let notice = model.copilotConnectionNotice { Text(notice).font(.callout) }
             if let message { Text(message).font(.callout).textSelection(.enabled) }
             DisclosureGroup("Connection details") {

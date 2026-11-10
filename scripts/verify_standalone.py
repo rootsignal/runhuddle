@@ -33,6 +33,7 @@ with tempfile.TemporaryDirectory(prefix='runhuddle standalone ') as temp:
     assert str(app) in entry['exec'] and '-B' in entry['args']
     assert run(entry['exec'], *entry['args'], input='{}') == ''
     assert json.loads(bridge('claude_bridge.py', 'snapshot')) == []
+    assert json.loads(bridge('claude_bridge.py', 'repair-hooks')) == {'repaired': False}
     bridge('claude_bridge.py', 'install-hooks')
     claude = json.loads((home / '.claude/settings.json').read_text())
     import shlex
