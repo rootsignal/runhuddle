@@ -76,6 +76,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var provider = "All tools"
     @Published var showDemo = false
     @Published var refreshing = false
+    @Published var manualRefreshing = false
     @Published var connection = "Connecting to Codex…"
     @Published var lastRefresh: Date?
     @Published var error: String?
@@ -151,7 +152,8 @@ struct CopilotTrackingStatus: Decodable {
             while !Task.isCancelled {
                 await self?.refreshNotificationStatus()
                 await self?.refresh()
-                try? await Task.sleep(for: .seconds(5))
+                let interval = SessionPresentation.refreshInterval(for: self?.sessions ?? [])
+                try? await Task.sleep(for: .seconds(interval))
             }
         }
     }
@@ -204,10 +206,16 @@ struct CopilotTrackingStatus: Decodable {
     var attentionCount: Int { sessions.filter { !$0.simulated && $0.state == .needsInput }.count }
     var projects: Int { Set(visible.map(\.project)).count }
 
-    func refresh() async {
-        guard !refreshing && !cleaning else { return }
+    func refresh(userInitiated: Bool = false) async {
+        guard !cleaning else { return }
+        if refreshing {
+            if userInitiated { manualRefreshing = true }
+            return
+        }
         refreshing = true
+        manualRefreshing = userInitiated
         defer {
+            manualRefreshing = false
             refreshing = false
             let waiters = refreshWaiters
             refreshWaiters.removeAll()
@@ -256,12 +264,14 @@ struct CopilotTrackingStatus: Decodable {
             fetched[index].reason = "Archived in RunHuddle; agent history is preserved."
         }
         recentAlerts = Array(recentAlerts.prefix(8))
-        sessions = fetched + sessions.filter(\.simulated)
+        let nextSessions = fetched + sessions.filter(\.simulated)
+        let sessionsChanged = sessions != nextSessions
+        if sessionsChanged { sessions = nextSessions }
         connection = status.joined(separator: " · ")
         await ensureCopilotTracking()
         await repairClaudeTracking()
         lastRefresh = Date()
-        do { try store?.save(fetched, key: "sessions") }
+        do { if sessionsChanged { try store?.save(fetched, key: "sessions") } }
         catch { self.error = "Could not save the session index: \(error.localizedDescription)" }
     }
 

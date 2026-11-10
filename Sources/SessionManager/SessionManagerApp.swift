@@ -54,8 +54,8 @@ struct MenuContent: View {
         Button("Open RunHuddle") { showWindow() }
         Button("Connections…") { model.showSetup = true; showWindow() }
         UpdateButton()
-        Button(model.refreshing ? "Refreshing…" : "Refresh") { Task { await model.refresh() } }
-            .disabled(model.refreshing || model.cleaning)
+        Button(model.manualRefreshing ? "Refreshing…" : "Refresh") { Task { await model.refresh(userInitiated: true) } }
+            .disabled(model.manualRefreshing || model.cleaning)
         Toggle("Open at Login", isOn: Binding(get: { loginItem.enabled }, set: { loginItem.setEnabled($0) }))
         if loginItem.needsApproval {
             Button("Allow in Login Items Settings…") { loginItem.openSettings() }
@@ -204,8 +204,11 @@ struct ContentView: View {
                     }
                     Spacer()
                     if model.cleaning { ProgressView().controlSize(.small); Text(model.cleanupProgress).font(.caption).foregroundStyle(.secondary) }
-                    Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
-                        .help(model.refreshing ? "Checking activity…" : "Refresh live sessions").disabled(model.refreshing || model.cleaning)
+                    Button { Task { await model.refresh(userInitiated: true) } } label: {
+                        if model.manualRefreshing { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.clockwise") }
+                    }
+                        .help("Refresh live sessions").disabled(model.manualRefreshing || model.cleaning)
                 }.padding(24)
                 HSplitView {
                     VStack(spacing: 0) {
@@ -270,8 +273,11 @@ struct ContentView: View {
                         Button { model.cleanupMessage = nil } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).help("Dismiss cleanup result")
                     }
                     Spacer()
-                    if model.refreshing { Text("Checking activity…") }
-                    else if let date = model.lastRefresh { Text("Updated \(date, style: .time)") }
+                    if model.manualRefreshing { Text("Checking activity…") }
+                    else {
+                        Text("Activity updates automatically")
+                            .help(model.lastRefresh.map { "Last checked: " + $0.formatted(date: .omitted, time: .standard) } ?? "Waiting for the first activity check")
+                    }
                 }.font(.caption).foregroundStyle(.secondary).padding(12)
             }
         }

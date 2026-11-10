@@ -1,6 +1,13 @@
 import Foundation
 
 public enum SessionPresentation {
+    public static func refreshInterval(for sessions: [Session]) -> Double {
+        let live = sessions.filter { !$0.simulated }
+        if live.contains(where: { [.working, .needsInput].contains($0.state) }) { return 5 }
+        if live.contains(where: { $0.state == .idle }) { return 15 }
+        return 30
+    }
+
     public static func includes(_ row: Session, filter: String, pinned: Set<String> = []) -> Bool {
         switch filter {
         case "Now": return [.needsInput, .working, .idle].contains(row.state)
