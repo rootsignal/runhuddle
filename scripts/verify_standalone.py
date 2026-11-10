@@ -41,7 +41,9 @@ with tempfile.TemporaryDirectory(prefix='runhuddle standalone ') as temp:
     assert str(app) in command[0] and '-B' in command
     assert run(*command, input='{}') == ''
     bridge('history_search.py', 'search', 'standalone')
-    for path in resources.rglob('*'):
+    assert info['SUPublicEDKey'] and info['SURequireSignedFeed'] and info['SUVerifyUpdateBeforeExtraction']
+    assert (app / 'Contents/Frameworks/Sparkle.framework').exists()
+    for path in app.rglob('*'):
         if path.is_symlink():
             assert path.resolve().is_relative_to(app.resolve()), f'External symlink: {path}'
         elif path.is_file():
@@ -51,6 +53,8 @@ with tempfile.TemporaryDirectory(prefix='runhuddle standalone ') as temp:
                 dependencies = run('/usr/bin/otool', '-L', path).splitlines()[1:]
                 own_ids = run('/usr/bin/otool', '-D', path).splitlines()[1:]
                 for dep in dependencies:
+                    if '(compatibility version ' not in dep:
+                        continue  # Universal-binary architecture headings are not dependencies.
                     name = dep.strip().split(' (')[0]
                     if name in own_ids:
                         continue

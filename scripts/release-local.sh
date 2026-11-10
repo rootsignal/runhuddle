@@ -16,9 +16,10 @@ swift test --build-system native
 bash scripts/build-app.sh
 "$python" scripts/verify_standalone.py
 bash scripts/notarize.sh
+bash scripts/generate-update-feed.sh
 version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' dist/RunHuddle.app/Contents/Info.plist)
 image="dist/RunHuddle-${version}-$(uname -m).dmg"
 commit=$(git rev-parse HEAD)
 # Verify the release commit exists remotely. Never create a release of unpushed code.
 gh api "repos/rootsignal/runhuddle/commits/$commit" --silent
-gh release create "v$version" "$image" "$image.sha256" --target "$commit" --title "RunHuddle $version" --draft --generate-notes
+gh release create "v$version" "$image" "$image.sha256" dist/appcast.xml --target "$commit" --title "RunHuddle $version" --draft --generate-notes

@@ -49,3 +49,19 @@ bash scripts/release-local.sh
 ```
 
 Use a clean, committed checkout already pushed to GitHub. The selected Python must have scripts/requirements.txt installed. This uses the existing Mac Keychain profile and leaves signing credentials on this Mac. Review and publish the draft in GitHub Releases. GitHub Checks still runs automatically; the optional Release workflow is unused unless its secrets are configured.
+
+## Signed in-app updates (0.5.0+)
+
+Sparkle 2.10.1 is pinned in Package.resolved. Its public key is in config/sparkle-public-key.txt; the private signing key stays in the local login Keychain under account RunHuddle. Do not rotate or discard it casually: existing installations trust this key.
+
+The local release script signs the notarized DMG and generates a signed appcast as a draft-release asset. To publish a reviewed draft and update the feed:
+
+```sh
+bash scripts/publish-release.sh 0.5.0
+```
+
+This verifies the feed signature, publishes the release, then commits the exact signed feed to updates/appcast.xml and pushes it. The app reads that feed over HTTPS from GitHub. Do not edit a signed appcast manually; regenerate and re-sign it. Advertising a draft release is deliberately avoided because its assets are not public yet.
+
+For optional GitHub release builds, add SPARKLE_PRIVATE_KEY as an environment secret containing a Sparkle private-key export. This is not configured on GitHub; local signing remains the recommended workflow. The GitHub workflow creates a draft with its signed appcast; publishing the feed still uses the local script above.
+
+Initial 0.4.x users must install the 0.5.0 DMG once. Thereafter Sparkle can replace the existing app in place and relaunch it. Automatic checks are opt-in in Connections; automatic installation is disabled.

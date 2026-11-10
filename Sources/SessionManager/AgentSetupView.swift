@@ -3,6 +3,7 @@ import SwiftUI
 struct AgentSetupView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var updater: AppUpdater
     @ViewState private var installed: [String: String] = [:]
     @ViewState private var busy = false
     @ViewState private var message: String?
@@ -46,11 +47,23 @@ struct AgentSetupView: View {
                 Text(error).font(.callout).foregroundStyle(.orange)
                 Button("Repair Claude tracking paths") { Task { await model.repairClaudeTracking(retry: true) } }
             }
-            if let notice = model.claudeRepairNotice { Text(notice).font(.callout) }
-            if let notice = model.copilotConnectionNotice { Text(notice).font(.callout) }
+            if let notice = model.claudeRepairNotice {
+                Text(notice).font(.callout)
+                Button("Dismiss Claude notice") {
+                    model.claudeRepairNotice = nil
+                    UserDefaults.standard.set(false, forKey: "claudeRepairNoticePending")
+                }
+            }
+            if let notice = model.copilotConnectionNotice {
+                Text(notice).font(.callout)
+                Button("Dismiss Copilot notice") { model.dismissCopilotNotice() }
+            }
             if let message { Text(message).font(.callout).textSelection(.enabled) }
             DisclosureGroup("Connection details") {
                 VStack(alignment: .leading, spacing: 8) {
+                    ForEach(model.providerErrors.keys.sorted(), id: \.self) { provider in
+                        Text("\(provider): \(model.providerErrors[provider] ?? "")").textSelection(.enabled)
+                    }
                     ForEach(installed.keys.sorted(), id: \.self) { name in
                         Text("\(name): \(installed[name] ?? "")").textSelection(.enabled)
                     }
@@ -59,6 +72,20 @@ struct AgentSetupView: View {
                     }
                     Text("Codex uses its shared local server. Claude uses its live session list when supported, with hooks as a fallback. Copilot hooks load when its CLI starts.")
                 }.font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+            HStack {
+                UpdateButton()
+                Spacer()
+                Toggle("Check automatically", isOn: Binding(get: { updater.checksAutomatically }, set: { updater.checksAutomatically = $0 }))
+                    .toggleStyle(.checkbox)
+            }
+            DisclosureGroup("Notifications") {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let note = model.notificationMessage { Text(note).font(.caption).foregroundStyle(.secondary) }
+                    Button("Notification settings…") { model.openNotificationSettings() }
+                    Button("Send test alert") { Task { await model.testNotification() } }
+                }
             }
             HStack {
                 Button("Check again") { Task { await detect() } }.disabled(busy)
@@ -71,6 +98,7 @@ struct AgentSetupView: View {
     private func status(_ provider: String) -> String {
         guard detected.contains(provider) else { return "Not detected yet" }
         let active = model.sessions.filter { $0.provider == provider && !$0.simulated && [.working, .idle, .needsInput].contains($0.state) }.count
+        if model.providerErrors[provider] != nil { return "Connection unavailable · see details below" }
         if active > 0 { return "Connected · \(active) active \(active == 1 ? "session" : "sessions")" }
         if provider == "Copilot" {
             if copilot?.configured == true {

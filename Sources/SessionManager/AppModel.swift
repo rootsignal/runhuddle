@@ -69,7 +69,10 @@ struct CopilotTrackingStatus: Decodable {
     @Published var searchingHistory = false
     private var searchDebounce: Task<Void, Never>?
     private var searchInFlight = false
-    @Published var filter = "All sessions"
+    @Published var filter = "Now"
+    @Published var projectFilter = "All projects"
+    @Published var pinned: Set<String> = []
+    @Published var providerErrors: [String: String] = [:]
     @Published var provider = "All tools"
     @Published var showDemo = false
     @Published var refreshing = false
@@ -116,6 +119,7 @@ struct CopilotTrackingStatus: Decodable {
             store = try Store(path: folder.appendingPathComponent("sessions.sqlite").path)
             sessions = try store?.load([Session].self, key: "sessions") ?? []
             sessions = Recovery.restore(sessions)
+            pinned = try store?.load(Set<String>.self, key: "pinnedSessions") ?? []
             localCleanupState = try store?.load(LocalCleanupState.self, key: "localCleanupState") ?? LocalCleanupState()
             briefs = try store?.load([String: SessionBrief].self, key: "sessionBriefs") ?? [:]
             displayNames = try store?.load([String: String].self, key: "displayNames") ?? [:]
@@ -151,17 +155,51 @@ struct CopilotTrackingStatus: Decodable {
         }
     }
 
-    var visible: [Session] {
+    private var matchingSessions: [Session] {
         sessions.filter {
-            (!$0.simulated || showDemo) && (matchesSearch($0))
-            && ((filter == "All sessions" && $0.state != .archived) || $0.state.title == filter)
+            (!$0.simulated || showDemo) && matchesSearch($0)
             && (provider == "All tools" || $0.provider == provider)
-        }.sorted {
-            if $0.state.rank != $1.state.rank { return $0.state.rank < $1.state.rank }
-            return $0.updated > $1.updated
+            && (projectFilter == "All projects" || $0.cwd == projectFilter)
         }
     }
-    var selected: Session? { sessions.first { $0.id == selection } }
+    var visible: [Session] {
+        let effectiveFilter = filter == "Now" && !query.isEmpty ? "All sessions" : filter
+        return matchingSessions.filter { SessionPresentation.includes($0, filter: effectiveFilter, pinned: pinned) }.sorted {
+            if $0.state.rank != $1.state.rank { return $0.state.rank < $1.state.rank }
+            if pinned.contains($0.id) != pinned.contains($1.id) { return pinned.contains($0.id) }
+            return $0.updated == $1.updated ? $0.id < $1.id : $0.updated > $1.updated
+        }
+    }
+    func count(for filter: String) -> Int {
+        matchingSessions.filter { SessionPresentation.includes($0, filter: filter, pinned: pinned) }.count
+    }
+    var projectPaths: [String] { Set(sessions.filter { !$0.simulated && !$0.cwd.isEmpty }.map(\.cwd)).sorted() }
+    func togglePin(_ row: Session) {
+        var next = pinned
+        if !next.insert(row.id).inserted { next.remove(row.id) }
+        do {
+            try store?.save(next, key: "pinnedSessions")
+            pinned = next
+        } catch { self.error = "Could not save pinned sessions: \(error.localizedDescription)" }
+    }
+    var connectionNeedsAttention: Bool {
+        copilotConnectionError != nil || claudeRepairError != nil || !providerErrors.isEmpty
+    }
+    var connectionSummary: String {
+        connectionNeedsAttention ? "Connections need attention" : connectedProviders.isEmpty ? "Checking connections…" : "Connections ready"
+    }
+    func activitySummary(for row: Session) -> String {
+        let latest = contexts[row.id]?.latestResponse ?? ""
+        let purpose = briefs[row.id]?.purpose ?? ""
+        let source = !purpose.isEmpty ? purpose : !latest.isEmpty ? latest : row.preview
+        return SessionPresentation.excerpt(source)
+    }
+    func terminalActionTitle(for row: Session) -> String {
+        if row.state == .saved { return "Resume session…" }
+        if TerminalTarget.uniqueMatch(for: row, sessions: sessions, targets: terminalTargets) != nil { return "Go to terminal" }
+        return "Locate terminal…"
+    }
+    var selected: Session? { visible.first { $0.id == selection } }
     var attentionCount: Int { sessions.filter { !$0.simulated && $0.state == .needsInput }.count }
     var projects: Int { Set(visible.map(\.project)).count }
 
@@ -190,10 +228,15 @@ struct CopilotTrackingStatus: Decodable {
                         }
                     }
                 }
+                providerErrors.removeValue(forKey: tool)
                 connectedProviders.insert(tool)
                 fetched += rows
                 status.append("\(tool) connected · \(rows.count) sessions")
             } catch {
+                // An agent that has never been used is not a broken connection.
+                if sessions.contains(where: { $0.provider == tool && !$0.simulated }) || connectedProviders.contains(tool) {
+                    providerErrors[tool] = error.localizedDescription
+                }
                 connectedProviders.remove(tool)
                 fetched += Recovery.offline(sessions.filter { $0.provider == tool }, reason: "Live connection unavailable.")
                 status.append("\(tool) unavailable: \(error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines))")
@@ -608,7 +651,7 @@ struct CopilotTrackingStatus: Decodable {
             catch { terminalMessage = error.localizedDescription }
         }
         if fromMenu {
-            selection = row.id; query = ""; filter = "All sessions"; provider = "All tools"
+            selection = row.id; query = ""; filter = "All sessions"; provider = "All tools"; projectFilter = "All projects"
             openMainWindow?()
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -653,7 +696,7 @@ struct CopilotTrackingStatus: Decodable {
     }
     func showSession(_ id: String) {
         guard id != "notification-test" else { openMainWindow?(); return }
-        selection = id; query = ""; filter = "All sessions"; provider = "All tools"
+        selection = id; query = ""; filter = "All sessions"; provider = "All tools"; projectFilter = "All projects"
         openMainWindow?()
     }
     func fresh(_ row: Session) async {

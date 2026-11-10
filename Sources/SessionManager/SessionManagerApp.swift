@@ -4,14 +4,18 @@ import SessionCore
 @main struct SessionManagerApp: App {
     @StateObject private var model = AppModel()
     @StateObject private var loginItem = LoginItem()
+    @StateObject private var updater = AppUpdater()
     var body: some Scene {
         Window("RunHuddle", id: "main") {
-            ContentView().environmentObject(model)
+            ContentView().environmentObject(model).environmentObject(updater)
                 .frame(minWidth: 1000, minHeight: 640)
         }
         .defaultSize(width: 1320, height: 820)
+        .commands {
+            CommandGroup(after: .appInfo) { UpdateButton().environmentObject(updater) }
+        }
         MenuBarExtra {
-            MenuContent().environmentObject(model).environmentObject(loginItem)
+            MenuContent().environmentObject(model).environmentObject(loginItem).environmentObject(updater)
         } label: {
             HStack(spacing: 4) {
                 Image(nsImage: RunHuddleIcon.image())
@@ -33,7 +37,7 @@ struct MenuContent: View {
     var body: some View {
         Text(menu.summary)
         if model.navigatingTerminal { Text(model.terminalProgress) }
-        if model.connection.contains("unavailable") {
+        if model.connectionNeedsAttention {
             Text("Some agents are unavailable — showing last known sessions")
         }
         Divider()
@@ -49,6 +53,7 @@ struct MenuContent: View {
         }
         Button("Open RunHuddle") { showWindow() }
         Button("Connections…") { model.showSetup = true; showWindow() }
+        UpdateButton()
         Button(model.refreshing ? "Refreshing…" : "Refresh") { Task { await model.refresh() } }
             .disabled(model.refreshing || model.cleaning)
         Toggle("Open at Login", isOn: Binding(get: { loginItem.enabled }, set: { loginItem.setEnabled($0) }))
@@ -127,11 +132,14 @@ struct ContentView: View {
     }
     var body: some View {
         NavigationSplitView {
+            ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Label { Text("RUNHUDDLE") } icon: { Image(nsImage: RunHuddleIcon.image()) }
                     .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(.secondary)
                     .padding(.top, 12)
                 VStack(spacing: 6) {
+                    filterButton("Now", symbol: "sparkle", color: .accentColor)
+                    filterButton("Pinned", symbol: "pin", color: .secondary)
                     filterButton("All sessions", symbol: "rectangle.stack", color: .primary)
                     ForEach(SessionState.allCases, id: \.self) { state in
                         filterButton(state.title, symbol: state.symbol, color: state.color)
@@ -145,25 +153,17 @@ struct ContentView: View {
                     Text("Claude").tag("Claude")
                     Text("Copilot").tag("Copilot")
                 }.labelsHidden()
-                Button("Connections…") { model.showSetup = true }
-                if let notice = model.copilotConnectionNotice {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(notice).font(.caption)
-                        Button("Got it") { model.dismissCopilotNotice() }.font(.caption)
+                Text("PROJECT").font(.caption.bold()).foregroundStyle(.secondary)
+                Picker("Project", selection: $model.projectFilter) {
+                    Text("All projects").tag("All projects")
+                    ForEach(model.projectPaths, id: \.self) { path in
+                        Text(path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).tag(path).help(path)
                     }
-                }
-                if model.copilotConnectionError != nil {
-                    Button("Copilot connection needs attention") { model.showSetup = true }.font(.caption)
-                }
-                if let notice = model.claudeRepairNotice {
-                    Text(notice).font(.caption)
-                    Button("Got it") {
-                        model.claudeRepairNotice = nil
-                        UserDefaults.standard.set(false, forKey: "claudeRepairNoticePending")
+                }.labelsHidden().help(model.projectFilter)
+                if model.claudeRepairNotice != nil || model.copilotConnectionNotice != nil {
+                    Button { model.showSetup = true } label: {
+                        Label("Tracking setup updated", systemImage: "info.circle")
                     }.font(.caption)
-                }
-                if model.claudeRepairError != nil {
-                    Button("Claude connection needs attention") { model.showSetup = true }.font(.caption)
                 }
                 #if DEBUG
                 DisclosureGroup("Demo sessions") {
@@ -175,44 +175,34 @@ struct ContentView: View {
                 }.font(.caption)
                 #endif
                 Spacer()
-                if !model.recentAlerts.isEmpty {
-                    Text("RECENT ACTIVITY").font(.caption.bold()).foregroundStyle(.secondary)
-                    ForEach(Array(model.recentAlerts.prefix(3))) { alert in
-                        Button { model.showSession(alert.session.id) } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(alert.title).font(.caption.bold())
-                                Text(model.displayName(for: alert.session)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        }.buttonStyle(.plain)
-                    }
-                }
-                if let message = model.notificationMessage {
-                    Text(message).font(.caption).foregroundStyle(.secondary)
-                }
-                Button(model.notifications ? "Notification Settings…" : model.notificationBlocked ? "Open Notification Settings…" : "Enable desktop alerts") {
+            }.padding(18)
+            }.scrollIndicators(.hidden)
+            .safeAreaInset(edge: .bottom) {
+                VStack(alignment: .leading, spacing: 12) {
+                Button { model.showSetup = true } label: {
+                    Label(model.connectionSummary, systemImage: model.connectionNeedsAttention ? "exclamationmark.circle" : "circle.dotted.circle")
+                        .font(.caption).foregroundStyle(model.connectionNeedsAttention ? Color.orange : .secondary)
+                }.buttonStyle(.plain)
+                Button(model.notifications ? "Notification settings…" : "Enable notifications") {
                     if model.notifications || model.notificationBlocked { model.openNotificationSettings() }
                     else { Task { await model.enableNotifications() } }
-                }
-                if model.notifications {
-                    Button("Send test alert") { Task { await model.testNotification() } }
-                    Text("Alerts: needs input + work finished").font(.caption2).foregroundStyle(.secondary)
-                }
+                }.font(.caption).buttonStyle(.plain)
                 Text("RunHuddle \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Development")")
                     .font(.caption2).foregroundStyle(.secondary)
                     .help(Bundle.main.bundlePath)
-                Text("Local storage · 5-second refresh").font(.caption2).foregroundStyle(.secondary)
-            }.padding(18)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(.bar)
+            }
             .navigationSplitViewColumnWidth(230)
         } detail: {
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(model.filter).font(.largeTitle.bold())
-                        Text("\(model.visible.count) sessions across \(model.projects) projects")
+                        Text(model.filter == "Now" && !model.query.isEmpty ? "Search results" : model.filter).font(.system(size: 28, weight: .bold))
+                        Text(model.filter == "Now" && model.query.isEmpty ? "Your active work, with the next action in view." : "\(model.visible.count) sessions across \(model.projects) projects")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if model.refreshing || model.cleaning { ProgressView().controlSize(.small) }
+                    if model.cleaning { ProgressView().controlSize(.small) }
                     Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                         .help("Refresh live sessions")
                 }.padding(24)
@@ -244,27 +234,23 @@ struct ContentView: View {
                             Spacer()
                         }.padding(12).disabled(model.cleaning)
                         List(selection: $model.selection) {
-                            ForEach(model.visible) { row in
-                                HStack {
-                                    if model.bulkMode {
-                                        Toggle("Select session", isOn: Binding(
-                                            get: { model.bulkSelection.contains(row.id) },
-                                            set: { if $0 { model.bulkSelection.insert(row.id) } else { model.bulkSelection.remove(row.id) } }
-                                        )).labelsHidden().toggleStyle(.checkbox).disabled(row.simulated || model.cleaning)
-                                    }
-                                    SessionRow(row: row)
-                                }.tag(row.id)
-                                    .contextMenu {
-                                        Button("Rename…") { model.beginRename(row) }
-                                        if model.displayNames[row.id] != nil {
-                                            Button("Reset to original name") { model.saveDisplayName("", for: row) }
-                                        }
-                                    }
+                            if model.filter == "Now" && model.query.isEmpty {
+                                ForEach(nowSections, id: \.title) { section in
+                                    Section(section.title) { sessionCells(section.rows) }
+                                }
+                            } else {
+                                sessionCells(model.visible)
                             }
                         }.listStyle(.inset)
                         .overlay {
                             if model.visible.isEmpty {
-                                ContentUnavailableView("No sessions here", systemImage: "magnifyingglass", description: Text("Try another filter or check Connections."))
+                                ContentUnavailableView {
+                                    Label(model.filter == "Now" && model.query.isEmpty ? "Nothing needs your attention" : "No matching sessions", systemImage: model.filter == "Now" ? "checkmark.circle" : "magnifyingglass")
+                                } description: {
+                                    Text("Search your history, browse all sessions, or start work in your preferred agent.")
+                                } actions: {
+                                    Button("Browse all sessions") { model.filter = "All sessions" }
+                                }
                             }
                         }
                     }.frame(minWidth: 320, idealWidth: 420)
@@ -275,11 +261,11 @@ struct ContentView: View {
                 }
                 Divider()
                 HStack {
-                    Circle().fill(!model.connection.contains("unavailable") ? .green : .orange).frame(width: 6, height: 6)
-                    Text(model.connection).lineLimit(1).help(model.connection)
+                    Button("Connections…") { model.showSetup = true }.buttonStyle(.plain)
                     if let message = model.cleanupMessage { Text(message).lineLimit(1) }
                     Spacer()
-                    if let date = model.lastRefresh { Text("Updated \(date, style: .time)") }
+                    if model.refreshing { Text("Checking activity…") }
+                    else if let date = model.lastRefresh { Text("Updated \(date, style: .time)") }
                 }.font(.caption).foregroundStyle(.secondary).padding(12)
             }
         }
@@ -336,12 +322,16 @@ struct ContentView: View {
         }
         .sheet(item: $model.terminalSession) { row in
             VStack(alignment: .leading, spacing: 16) {
-                Text("Find the existing terminal").font(.title2.bold())
+                Text(row.state == .saved ? "Resume session" : "Locate terminal").font(.title2.bold())
                 Text(model.displayName(for: row)).font(.headline)
                 if model.navigatingTerminal {
                     HStack { ProgressView().controlSize(.small); Text(model.terminalProgress) }
                 }
                 Text(model.terminalMessage).font(.callout).foregroundStyle(.secondary)
+                if model.terminalTargets.isEmpty && !model.navigatingTerminal {
+                    Text("No accessible terminal tabs were found. You can resume in a new Terminal window below.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
                 List(model.terminalTargets.sorted { $0.matches(row) && !$1.matches(row) }) { target in
                     Button { model.focusTerminal(target) } label: {
                         VStack(alignment: .leading, spacing: 4) {
@@ -354,9 +344,37 @@ struct ContentView: View {
                     Button("Refresh") { model.refreshTerminals() }
                     Spacer()
                     Button("Cancel") { model.terminalSession = nil }
-                    Button("Open another Terminal window") { model.openAnotherTerminal(row) }
+                    Button(row.state == .saved ? "Resume in Terminal" : "Open another Terminal window") { model.openAnotherTerminal(row) }
                 }.disabled(model.navigatingTerminal)
             }.padding(24).frame(width: 640).interactiveDismissDisabled(model.navigatingTerminal)
+        }
+    }
+    private var nowSections: [(title: String, rows: [Session])] {
+        let finished = Set(model.recentAlerts.filter { $0.kind == .finished }.map { $0.session.id })
+        return [
+            ("Needs input", model.visible.filter { $0.state == .needsInput }),
+            ("Working", model.visible.filter { $0.state == .working }),
+            ("Recently finished", model.visible.filter { $0.state == .idle && finished.contains($0.id) }),
+            ("Idle", model.visible.filter { $0.state == .idle && !finished.contains($0.id) })
+        ].filter { !$0.1.isEmpty }
+    }
+    @ViewBuilder private func sessionCells(_ rows: [Session]) -> some View {
+        ForEach(rows) { row in
+            HStack {
+                if model.bulkMode {
+                    Toggle("Select session", isOn: Binding(
+                        get: { model.bulkSelection.contains(row.id) },
+                        set: { if $0 { model.bulkSelection.insert(row.id) } else { model.bulkSelection.remove(row.id) } }
+                    )).labelsHidden().toggleStyle(.checkbox).disabled(row.simulated || model.cleaning)
+                }
+                SessionRow(row: row)
+            }.tag(row.id).contextMenu {
+                Button(model.pinned.contains(row.id) ? "Unpin session" : "Pin session") { model.togglePin(row) }
+                Button("Rename…") { model.beginRename(row) }
+                if model.displayNames[row.id] != nil {
+                    Button("Reset to original name") { model.saveDisplayName("", for: row) }
+                }
+            }
         }
     }
     private func saveRename(_ row: Session) {
@@ -369,10 +387,10 @@ struct ContentView: View {
                 Image(systemName: symbol).foregroundStyle(color).frame(width: 18)
                 Text(title)
                 Spacer()
-                Text("\(model.sessions.filter { (!$0.simulated || model.showDemo) && ((title == "All sessions" && $0.state != .archived) || $0.state.title == title) }.count)")
+                Text("\(model.count(for: title))")
                     .foregroundStyle(.secondary).monospacedDigit()
             }.padding(9).background(model.filter == title ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain)
+        }.buttonStyle(.plain).accessibilityLabel(title).accessibilityValue("\(model.count(for: title)) sessions")
     }
 }
 
@@ -382,14 +400,16 @@ struct SessionRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text(row.project).font(.caption.bold()).foregroundStyle(.secondary)
+                if model.pinned.contains(row.id) { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
+                Text(row.project).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Text(row.simulated ? "CLAUDE · DEMO" : row.provider.uppercased())
-                    .font(.system(size: 9, weight: .bold)).foregroundStyle(row.simulated ? .purple : .secondary)
+                    .font(.system(size: 9, weight: .medium)).foregroundStyle(row.simulated ? .purple : .secondary)
+                    .padding(.horizontal, 6).padding(.vertical, 3).background(.quaternary.opacity(0.3), in: Capsule())
             }
             Text(model.displayName(for: row)).font(.system(size: 13, weight: .semibold)).lineLimit(2)
-            if !model.purpose(for: row).isEmpty {
-                Text(model.purpose(for: row).replacingOccurrences(of: "\n", with: " "))
+            if !model.activitySummary(for: row).isEmpty {
+                Text(model.activitySummary(for: row))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             if model.historySearchQuery == model.query, let match = model.historyMatches[row.id] {
@@ -405,7 +425,7 @@ struct SessionRow: View {
                 Spacer()
                 Text(Date(timeIntervalSince1970: row.updated), style: .relative).foregroundStyle(.secondary)
             }.font(.caption)
-        }.padding(.vertical, 9)
+        }.padding(.vertical, 9).accessibilityElement(children: .combine)
     }
 }
 
@@ -428,46 +448,21 @@ struct SessionDetail: View {
                 Button { model.beginRename(row) } label: { Image(systemName: "pencil") }
                     .help("Rename session").accessibilityLabel("Rename session")
             }
-            Text(row.reason).font(.callout).foregroundStyle(.secondary)
+            Text("\(row.project) · \(SessionPresentation.statusSummary(row))").font(.callout).foregroundStyle(.secondary)
             HStack {
                 Button { model.resume(row) } label: {
                     HStack(spacing: 6) {
                         if model.navigatingTerminal { ProgressView().controlSize(.small) }
-                        Text(model.navigatingTerminal ? model.terminalProgress : row.state == .disconnected ? "Locate or resume…" : "Go to terminal")
+                        Text(model.navigatingTerminal ? model.terminalProgress : model.terminalActionTitle(for: row))
                     }
                 }
                     .buttonStyle(.borderedProminent)
                     .disabled(row.simulated || row.state == .archived || model.navigatingTerminal)
                 Button { NSWorkspace.shared.open(URL(fileURLWithPath: row.cwd)) } label: { Image(systemName: "folder") }
                     .help("Open project folder").disabled(row.simulated || row.cwd.isEmpty)
-                Button { model.copy(row.sessionID) } label: { Image(systemName: "doc.on.doc") }.help("Copy session ID")
-            }
-            if !row.simulated && row.provider == "Codex" {
-                HStack {
-                    if row.state == .archived {
-                        Button("Restore…") { Task { await model.prepareCleanup("restore", row: row) } }
-                        Button("Delete permanently…", role: .destructive) { Task { await model.prepareCleanup("delete", row: row) } }
-                    } else {
-                        Button("Archive…") { Task { await model.prepareCleanup("archive", row: row) } }
-                            .disabled(row.state != .saved)
-                        if row.state != .saved {
-                            Text("Close the agent session before archiving.").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }.disabled(model.cleaning)
-            }
-            if !row.simulated && row.provider != "Codex" {
-                HStack {
-                    if row.state == .archived {
-                        Button("Restore…") { Task { await model.prepareBulkCleanup("restore", rows: [row]) } }
-                        Button("Move history to Trash…", role: .destructive) { Task { await model.prepareBulkCleanup("delete", rows: [row]) } }
-                    } else {
-                        Button("Archive…") { Task { await model.prepareBulkCleanup("archive", rows: [row]) } }.disabled(row.state != .saved)
-                        if row.state != .saved {
-                            Text("Close the agent session before archiving.").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }.disabled(model.cleaning)
+                Button { model.togglePin(row) } label: { Image(systemName: model.pinned.contains(row.id) ? "pin.fill" : "pin") }
+                    .help(model.pinned.contains(row.id) ? "Unpin session" : "Pin session")
+                cleanupMenu
             }
             Picker("Detail", selection: $tab) {
                 Text("Overview").tag("Overview")
@@ -476,15 +471,8 @@ struct SessionDetail: View {
             if tab == "Overview" {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        Text("What this session is for").font(.headline)
-                        TextField("Add a short purpose for this session", text: Binding(
-                            get: { model.briefs[row.id]?.purpose ?? "" },
-                            set: { value in
-                                var brief = model.briefs[row.id] ?? SessionBrief()
-                                brief.purpose = value; model.setBrief(brief, for: row)
-                            }), axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
-                        if model.briefs[row.id]?.purpose.isEmpty != false {
-                            field("ORIGINAL REQUEST / PREVIEW", row.preview.isEmpty ? "No request recorded yet." : String(row.preview.prefix(1000)))
+                        if !model.activitySummary(for: row).isEmpty {
+                            Text(model.activitySummary(for: row)).font(.body).textSelection(.enabled)
                         }
                         HStack {
                             Text("Latest recorded activity").font(.headline)
@@ -497,7 +485,7 @@ struct SessionDetail: View {
                             Text("Could not refresh activity. \(failure)").font(.caption).foregroundStyle(.orange)
                         }
                         if let context = model.contexts[row.id] {
-                            Text("Retrieved \(context.updated, style: .relative) ago · recorded messages, not an AI summary")
+                            Text("Recorded activity · updated \(context.updated, style: .relative) ago")
                                 .font(.caption).foregroundStyle(.secondary)
                             if (context.sessionUpdated ?? 0) < row.updated {
                                 Text("New session activity since this snapshot.").font(.caption).foregroundStyle(.secondary)
@@ -505,16 +493,24 @@ struct SessionDetail: View {
                             activityField("LATEST REQUEST", context.latestRequest ?? "No recent request available.")
                             activityField("AGENT'S LATEST RESPONSE", context.latestResponse ?? "No recent response available.")
                         }
-                        Text("Next step / blocker").font(.headline)
-                        TextField("Add where you want to pick up next", text: Binding(
-                            get: { model.briefs[row.id]?.nextStep ?? "" },
-                            set: { value in
-                                var brief = model.briefs[row.id] ?? SessionBrief()
-                                brief.nextStep = value; model.setBrief(brief, for: row)
-                            }), axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
-                        Text("Your purpose and next-step notes save automatically and are never replaced by activity updates.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        DisclosureGroup("Session info", isExpanded: $showSessionInfo) {
+                        DisclosureGroup("Your notes") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                TextField("What is this session for?", text: Binding(
+                                    get: { model.briefs[row.id]?.purpose ?? "" },
+                                    set: { value in
+                                        var brief = model.briefs[row.id] ?? SessionBrief()
+                                        brief.purpose = value; model.setBrief(brief, for: row)
+                                    }), axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
+                                TextField("Next step or blocker", text: Binding(
+                                    get: { model.briefs[row.id]?.nextStep ?? "" },
+                                    set: { value in
+                                        var brief = model.briefs[row.id] ?? SessionBrief()
+                                        brief.nextStep = value; model.setBrief(brief, for: row)
+                                    }), axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
+                                Text("Saved automatically. Activity updates never replace your notes.").font(.caption).foregroundStyle(.secondary)
+                            }.padding(.top, 8)
+                        }
+                        DisclosureGroup("Session details", isExpanded: $showSessionInfo) {
                             VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -542,10 +538,12 @@ struct SessionDetail: View {
                             field("ORIGINAL TITLE", row.title)
                             Button("Reset to original name") { model.saveDisplayName("", for: row) }
                         }
+                        field("STATUS SOURCE", row.reason)
                         field("PROJECT", row.project)
                         field("WORKING DIRECTORY", row.cwd)
                         field("BRANCH", row.branch.isEmpty ? "Not recorded" : row.branch)
                         field("SESSION ID", row.sessionID)
+                        Button("Copy session ID") { model.copy(row.sessionID) }
                         field("RECORDED PREVIEW", row.preview.isEmpty ? "No preview recorded" : row.preview)
                             }.padding(.top, 10)
                         }
@@ -598,11 +596,28 @@ struct SessionDetail: View {
             Button("Start fresh in Terminal") { Task { await model.fresh(row) } }
         } message: { Text("The edited handoff will be sent as the first prompt. Your original session stays available.") }
     }
+    private var cleanupMenu: some View {
+        Menu {
+            Button("Rename…") { model.beginRename(row) }
+            Divider()
+            if row.state == .archived {
+                Button("Restore…") { cleanup("restore") }
+                Button(row.provider == "Codex" ? "Delete permanently…" : "Move history to Trash…", role: .destructive) { cleanup("delete") }
+            } else {
+                Button("Archive…") { cleanup("archive") }.disabled(row.state != .saved)
+                if row.state != .saved { Text("Close the session before archiving") }
+            }
+        } label: { Image(systemName: "ellipsis") }
+            .disabled(row.simulated || model.cleaning).help("Session actions")
+    }
+    private func cleanup(_ operation: String) {
+        Task { await model.prepareBulkCleanup(operation, rows: [row]) }
+    }
     private func activityField(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-            Text(String(value.prefix(900)) + (value.count > 900 ? "…" : ""))
-                .font(.callout).textSelection(.enabled).lineLimit(8)
+            Text(SessionPresentation.excerpt(value, limit: 240))
+                .font(.callout).textSelection(.enabled).lineLimit(3)
             DisclosureGroup("Read recorded message") {
                 Text(value).font(.callout).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)

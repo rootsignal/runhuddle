@@ -25,13 +25,25 @@ bridge = resources / "bridge"
 bridge.mkdir()
 for name in ("codex_bridge.py", "copilot_bridge.py", "claude_bridge.py", "local_cleanup.py", "context_usage.py", "history_search.py"):
     shutil.copy2(root / "scripts" / name, bridge / name)
+sparkle = root / '.build/artifacts/sparkle/Sparkle'
+frameworks = contents / 'Frameworks'
+frameworks.mkdir()
+framework = frameworks / 'Sparkle.framework'
+shutil.copytree(sparkle / 'Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework', framework, symlinks=True)
 runtime = bundle(root, resources)
+shutil.copy2(sparkle / 'LICENSE', resources / 'ThirdPartyNotices/Sparkle-LICENSE.txt')
 sign_nested(runtime)
 info = {
     "CFBundleExecutable": "SessionManager", "CFBundleIdentifier": "local.rickbaker.agent-sessions",
     "CFBundleName": "RunHuddle", "CFBundleDisplayName": "RunHuddle",
     "CFBundleIconFile": "RunHuddle",
-    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.4.4", "CFBundleVersion": "8",
+    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.5.0", "CFBundleVersion": "9",
+    "SUFeedURL": "https://raw.githubusercontent.com/rootsignal/runhuddle/main/updates/appcast.xml",
+    "SUPublicEDKey": (root / 'config/sparkle-public-key.txt').read_text().strip(),
+    "SURequireSignedFeed": True,
+    "SUVerifyUpdateBeforeExtraction": True,
+    "SUEnableAutomaticChecks": False,
+    "SUAutomaticallyUpdate": False,
     "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True,
     "NSAppleEventsUsageDescription": "Find and focus your existing AI session in Terminal or Ghostty, or open a new terminal when requested.",
 }
@@ -39,6 +51,11 @@ with (contents / "Info.plist").open("wb") as file:
     plistlib.dump(info, file)
 identity = os.environ.get("RUNHUDDLE_SIGN_IDENTITY", "-")
 flags = ["--options", "runtime", "--timestamp", "--entitlements", str(root / "scripts/entitlements.plist")] if identity != "-" else []
+# Sign Sparkle from the inside out, preserving its helper entitlements.
+sparkle_flags = ["--options", "runtime", "--timestamp"] if identity != "-" else []
+versioned = framework / 'Versions/B'
+for target in [*sorted((versioned / 'XPCServices').glob('*.xpc')), versioned / 'Updater.app', versioned / 'Autoupdate', framework]:
+    subprocess.run(["/usr/bin/codesign", "--force", "--sign", identity, "--preserve-metadata=entitlements", *sparkle_flags, str(target)], check=True)
 subprocess.run(["/usr/bin/codesign", "--force", "--sign", identity, *flags, str(app)], check=True)
 subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)], check=True)
 final = root / "dist/RunHuddle.app"

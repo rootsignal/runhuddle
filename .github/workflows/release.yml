@@ -53,16 +53,26 @@ jobs:
       - run: bash scripts/build-app.sh
       - run: python3 scripts/verify_standalone.py
       - run: bash scripts/notarize.sh
+      - name: Sign update feed
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          : "${SPARKLE_PRIVATE_KEY:?Configure the Sparkle signing secret, or release locally}"
+          umask 077
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle-key"
+          RUNHUDDLE_SPARKLE_KEY_FILE="$RUNNER_TEMP/sparkle-key" bash scripts/generate-update-feed.sh
+          rm "$RUNNER_TEMP/sparkle-key"
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' dist/RunHuddle.app/Contents/Info.plist)
-          gh release create "v$version" dist/*.dmg dist/*.dmg.sha256 --target "$GITHUB_SHA" --title "RunHuddle $version" --draft --generate-notes
+          gh release create "v$version" dist/*.dmg dist/*.dmg.sha256 dist/appcast.xml --target "$GITHUB_SHA" --title "RunHuddle $version" --draft --generate-notes
       - name: Remove temporary credentials
         if: always()
         run: |
           security default-keychain -d user -s login.keychain-db || true
           security delete-keychain "$RUNNER_TEMP/runhuddle.keychain-db" || true
-          rm -f "$RUNNER_TEMP/signing.p12"
+          rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP/sparkle-key"

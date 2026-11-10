@@ -6,6 +6,8 @@ RunHuddle is an early preview. The app now bundles its runtime and dependencies;
 
 ## What it does
 
+- Opens on a focused Now view: needs input, working, recently finished, and idle sessions. Older sessions remain in All sessions.
+- Pin important sessions and filter by the exact project folder. Search from Now also searches saved sessions.
 - Tracks Working, Needs input, Idle, and Saved sessions, with a menu-bar overview and desktop notifications.
 - Finds sessions by project, custom name, branch, path, purpose, and recorded conversation history.
 - Shows latest recorded activity alongside editable purpose and next-step notes.
@@ -116,7 +118,7 @@ Source builds are ad-hoc signed for local development; release downloads use Dev
 
 ## Update and uninstall
 
-For an installed release, choose **Quit** in the RunHuddle menu bar, download the new DMG from [Releases](https://github.com/rootsignal/runhuddle/releases), and drag the app into the same Applications folder, replacing the previous copy. Open it again. Names, notes, handoffs, and tracking settings are preserved. Closing the window alone does not quit the app. There is no in-app updater yet.
+For an installed release, choose **Quit** in the RunHuddle menu bar, download the new DMG from [Releases](https://github.com/rootsignal/runhuddle/releases), and drag the app into the same Applications folder, replacing the previous copy. Open it again. Names, notes, handoffs, and tracking settings are preserved. Closing the window alone does not quit the app. From version 0.5.0 onward, choose **Check for Updates…** in the app or menu-bar menu to download, install, and relaunch in place. **Connections → Check automatically** enables background update checks; installation remains your choice. The first update from 0.4.x still requires the DMG. Updates and the update feed are signed with Sparkle EdDSA signatures, and release apps are Developer ID signed and notarized.
 
 For a source checkout, quit RunHuddle and run:
 
