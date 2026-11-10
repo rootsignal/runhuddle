@@ -155,6 +155,7 @@ struct ContentView: View {
                 if model.copilotConnectionError != nil {
                     Button("Copilot connection needs attention") { model.showSetup = true }.font(.caption)
                 }
+                #if DEBUG
                 DisclosureGroup("Demo sessions") {
                     Toggle("Show Claude demo", isOn: $model.showDemo)
                         .onChange(of: model.showDemo) { _, enabled in
@@ -162,6 +163,7 @@ struct ContentView: View {
                             else if model.selected?.simulated == true { model.selection = nil }
                         }
                 }.font(.caption)
+                #endif
                 Spacer()
                 if !model.recentAlerts.isEmpty {
                     Text("RECENT ACTIVITY").font(.caption.bold()).foregroundStyle(.secondary)
@@ -185,6 +187,9 @@ struct ContentView: View {
                     Button("Send test alert") { Task { await model.testNotification() } }
                     Text("Alerts: needs input + work finished").font(.caption2).foregroundStyle(.secondary)
                 }
+                Text("RunHuddle \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Development")")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .help(Bundle.main.bundlePath)
                 Text("Local storage · 5-second refresh").font(.caption2).foregroundStyle(.secondary)
             }.padding(18)
             .navigationSplitViewColumnWidth(230)
@@ -249,7 +254,7 @@ struct ContentView: View {
                         }.listStyle(.inset)
                         .overlay {
                             if model.visible.isEmpty {
-                                ContentUnavailableView("No sessions here", systemImage: "magnifyingglass", description: Text("Try another filter or enable the Claude demo."))
+                                ContentUnavailableView("No sessions here", systemImage: "magnifyingglass", description: Text("Try another filter or check Connections."))
                             }
                         }
                     }.frame(minWidth: 320, idealWidth: 420)
