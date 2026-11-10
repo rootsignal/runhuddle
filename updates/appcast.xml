@@ -1,0 +1,36 @@
+<?xml version="1.0" standalone="yes"?>
+<!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+-->
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>RunHuddle</title>
+        <item>
+            <title>0.5.0</title>
+            <pubDate>Tue, 10 Nov 2026 14:10:31 -0600</pubDate>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.5.0/RunHuddle-0.5.0-arm64.dmg" length="44416570" type="application/octet-stream" sparkle:edSignature="GJ8MADmWdjPWeTBeu7hyk8vlkmwMBbdiMFsGE76/i2I5GQJZC9AlSxgOykD5KNowv3734MnuuU3T+2HGk0n5Dw=="/>
+            <description sparkle:format="markdown"><![CDATA[RunHuddle 0.5.0 makes active work easier to find and adds signed in-app updates.
+
+- **Now** opens on sessions needing input, work in progress, recently finished sessions, and idle sessions. Saved history stays in All sessions; searching from Now also searches saved sessions.
+- **Pinned sessions** and an exact project-folder filter keep important work close.
+- Cleaner rows show a compact provider badge and a short recorded activity excerpt. Notes and technical details are expandable; the version remains visible in the sidebar.
+- Connection warnings are quieter, with details and recovery actions in Connections. Terminal actions distinguish locating a terminal from resuming a saved session.
+- **Check for Updates…** downloads, installs, and relaunches in place using Sparkle. Automatic checks are opt-in in Connections, and installation remains your choice.
+
+Install this version once using the DMG if you are on 0.4.x. Quit RunHuddle before replacing the app in its existing Applications folder. Confirm **0.5.0** in the sidebar. Names, notes, handoffs, and hook paths at the same app location are preserved.
+
+The app and installer are Developer ID signed and notarized. Update archives and the update feed have EdDSA signatures. Validation includes 63 Python tests, 25 Swift tests, standalone relocation and signing checks, and an isolated integration test that rejects a modified feed and successfully downloads, installs, and relaunches a valid update. GitHub CI passes.
+
+Requires Apple Silicon and macOS 14 or newer. Activity excerpts come from recorded messages; AI-generated summaries are not enabled. Claude processes that themselves report stale busy status remain a separate diagnostic issue.
+]]></description>
+        </item>
+    </channel>
+</rss>
+<!-- sparkle-signatures:
+edSignature: abfZAZpbxTHkSbQUrSaaXBXM1L33jquR8LZMujEcZR4CWLcPUzbSLhrPUfKF9h8uHEpcuj/BkSC1s6/JSdVLCg==
+length: 2913
+-->
