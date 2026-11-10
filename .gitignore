@@ -1,0 +1,13 @@
+.venv/
+.build/
+__pycache__/
+.DS_Store
+dist/
+.env
+.env.*
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.log
+*.jsonl
