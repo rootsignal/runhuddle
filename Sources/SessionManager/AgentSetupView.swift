@@ -2,12 +2,12 @@ import SwiftUI
 
 struct AgentSetupView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var installed: [String: String] = [:]
-    @State private var socketFound = false
-    @State private var hooksFound = false
-    @State private var installing = false
-    @State private var installingClaude = false
-    @State private var message: String?
+    @ViewState private var installed: [String: String] = [:]
+    @ViewState private var socketFound = false
+    @ViewState private var hooksFound = false
+    @ViewState private var installing = false
+    @ViewState private var installingClaude = false
+    @ViewState private var message: String?
 
     private var onDiskImage: Bool { Bundle.main.bundlePath.hasPrefix("/Volumes/") }
     private var copilotHome: URL {

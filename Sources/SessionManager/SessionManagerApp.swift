@@ -362,9 +362,9 @@ struct SessionRow: View {
 struct SessionDetail: View {
     @EnvironmentObject var model: AppModel
     let row: Session
-    @State private var tab = "Overview"
-    @State private var confirmFresh = false
-    @State private var showSessionInfo = false
+    @ViewState private var tab = "Overview"
+    @ViewState private var confirmFresh = false
+    @ViewState private var showSessionInfo = false
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
