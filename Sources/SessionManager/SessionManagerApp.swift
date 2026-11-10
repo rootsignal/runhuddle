@@ -232,7 +232,7 @@ struct ContentView: View {
                                 }.disabled(model.bulkSelection.isEmpty)
                             }
                             Spacer()
-                        }.padding(12).disabled(model.cleaning || model.refreshing)
+                        }.padding(12).disabled(model.cleaning)
                         List(selection: $model.selection) {
                             ForEach(model.visible) { row in
                                 HStack {
@@ -320,7 +320,7 @@ struct ContentView: View {
                     Button("Cancel") { model.cleanupPlan = nil }.disabled(model.cleaning)
                     Button(plan.title, role: plan.action == "delete" ? .destructive : nil) {
                         Task { await model.applyCleanup(plan) }
-                    }.disabled(model.cleaning || model.refreshing)
+                    }.disabled(model.cleaning)
                 }
             }.padding(24).frame(width: 620).interactiveDismissDisabled(model.cleaning)
         }
@@ -444,7 +444,7 @@ struct SessionDetail: View {
                             Text("Close the agent session before archiving.").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                }.disabled(model.cleaning || model.refreshing)
+                }.disabled(model.cleaning)
             }
             if !row.simulated && row.provider != "Codex" {
                 HStack {
@@ -457,7 +457,7 @@ struct SessionDetail: View {
                             Text("Close the agent session before archiving.").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                }.disabled(model.cleaning || model.refreshing)
+                }.disabled(model.cleaning)
             }
             Picker("Detail", selection: $tab) {
                 Text("Overview").tag("Overview")

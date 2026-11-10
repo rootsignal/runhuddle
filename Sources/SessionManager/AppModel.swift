@@ -97,6 +97,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var cleanupMessage: String?
     private var store: Store?
     private var timer: Task<Void, Never>?
+    private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
     private var connectedProviders: Set<String> = []
     private let attentionDelegate = AttentionDelegate()
     var openMainWindow: (() -> Void)?
@@ -161,7 +162,12 @@ struct CopilotTrackingStatus: Decodable {
     func refresh() async {
         guard !refreshing && !cleaning else { return }
         refreshing = true
-        defer { refreshing = false }
+        defer {
+            refreshing = false
+            let waiters = refreshWaiters
+            refreshWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+        }
         var fetched: [Session] = []
         var status: [String] = []
         for tool in ["Codex", "Copilot", "Claude"] {
@@ -315,9 +321,20 @@ struct CopilotTrackingStatus: Decodable {
         do { try store?.save(drafts.filter { !$0.key.hasPrefix("Claude:demo-") }, key: "drafts") }
         catch { self.error = "Could not save handoff: \(error.localizedDescription)" }
     }
-    func prepareCleanup(_ operation: String, row: Session) async {
-        guard !row.simulated, row.provider == "Codex", !cleaning, !refreshing else { return }
+    // Reserve the action immediately so repeated clicks cannot queue duplicates.
+    // Finish an in-flight observation before mutating session data; polling stays enabled otherwise.
+    private func beginCleanup() async -> Bool {
+        guard !cleaning else { return false }
         cleaning = true
+        if refreshing {
+            await withCheckedContinuation { refreshWaiters.append($0) }
+        }
+        return true
+    }
+
+    func prepareCleanup(_ operation: String, row: Session) async {
+        guard !row.simulated, row.provider == "Codex" else { return }
+        guard await beginCleanup() else { return }
         defer { cleaning = false }
         do {
             let data = try await Bridge.run(["plan", row.sessionID, "--operation", operation])
@@ -325,8 +342,7 @@ struct CopilotTrackingStatus: Decodable {
         } catch { self.error = "Cannot prepare cleanup: \(error.localizedDescription)" }
     }
     func applyCleanup(_ plan: CleanupPlan) async {
-        guard !cleaning, !refreshing else { return }
-        cleaning = true
+        guard await beginCleanup() else { return }
         do {
             let ids = plan.affected.map(\.id)
             let encoded = String(data: try JSONEncoder().encode(ids), encoding: .utf8)!
@@ -364,9 +380,7 @@ struct CopilotTrackingStatus: Decodable {
         await refresh()
     }
     func prepareBulkCleanup(_ operation: String, rows requested: [Session]) async {
-        guard !cleaning && !refreshing else { return }
-        await refresh()
-        cleaning = true
+        guard await beginCleanup() else { return }
         defer { cleaning = false }
         var entries: [BulkCleanupReview.Entry] = []
         var skipped: [String] = []
@@ -406,8 +420,7 @@ struct CopilotTrackingStatus: Decodable {
     }
 
     func applyBulkCleanup(_ review: BulkCleanupReview) async {
-        guard !cleaning && !refreshing else { return }
-        cleaning = true
+        guard await beginCleanup() else { return }
         var completed = 0
         var failures: [String] = []
         for entry in review.entries {

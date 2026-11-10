@@ -77,7 +77,7 @@ struct BulkCleanupView: View {
                 if model.cleaning { ProgressView().controlSize(.small) }
                 Button(review.operation == "delete" ? "Confirm removal" : "Confirm", role: review.operation == "delete" ? .destructive : nil) {
                     Task { await model.applyBulkCleanup(review) }
-                }.disabled(model.cleaning || model.refreshing || review.entries.isEmpty)
+                }.disabled(model.cleaning || review.entries.isEmpty)
             }
         }.padding(24).frame(width: 620).interactiveDismissDisabled(model.cleaning)
     }

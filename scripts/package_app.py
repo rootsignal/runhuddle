@@ -31,7 +31,7 @@ info = {
     "CFBundleExecutable": "SessionManager", "CFBundleIdentifier": "local.rickbaker.agent-sessions",
     "CFBundleName": "RunHuddle", "CFBundleDisplayName": "RunHuddle",
     "CFBundleIconFile": "RunHuddle",
-    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.4.1", "CFBundleVersion": "5",
+    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.4.2", "CFBundleVersion": "6",
     "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True,
     "NSAppleEventsUsageDescription": "Find and focus your existing AI session in Terminal or Ghostty, or open a new terminal when requested.",
 }
