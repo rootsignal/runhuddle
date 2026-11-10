@@ -26,6 +26,7 @@ with tempfile.TemporaryDirectory(prefix='runhuddle standalone ') as temp:
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     assert 'ProjectRoot' not in info
     run(python, '-E', '-s', '-B', '-c', 'import websockets, yaml, sqlite3; sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE search USING fts5(text)")')
+    run(python, '-E', '-s', '-B', '-c', 'import sys; sys.path.insert(0, sys.argv[1]); import codex_events', resources / 'bridge')
     assert json.loads(bridge('copilot_bridge.py', 'snapshot')) == []
     bridge('copilot_bridge.py', 'install-hooks')
     config = json.loads((home / '.copilot/hooks/agent-session-manager.json').read_text())

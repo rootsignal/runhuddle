@@ -92,6 +92,7 @@ def record(event, payload, identity=None, stamp=None):
         if old and old[0] > stamp:
             return
         data = json.loads(old[1]) if old else {}
+        previous = dict(data)
         if compact:
             state = data.get('state', 'disconnected')
         pending = data.get('pending', {})
@@ -114,6 +115,13 @@ def record(event, payload, identity=None, stamp=None):
             data['preview'] = payload['prompt'][:2000]
             data.setdefault('title', payload['prompt'].splitlines()[0][:100] if payload['prompt'] else 'Claude session')
         db.execute('INSERT OR REPLACE INTO states VALUES (?,?,?)', (sid, stamp, json.dumps(data)))
+    # Signal only after commit. Snapshots never touch this file, preventing refresh loops.
+    try:
+        if any(previous.get(key) != data.get(key) for key in ('state', 'cwd', 'preview', 'identity')):
+            Path(str(STATE) + '.signal').touch(mode=0o600)
+    except OSError:
+        pass  # The durable hook record remains available to reconciliation.
+
 
 
 def message(event):

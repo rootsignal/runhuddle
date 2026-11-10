@@ -108,6 +108,12 @@ struct CopilotTrackingStatus: Decodable {
     @Published var cleanupMessage: String?
     private var store: Store?
     private var timer: Task<Void, Never>?
+    private var hookWatcher: HookEventWatcher?
+    private var codexObserver: CodexEventObserver?
+    private var eventRefreshTask: Task<Void, Never>?
+    private var pendingProviders = Set<String>()
+    private var refreshingProviders = Set<String>()
+    private var terminationObserver: NSObjectProtocol?
     private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
     private var connectedProviders: Set<String> = []
     private let attentionDelegate = AttentionDelegate()
@@ -152,9 +158,45 @@ struct CopilotTrackingStatus: Decodable {
             while !Task.isCancelled {
                 await self?.refreshNotificationStatus()
                 await self?.refresh()
-                let interval = SessionPresentation.refreshInterval(for: self?.sessions ?? [])
-                try? await Task.sleep(for: .seconds(interval))
+                try? await Task.sleep(for: .seconds(30))
             }
+        }
+        let storage = NSHomeDirectory() + "/Library/Application Support/Agent Session Manager/"
+        let environment = ProcessInfo.processInfo.environment
+        hookWatcher = HookEventWatcher(paths: [
+            (environment["SESSION_TRACKER_CLAUDE_STATE"] ?? storage + "claude.sqlite") + ".signal": "Claude",
+            (environment["SESSION_TRACKER_COPILOT_STATE"] ?? storage + "copilot.sqlite") + ".signal": "Copilot"
+        ]) { [weak self] providers in
+            Task { @MainActor [weak self] in self?.queueRefresh(providers) }
+        }
+        hookWatcher?.start()
+        codexObserver = CodexEventObserver { [weak self] in self?.queueRefresh(["Codex"]) }
+        codexObserver?.start()
+        terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.codexObserver?.stop(); self?.hookWatcher?.stop()
+                self?.eventRefreshTask?.cancel(); self?.timer?.cancel()
+            }
+        }
+    }
+
+    private func queueRefresh(_ providers: Set<String>) {
+        pendingProviders.formUnion(providers)
+        guard eventRefreshTask == nil else { return }
+        eventRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            while let self, !Task.isCancelled, !self.pendingProviders.isEmpty {
+                if self.refreshing || self.cleaning {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    continue
+                }
+                let providers = self.pendingProviders
+                self.pendingProviders.removeAll()
+                await self.refresh(providers: providers)
+                // Bound work during bursts without postponing indefinitely as events arrive.
+                try? await Task.sleep(for: .seconds(1))
+            }
+            self?.eventRefreshTask = nil
         }
     }
 
@@ -206,24 +248,29 @@ struct CopilotTrackingStatus: Decodable {
     var attentionCount: Int { sessions.filter { !$0.simulated && $0.state == .needsInput }.count }
     var projects: Int { Set(visible.map(\.project)).count }
 
-    func refresh(userInitiated: Bool = false) async {
+    func refresh(userInitiated: Bool = false, providers: Set<String> = ["Codex", "Claude", "Copilot"]) async {
         guard !cleaning else { return }
         if refreshing {
-            if userInitiated { manualRefreshing = true }
+            if userInitiated {
+                manualRefreshing = true
+                let missing = providers.subtracting(refreshingProviders)
+                if !missing.isEmpty { queueRefresh(missing) }
+            }
             return
         }
         refreshing = true
+        refreshingProviders = providers
         manualRefreshing = userInitiated
         defer {
             manualRefreshing = false
             refreshing = false
+            refreshingProviders.removeAll()
             let waiters = refreshWaiters
             refreshWaiters.removeAll()
             for waiter in waiters { waiter.resume() }
         }
-        var fetched: [Session] = []
-        var status: [String] = []
-        for tool in ["Codex", "Copilot", "Claude"] {
+        var fetched = sessions.filter { !$0.simulated && !providers.contains($0.provider) }
+        for tool in ["Codex", "Copilot", "Claude"] where providers.contains(tool) {
             do {
                 let data = try await Bridge.run(["snapshot"], provider: tool)
                 let rows = try JSONDecoder().decode([Session].self, from: data)
@@ -240,7 +287,6 @@ struct CopilotTrackingStatus: Decodable {
                 providerErrors.removeValue(forKey: tool)
                 connectedProviders.insert(tool)
                 fetched += rows
-                status.append("\(tool) connected · \(rows.count) sessions")
             } catch {
                 // An agent that has never been used is not a broken connection.
                 if sessions.contains(where: { $0.provider == tool && !$0.simulated }) || connectedProviders.contains(tool) {
@@ -248,7 +294,6 @@ struct CopilotTrackingStatus: Decodable {
                 }
                 connectedProviders.remove(tool)
                 fetched += Recovery.offline(sessions.filter { $0.provider == tool }, reason: "Live connection unavailable.")
-                status.append("\(tool) unavailable: \(error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines))")
             }
         }
         var local = localCleanupState
@@ -256,18 +301,27 @@ struct CopilotTrackingStatus: Decodable {
             local.archived.remove(row.id)
             local.removed.remove(row.id)
         }
-        do { try store?.save(local, key: "localCleanupState"); localCleanupState = local }
+        do {
+            if local != localCleanupState {
+                try store?.save(local, key: "localCleanupState"); localCleanupState = local
+            }
+        }
         catch { self.error = "Could not save local archive state: \(error.localizedDescription)" }
         fetched.removeAll { local.removed.contains($0.id) }
         for index in fetched.indices where local.archived.contains(fetched[index].id) {
             fetched[index].state = .archived
             fetched[index].reason = "Archived in RunHuddle; agent history is preserved."
         }
+        fetched.sort { $0.id < $1.id }
         recentAlerts = Array(recentAlerts.prefix(8))
         let nextSessions = fetched + sessions.filter(\.simulated)
         let sessionsChanged = sessions != nextSessions
         if sessionsChanged { sessions = nextSessions }
-        connection = status.joined(separator: " · ")
+        connection = ["Codex", "Copilot", "Claude"].map { tool in
+            if let error = providerErrors[tool] { return "\(tool) unavailable: \(error)" }
+            if connectedProviders.contains(tool) { return "\(tool) connected · \(fetched.filter { $0.provider == tool }.count) sessions" }
+            return "\(tool) not connected"
+        }.joined(separator: " · ")
         await ensureCopilotTracking()
         await repairClaudeTracking()
         lastRefresh = Date()

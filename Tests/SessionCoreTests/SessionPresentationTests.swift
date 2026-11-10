@@ -30,18 +30,5 @@ final class SessionPresentationTests: XCTestCase {
         XCTAssertEqual(SessionPresentation.statusSummary(row), "Claude reports work in progress")
     }
 
-    func testPollingSlowsDownWhenNoWorkIsRunning() {
-        var row = Session(provider: "Claude", sessionID: "x", title: "Test", cwd: "/tmp", state: .working)
-        XCTAssertEqual(SessionPresentation.refreshInterval(for: [row]), 5)
-        row.state = .needsInput
-        XCTAssertEqual(SessionPresentation.refreshInterval(for: [row]), 5)
-        row.state = .idle
-        XCTAssertEqual(SessionPresentation.refreshInterval(for: [row]), 15)
-        row.state = .saved
-        XCTAssertEqual(SessionPresentation.refreshInterval(for: [row]), 30)
-        row.state = .working; row.simulated = true
-        XCTAssertEqual(SessionPresentation.refreshInterval(for: [row]), 30)
-        XCTAssertEqual(SessionPresentation.refreshInterval(for: []), 30)
-    }
 
 }

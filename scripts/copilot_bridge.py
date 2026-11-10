@@ -81,6 +81,7 @@ def record(event, payload, identity=None):
         if old and old[0] > stamp:
             return
         data = json.loads(old[1]) if old else {}
+        previous = dict(data)
         data.update(state=state, updated=stamp, reason='Copilot: ' + event, identity=identity or data.get('identity'))
         if payload.get('cwd'):
             data['cwd'] = payload['cwd']
@@ -89,6 +90,13 @@ def record(event, payload, identity=None):
             data['preview'] = prompt[:2000]
             data.setdefault('title', prompt.splitlines()[0][:100])
         db.execute('INSERT OR REPLACE INTO states VALUES (?,?,?)', (sid, stamp, json.dumps(data)))
+    # Signal only after commit. Snapshots never touch this file, preventing refresh loops.
+    try:
+        if any(previous.get(key) != data.get(key) for key in ('state', 'cwd', 'preview', 'identity')):
+            Path(str(STATE) + '.signal').touch(mode=0o600)
+    except OSError:
+        pass  # The durable hook record remains available to reconciliation.
+
 
 
 def events(path):

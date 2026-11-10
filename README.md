@@ -167,3 +167,7 @@ See [development and integration notes](docs/DEVELOPMENT.md) for implementation 
 RunHuddle is distributed as an early-preview standalone Mac app. See [release automation](docs/RELEASING.md) for the signing setup and GitHub Actions workflow.
 
 Copyright © 2026 Rootsignal. All rights reserved. No open-source license has been selected for this repository.
+
+### Live activity updates
+
+RunHuddle listens for Codex app-server status changes over a passive connection. Claude and Copilot hooks wake the app through local file notifications after saving meaningful activity changes. Events refresh only the affected provider and are combined during bursts. A quiet check every 30 seconds reconciles missed events and process exits; manual Refresh is always available. Monitoring never starts or resumes an agent session.

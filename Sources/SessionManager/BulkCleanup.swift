@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import SessionCore
 
-struct LocalCleanupState: Codable {
+struct LocalCleanupState: Codable, Equatable {
     var archived: Set<String> = []
     var removed: Set<String> = []
 }
