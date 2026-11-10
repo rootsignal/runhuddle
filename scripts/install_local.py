@@ -43,6 +43,7 @@ def main():
         if existing.get('CFBundleIdentifier') != 'local.rickbaker.agent-sessions':
             parser.error('Destination contains a different app; choose another destination.')
     os.chdir(root)
+    os.environ['RUNHUDDLE_BUILD_PYTHON'] = sys.executable
     run('/bin/bash', root / 'scripts/build-app.sh')
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.runhuddle-install-', dir=destination) as temp:
@@ -69,4 +70,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        print(f'Installation stopped: {error.cmd[0]} exited with status {error.returncode}. See the error above.', file=sys.stderr)
+        sys.exit(error.returncode or 1)

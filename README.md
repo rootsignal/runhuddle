@@ -60,6 +60,12 @@ bash scripts/package-dmg.sh
 
 The DMG and SHA-256 checksum are written to `dist/`. Build on the target architecture; the runtime packager supports arm64 and x86_64, but only arm64 has been validated.
 
+### Source-build troubleshooting
+
+The build script explicitly uses SwiftPM's native backend. If an older checkout reports `XCBBuild` / `Could not initialize build system` / `unknown error parsing property lists`, pull the latest code and rerun the installer. No Xcode settings changes or session deletion are needed for this workaround.
+
+If `python3` reports “No version is set,” your version manager must select an installed Python 3.12+ before starting the installer. The packaging step reuses that same interpreter. Quit RunHuddle from its menu-bar **Quit** item before updating; closing the main window leaves the app running.
+
 ### Connect Codex
 
 Start your normal Codex CLI workflow. RunHuddle looks for the shared server socket at:
