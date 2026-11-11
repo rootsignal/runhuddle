@@ -21,6 +21,7 @@ PY
 gh release edit "v$version" --draft=false --prerelease
 mkdir -p updates
 cp "$stage/appcast.xml" updates/appcast.xml
-git add updates/appcast.xml
+python3 scripts/update-download-links.py updates/appcast.xml
+git add updates/appcast.xml README.md docs/GETTING_STARTED.md
 git commit -m "Publish signed update feed for $version"
 git push origin main

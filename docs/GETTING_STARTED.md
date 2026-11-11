@@ -6,7 +6,13 @@
 
 Requires macOS 14 or newer. The current package is for Apple Silicon; Intel builds have not been verified.
 
-1. Download the Apple Silicon `.dmg` from [GitHub Releases](https://github.com/rootsignal/runhuddle/releases), then open it.
+<!-- current-download:start -->
+**[Download RunHuddle 0.11.4 for Apple Silicon](https://github.com/rootsignal/runhuddle/releases/download/v0.11.4/RunHuddle-0.11.4-arm64.dmg)**
+
+[Release notes](https://github.com/rootsignal/runhuddle/releases/tag/v0.11.4) · [All releases](https://github.com/rootsignal/runhuddle/releases)
+<!-- current-download:end -->
+
+1. Download the installer above, then open the `.dmg`.
 2. Drag **RunHuddle** to **Applications** and open it there.
 3. RunHuddle checks for local agents automatically. Copilot tracking is enabled automatically when its CLI or a session is detected. A one-time notice explains that already-open Copilot sessions need one restart/resume; new sessions connect automatically.
 
@@ -25,7 +31,7 @@ Source builds are ad-hoc signed for local development; release downloads use Dev
 
 ## Update and uninstall
 
-For an installed release, choose **Quit** in the RunHuddle menu bar, download the new DMG from [Releases](https://github.com/rootsignal/runhuddle/releases), and drag the app into the same Applications folder, replacing the previous copy. Open it again. Names, notes, handoffs, and tracking settings are preserved. Closing the window alone does not quit the app. From version 0.5.0 onward, choose **Check for Updates…** in the app or menu-bar menu to download, install, and relaunch in place. **Connections → Check automatically** enables background update checks; installation remains your choice. The first update from 0.4.x still requires the DMG. Updates and the update feed are signed with Sparkle EdDSA signatures, and release apps are Developer ID signed and notarized.
+For an installed release, choose **Quit** in the RunHuddle menu bar, download the current DMG using the link above, and drag the app into the same Applications folder, replacing the previous copy. Open it again. Names, notes, handoffs, and tracking settings are preserved. Closing the window alone does not quit the app. From version 0.5.0 onward, choose **Check for Updates…** in the app or menu-bar menu to download, install, and relaunch in place. **Connections → Check automatically** enables background update checks; installation remains your choice. The first update from 0.4.x still requires the DMG. Updates and the update feed are signed with Sparkle EdDSA signatures, and release apps are Developer ID signed and notarized.
 
 For a source checkout, quit RunHuddle and run:
 

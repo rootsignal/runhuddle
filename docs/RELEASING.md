@@ -69,3 +69,5 @@ For optional GitHub release builds, add SPARKLE_PRIVATE_KEY as an environment se
 Initial 0.4.x users must install the 0.5.0 DMG once. Thereafter Sparkle can replace the existing app in place and relaunch it. Automatic checks are opt-in in Connections; automatic installation is disabled.
 
 The local release flow also runs scripts/test_updater.py against a separate signed fixture bundle. It checks rejection of a modified feed and an actual download/install/relaunch, without reading RunHuddle session data or installing agent hooks. It needs the existing Developer ID identity and Sparkle Keychain key. Put user-facing release notes in docs/releases/VERSION.md; they are embedded in the signed update feed.
+
+The publish script also updates the direct Apple Silicon installer and release-notes links in the README and Getting started guide from the verified appcast. These links point to the same public preview offered by the updater; no manual version edits are needed. Keep the `current-download` markers in both documents. To repair documentation links for the existing feed, run `python3 scripts/update-download-links.py`.
