@@ -36,6 +36,8 @@ Requires macOS 14 or newer. The current package is for Apple Silicon; Intel buil
 2. Drag **RunHuddle** to **Applications** and open it there.
 3. RunHuddle checks for local agents automatically. Copilot tracking is enabled automatically when its CLI or a session is detected. A one-time notice explains that already-open Copilot sessions need one restart/resume; new sessions connect automatically.
 
+Click the owl in the menu bar, or press **Control–Option–Space**, to open the session switcher above your current app. Search active sessions, use **↑ / ↓** and **Return** to switch to a terminal, or press **Escape** to dismiss it. Change or disable the global shortcut in **RunHuddle → Settings… → Session switcher** (also available from the popover’s gear menu). The full window remains available for saved sessions, history, and handoffs. Ambiguous terminal matches still ask you to choose.
+
 Your agent CLIs and accounts are installed separately. No Python installation, shell changes, or source checkout are needed to run the app. View connection status anytime from **Connections…** in the menu bar. Install the app at its permanent location before enabling hooks; after moving the app, reconnect in Connections.
 
 Apple notarization tickets are attached to release installers. No Gatekeeper workaround is needed.

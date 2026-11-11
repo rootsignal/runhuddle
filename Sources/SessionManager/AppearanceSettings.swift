@@ -27,6 +27,7 @@ struct AppearancePicker: View {
 }
 
 struct AppearanceSettings: View {
+    @EnvironmentObject var hotKey: SwitcherHotKey
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Appearance", systemImage: "circle.lefthalf.filled")
@@ -34,6 +35,16 @@ struct AppearanceSettings: View {
             AppearancePicker().pickerStyle(.segmented).labelsHidden()
             Text("System follows your Mac’s appearance. Light and Dark apply only to RunHuddle.")
                 .font(.callout).foregroundStyle(.secondary)
+            Divider()
+            Text("Session switcher").font(.headline)
+            Toggle("Enable global keyboard shortcut", isOn: Binding(get: { hotKey.enabled }, set: { hotKey.setEnabled($0) }))
+            HStack {
+                ShortcutRecorder(shortcut: hotKey.shortcut, commit: { hotKey.setShortcut($0) }).frame(width: 170, height: 28)
+                Button("Reset") { hotKey.setShortcut(.standard) }
+            }
+            Text("Click the shortcut to record a new combination. Include Command, Control, or Option. Press Escape to cancel.")
+                .font(.caption).foregroundStyle(.secondary)
+            if let error = hotKey.error { Text(error).font(.caption).foregroundStyle(.orange) }
         }
         .padding(24)
         .frame(width: 380)

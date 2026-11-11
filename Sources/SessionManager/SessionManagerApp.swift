@@ -6,9 +6,14 @@ import SessionCore
     @StateObject private var model = AppModel()
     @StateObject private var loginItem = LoginItem()
     @StateObject private var updater = AppUpdater()
+    @StateObject private var switcher = SessionSwitcherController()
     var body: some Scene {
         Window("RunHuddle", id: "main") {
             ContentView().environmentObject(model).environmentObject(updater)
+                .onAppear {
+                    switcher.start(model: model, loginItem: loginItem, updater: updater)
+                    model.onTerminalOpened = { [weak switcher] in switcher?.terminalDidOpen() }
+                }
                 .frame(minWidth: 1000, minHeight: 640)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
                 .toolbar {
@@ -29,96 +34,9 @@ import SessionCore
             SearchSessionCommands()
         }
         Settings {
-            AppearanceSettings()
+            AppearanceSettings().environmentObject(switcher.hotKey)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }
-        MenuBarExtra {
-            MenuContent().environmentObject(model).environmentObject(loginItem).environmentObject(updater)
-        } label: {
-            HStack(spacing: 4) {
-                Image(nsImage: RunHuddleIcon.image())
-                if let badge = RunHuddleIcon.attentionBadge(count: model.attentionCount) {
-                    Image(nsImage: badge)
-                } else if model.navigatingTerminal { Text("…") }
-            }
-            .accessibilityLabel("RunHuddle, \(model.attentionCount) sessions need input" + (model.navigatingTerminal ? ", " + model.terminalProgress : ""))
-            .help(model.navigatingTerminal ? model.terminalProgress : "RunHuddle · \(model.attentionCount) need input")
-        }
-    }
-}
-
-struct MenuContent: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.openWindow) var openWindow
-    @EnvironmentObject var loginItem: LoginItem
-    private var menu: SessionMenu { SessionMenu(sessions: model.sessions, alerts: model.recentAlerts) }
-
-    var body: some View {
-        Text(menu.summary)
-        Text("\(menu.needsInput.count + menu.working.count + menu.idle.count) active sessions")
-        if model.navigatingTerminal { Text(model.terminalProgress) }
-        if model.connectionNeedsAttention {
-            Text("Some agents are unavailable — showing last known sessions")
-        }
-        Divider()
-        sessionGroup("Needs input", rows: menu.needsInput, limit: 5)
-        sessionGroup("Working", rows: menu.working, limit: 5)
-        sessionGroup("Recently finished", rows: menu.recentlyFinished, limit: 3)
-        if menu.recentlyFinished.isEmpty {
-            sessionGroup("Idle", rows: menu.idle, limit: 3)
-        }
-        if menu.needsInput.isEmpty && menu.working.isEmpty && menu.idle.isEmpty {
-            Text("No active sessions")
-            Divider()
-        }
-        Button("Open RunHuddle") { showWindow() }
-        Button("Connections…") { model.showSetup = true; showWindow() }
-        Menu("Appearance") { AppearancePicker() }
-        UpdateButton()
-        Button(model.manualRefreshing ? "Refreshing…" : "Refresh") { Task { await model.refresh(userInitiated: true) } }
-            .disabled(model.manualRefreshing || model.cleaning)
-        Toggle("Open at Login", isOn: Binding(get: { loginItem.enabled }, set: { loginItem.setEnabled($0) }))
-        if loginItem.needsApproval {
-            Button("Allow in Login Items Settings…") { loginItem.openSettings() }
-        }
-        if let error = loginItem.error {
-            Text(error)
-            Button("Open Login Items Settings…") { loginItem.openSettings() }
-        }
-        Divider()
-        Button("Quit RunHuddle") { NSApp.terminate(nil) }
-            .onAppear { loginItem.refresh() }
-    }
-
-    @ViewBuilder private func sessionGroup(_ title: String, rows: [Session], limit: Int) -> some View {
-        if !rows.isEmpty {
-            Text(title)
-            ForEach(Array(rows.prefix(limit))) { row in
-                Button {
-                    model.openMainWindow = { openWindow(id: "main") }
-                    model.resume(row, fromMenu: true)
-                } label: {
-                    Label("\(short(row.project, 24)) · \(short(model.displayName(for: row), 46)) — \(row.state.title)", systemImage: row.state.symbol)
-                }
-                .help("\(row.provider) · \(row.cwd) · Go to terminal")
-                .disabled(model.navigatingTerminal)
-            }
-            if rows.count > limit {
-                Button("View all \(rows.count) \(title.lowercased()) sessions…") {
-                    model.filter = rows[0].state.title
-                    model.provider = "All tools"; model.query = ""
-                    showWindow()
-                }
-            }
-            Divider()
-        }
-    }
-    private func showWindow() {
-        openWindow(id: "main")
-        NSApp.activate(ignoringOtherApps: true)
-    }
-    private func short(_ text: String, _ limit: Int) -> String {
-        text.count > limit ? String(text.prefix(limit - 1)) + "…" : text
     }
 }
 
@@ -126,6 +44,7 @@ struct MenuContent: View {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) var openWindow
+    @Environment(\.openSettings) private var openSettings
     @ViewState private var showDetails = false
     @ViewState private var showHistoryFilters = false
     private var isNow: Bool { model.filter == "Now" && model.query.isEmpty }
@@ -386,7 +305,10 @@ struct ContentView: View {
             Task { await model.refreshNotificationStatus() }
         }
         .onChange(of: model.query) { _, _ in model.scheduleHistorySearch() }
-        .onAppear { model.openMainWindow = { openWindow(id: "main") } }
+        .onAppear {
+            model.openMainWindow = { openWindow(id: "main") }
+            model.openSettingsWindow = { openSettings() }
+        }
         .sheet(item: $model.bulkReview) { BulkCleanupView(review: $0) }
         .sheet(isPresented: $model.showSetup) { AgentSetupView() }
         .sheet(item: $model.renameSession) { row in

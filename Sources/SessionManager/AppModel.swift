@@ -128,6 +128,8 @@ struct CopilotTrackingStatus: Decodable {
     private var connectedProviders: Set<String> = []
     private let attentionDelegate = AttentionDelegate()
     var openMainWindow: (() -> Void)?
+    var onTerminalOpened: (() -> Void)?
+    var openSettingsWindow: (() -> Void)?
 
     init() {
         do {
@@ -823,7 +825,7 @@ struct CopilotTrackingStatus: Decodable {
     private func navigate(_ row: Session, fromMenu: Bool) async {
         await discoverTerminals()
         if let match = TerminalTarget.uniqueMatch(for: row, sessions: sessions, targets: terminalTargets) {
-            do { terminalProgress = "Opening terminal…"; try await TerminalNavigator.focus(match); return }
+            do { terminalProgress = "Opening terminal…"; try await TerminalNavigator.focus(match); onTerminalOpened?(); return }
             catch { terminalMessage = error.localizedDescription }
         }
         if fromMenu {
