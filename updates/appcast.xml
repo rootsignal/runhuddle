@@ -6,23 +6,21 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.8.0</title>
-            <pubDate>Tue, 10 Nov 2026 18:59:38 -0600</pubDate>
-            <sparkle:version>22</sparkle:version>
-            <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
+            <title>0.8.1</title>
+            <pubDate>Tue, 10 Nov 2026 19:07:13 -0600</pubDate>
+            <sparkle:version>23</sparkle:version>
+            <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[The Now view puts sessions needing input first, with a prominent attention panel and terminal action for Codex, Claude Code, and Copilot CLI. Working and idle counts stay visible, and session details open when you select a row, leaving more room to scan your work.
+            <description sparkle:format="markdown"><![CDATA[The Now status summary is now a compact, fixed-height strip that remains visible when session details open or close. Selecting a session no longer removes the summary or shifts the list upward.
 
-Session rows are more compact, with quieter selection and fewer borders. Saved and archived sessions live under History in the sidebar; disconnected sessions remain directly visible. The detail pane emphasizes the latest response and lets you expand the latest request when needed.
-
-This release does not add in-app replies or approvals. Questions, choices, permissions, and written responses continue through the agent’s terminal. No request is inferred from recorded conversation text.
+Search has moved to a smaller field in the window toolbar; ⌘F, Escape, clear search, and Back to Now remain available. Select sessions is in the toolbar’s ellipsis menu, with bulk controls shown only during selection.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.8.0/RunHuddle-0.8.0-arm64.dmg" length="42836594" type="application/octet-stream" sparkle:edSignature="NScYMm8Z7Tv9U5Oh/XiV8KefnEmO/z2PA3uZhS4bopNzlRjgT+PVgBlPx4pIsQyfjoeuGeP+tG9JfOsGzwqXAw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.8.1/RunHuddle-0.8.1-arm64.dmg" length="42722920" type="application/octet-stream" sparkle:edSignature="o3Zok8KTz4EvQpVqu8Yqh4XwSG2f+wzWAwaNhC4BocM8Hj5ve0hFILorAjf9lF0SUvnnZQI83faLRwewuNW4Cw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: FEEqNxvAyI87Q+YPtp1mT/2Ve+liV5x08vOnPR7zKqWruxM3ENApQpRZHMybfcIBJusxfuGqX6ACrAhL8Rf0Ag==
-length: 1959
+edSignature: 2njO2ctVd/4FF9SX2e4H41Pq4X16T4+dInd82zy5KUD+ert4/JNczEK2mJcgZNC+9A+rpqE9jXU5SHMBMwNYBw==
+length: 1620
 -->
