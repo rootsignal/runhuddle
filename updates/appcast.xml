@@ -6,27 +6,28 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.11.1</title>
-            <pubDate>Tue, 10 Nov 2026 21:12:01 -0600</pubDate>
-            <sparkle:version>31</sparkle:version>
-            <sparkle:shortVersionString>0.11.1</sparkle:shortVersionString>
+            <title>0.11.2</title>
+            <pubDate>Tue, 10 Nov 2026 21:18:56 -0600</pubDate>
+            <sparkle:version>32</sparkle:version>
+            <sparkle:shortVersionString>0.11.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.1 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.2 preview
 
-Fix window resizing so the content stays within the available width.
+Correct the remaining narrow-window clipping that 0.11.1 did not resolve.
 
-- Tie the native window minimum to the content minimum, preventing the window from shrinking underneath its layout.
-- Reduce the minimum width to 900 points and let the session list and details columns shrink further.
-- Wrap terminal actions onto a second row when the details column is narrow.
+- Replace nested native split views with columns calculated from the current available width.
+- Sidebar and session details stay within the window as it narrows. Below the two-column breakpoint, details replace the list; close details to return to the list.
+- The sidebar can still be hidden from the toolbar. Details can be closed in every filter.
+- Minimum window width is 760 points. Column sizing is automatic rather than manually draggable.
 
-Includes the repository context section introduced in 0.11.0. Validated by compilation and the release test suite; interactive multi-monitor resizing still needs confirmation on the affected setup.
+Validation: built successfully and rendered the production layout containers with representative session content at 1320 → 900 → 760 → 1320 points in the same offscreen window. Sidebar labels and wrapped detail text remain within bounds. This fixture is reproducible with `bash scripts/render-workspace-resize.sh`. Live multi-monitor interaction remains unverified.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.1/RunHuddle-0.11.1-arm64.dmg" length="42841688" type="application/octet-stream" sparkle:edSignature="vHkTKtjQmJSgl/NF6yycAn26yaxP7AVCYg5m7Z2V0xCY2CNItvOIU7b0I638Ar3eoeq0DNzC+Qy0MZyEOASBAw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.2/RunHuddle-0.11.2-arm64.dmg" length="43047691" type="application/octet-stream" sparkle:edSignature="eef01BAb5g5ziVc7Y6Q7M8TTlQzRHW/lCYH3YoW9fvAUNKjvFyGpXpHmQuLDnGh16wNRypLZ2NXq0Oe3OIIfBg=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: Hw2LfmpSssBj9F5YB6Kb6E9uLfyQwmSgbM9QfQA9CWk+NlaXUPOwyJ9hUSuryJ5bOdA6lL3YWzv3RwIVLPhkCw==
-length: 1799
+edSignature: B2hO105AuoAfCLlvgFV/qO2fhTiV3lIqfvGPz/R5mllZ22qMh95/darxZXfODSctfarJdt7WPzT37rqM/mHPBA==
+length: 2129
 -->
