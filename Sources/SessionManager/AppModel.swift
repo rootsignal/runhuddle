@@ -9,7 +9,7 @@ enum Bridge {
            FileManager.default.fileExists(atPath: path + "/codex_bridge.py") { return path }
         return FileManager.default.currentDirectoryPath + "/scripts"
     }
-    static func run(_ arguments: [String], provider: String = "Codex") async throws -> Data {
+    static func run(_ arguments: [String], provider: String = "Codex", input: Data? = nil) async throws -> Data {
         let root = root
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("python/bin/python3").path
         let python = bundled.flatMap { FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil }
@@ -17,12 +17,18 @@ enum Bridge {
         return try await Task.detached {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: python)
-            let script = provider == "LocalCleanup" ? "local_cleanup.py" : provider == "HandoffAI" ? "handoff_ai.py" : provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : provider == "Claude" ? "claude_bridge.py" : "codex_bridge.py"
+            let script = provider == "Reply" ? "session_reply.py" : provider == "LocalCleanup" ? "local_cleanup.py" : provider == "HandoffAI" ? "handoff_ai.py" : provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : provider == "Claude" ? "claude_bridge.py" : "codex_bridge.py"
             process.arguments = ["-E", "-s", "-B", root + "/" + script] + arguments
             process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
             let output = Pipe(), errors = Pipe()
             process.standardOutput = output; process.standardError = errors
+            let inputPipe = Pipe()
+            if input != nil { process.standardInput = inputPipe }
             try process.run()
+            if let input {
+                try inputPipe.fileHandleForWriting.write(contentsOf: input)
+                try inputPipe.fileHandleForWriting.close()
+            }
             // Drain stdout while running so a large session index cannot fill the pipe.
             let data = output.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
@@ -87,6 +93,8 @@ struct CopilotTrackingStatus: Decodable {
     @Published var renameText = ""
     @Published var renameError: String?
     @Published var drafts: [String: String] = [:]
+    @Published var replies: [String: InlineReplyRecord] = [:]
+    @Published var replySending: Set<String> = []
     @Published var savedWork: [SavedWork] = []
     private var savedWorkLoaded = false
     @Published var libraryQuery = ""
@@ -164,6 +172,12 @@ struct CopilotTrackingStatus: Decodable {
             briefs = try store?.load([String: SessionBrief].self, key: "sessionBriefs") ?? [:]
             displayNames = try store?.load([String: String].self, key: "displayNames") ?? [:]
             drafts = try store?.load([String: String].self, key: "drafts") ?? [:]
+            replies = try store?.load([String: InlineReplyRecord].self, key: "inlineReplies") ?? [:]
+            for id in Array(replies.keys) where replies[id]?.status == "sending" {
+                replies[id]?.status = "uncertain"
+                if let last = replies[id]?.submissions?.indices.last { replies[id]?.submissions?[last].status = "uncertain" }
+                replies[id]?.message = "RunHuddle closed while sending. Check the terminal before sending again."
+            }
             contexts = try store?.load([String: HandoffContext].self, key: "handoffContexts") ?? [:]
             handoffs = try store?.load([String: GeneratedHandoff].self, key: "generatedHandoffs") ?? [:]
             savedWork = try store?.load([SavedWork].self, key: "savedWorkLibrary") ?? []
@@ -534,7 +548,7 @@ struct CopilotTrackingStatus: Decodable {
                 guard [.working, .idle, .needsInput].contains(row.state) else { return }
                 let result = await TerminalNavigator.discover()
                 guard displayName(for: row) == appliedName else { return }
-                let remembered = terminalChoices[row.id].flatMap { previous in result.targets.first { $0.stillMatchesChoice(previous) } }
+                let remembered = terminalChoices[row.id].flatMap { previous in result.targets.first { $0.stillMatchesChoice(previous, provider: row.provider) } }
                 guard let target = remembered ?? matchingTerminal(for: row, targets: result.targets), target.app == "Terminal", target.tmux == nil else {
                     cleanupMessage = "Name saved in RunHuddle. No unique supported Terminal tab was found to rename."; return
                 }
@@ -917,9 +931,21 @@ struct CopilotTrackingStatus: Decodable {
             do {
                 let data = try await Bridge.run(["history", row.sessionID], provider: row.provider)
                 guard !Task.isCancelled else { return }
-                struct Result: Decodable { let text: String; let latestRequest: String?; let latestResponse: String? }
+                struct Result: Decodable { let text: String; let latestRequest: String?; let latestResponse: String?; let messages: [ConversationMessage]? }
                 let history = try JSONDecoder().decode(Result.self, from: data)
-                contexts[row.id] = HandoffContext(text: history.text, latestRequest: history.latestRequest, latestResponse: history.latestResponse, sessionUpdated: row.updated)
+                contexts[row.id] = HandoffContext(text: history.text, latestRequest: history.latestRequest, latestResponse: history.latestResponse, sessionUpdated: row.updated, messages: history.messages)
+                if var reply = replies[row.id], var submissions = reply.submissions, let messages = history.messages {
+                    var used = Set(submissions.compactMap(\.observedMessageID))
+                    var changed = false
+                    for index in submissions.indices where submissions[index].observedMessageID == nil {
+                        let entry = submissions[index]
+                        if let message = messages.first(where: { $0.role == "user" && $0.text == entry.text && !entry.baseline.contains($0.id) && !used.contains($0.id) }) {
+                            submissions[index].observedMessageID = message.id
+                            used.insert(message.id); changed = true
+                        }
+                    }
+                    if changed { reply.submissions = submissions; _ = saveReply(reply, for: row.id) }
+                }
                 historyErrors.removeValue(forKey: row.id)
                 do { try store?.save(contexts, key: "handoffContexts") }
                 catch { self.error = "Could not save recorded context: \(error.localizedDescription)" }
@@ -948,6 +974,96 @@ struct CopilotTrackingStatus: Decodable {
     }
     func copyHandoff(_ row: Session) async {
         copy(completeHandoff(row))
+    }
+
+    func saveReply(_ record: InlineReplyRecord, for id: String) -> Bool {
+        do {
+            guard let store else { return false }
+            var updated = replies; updated[id] = record
+            try store.save(updated, key: "inlineReplies")
+            replies = updated
+            return true
+        } catch { self.error = "Could not save reply draft: \(error.localizedDescription)"; return false }
+    }
+    var copilotRepliesInstalled: Bool {
+        let folder = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".copilot/extensions/runhuddle-replies")
+        guard let resources = Bundle.main.resourceURL else { return false }
+        return [("extension.mjs", "copilot_extension.mjs"), ("bridge.mjs", "copilot_extension_core.mjs")].allSatisfy { installed, source in
+            guard let actual = try? Data(contentsOf: folder.appendingPathComponent(installed)),
+                  let expected = try? Data(contentsOf: resources.appendingPathComponent("bridge").appendingPathComponent(source)) else { return false }
+            return actual == expected
+        }
+    }
+
+    func installCopilotReplies() async -> InlineReplyResult {
+        do {
+            let input = try JSONEncoder().encode(InlineReplyPayload(action: "install", provider: "Copilot", sessionID: "", executable: "", text: ""))
+            return try JSONDecoder().decode(InlineReplyResult.self, from: await Bridge.run([], provider: "Reply", input: input))
+        } catch { return InlineReplyResult(outcome: "unavailable", message: "Could not install Copilot replies: \(error.localizedDescription)") }
+    }
+    func checkReply(_ row: Session) async -> InlineReplyResult {
+        guard ["Codex", "Claude", "Copilot"].contains(row.provider), !row.simulated, let executable = executable(for: row) else {
+            return InlineReplyResult(outcome: "unavailable", message: "Inline replies require a connected agent session.")
+        }
+        do {
+            let input = try JSONEncoder().encode(InlineReplyPayload(action: "check", provider: row.provider, sessionID: row.sessionID, executable: executable, text: ""))
+            let result = try JSONDecoder().decode(InlineReplyResult.self, from: await Bridge.run([], provider: "Reply", input: input))
+            if let received = result.receivedIDs, var record = replies[row.id], var submissions = record.submissions {
+                var changed = false
+                for index in submissions.indices where submissions[index].status == "forwarded" {
+                    if let id = submissions[index].channelMessageID, received.contains(id) {
+                        submissions[index].status = "received"; changed = true
+                    }
+                }
+                if changed {
+                    record.submissions = submissions
+                    if record.status == "forwarded", submissions.last?.status == "received" {
+                        record.status = "received"; record.message = ""
+                    }
+                    _ = saveReply(record, for: row.id)
+                }
+            }
+            return result
+        } catch { return InlineReplyResult(outcome: "unavailable", message: "Could not verify the connection. Open the terminal or check again.") }
+    }
+    func sendReply(_ row: Session) async {
+        guard !replySending.contains(row.id), ["Codex", "Claude", "Copilot"].contains(row.provider), !row.simulated,
+              let current = sessions.first(where: { $0.id == row.id }),
+              [.idle, .working].contains(current.state), let executable = executable(for: current) else { return }
+        var record = replies[row.id] ?? InlineReplyRecord()
+        guard record.status != "uncertain", record.status != "sending", !record.wireText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let originalDraft = record
+        let text = record.wireText
+        var submissions = record.submissions ?? []
+        submissions.append(ReplySubmission(id: UUID().uuidString, text: text, status: "sending", baseline: contexts[row.id]?.messages?.map(\.id) ?? []))
+        record.submissions = Array(submissions.suffix(30))
+        record.status = "sending"; record.message = "Sending to \(row.provider)…"
+        // Persist uncertainty before the side effect, so an interrupted app never silently retries.
+        guard saveReply(record, for: row.id) else { return }
+        replySending.insert(row.id)
+        defer { replySending.remove(row.id) }
+        do {
+            let input = try JSONEncoder().encode(InlineReplyPayload(action: "send", provider: current.provider, sessionID: current.sessionID, executable: executable, text: text))
+            let result = try JSONDecoder().decode(InlineReplyResult.self, from: await Bridge.run([], provider: "Reply", input: input))
+            record.status = result.outcome; record.message = result.message
+            if let last = record.submissions?.indices.last { record.submissions?[last].channelMessageID = result.messageID }
+            if ["queued", "forwarded"].contains(result.outcome) { record.text = ""; record.imagePaths = [] }
+        } catch {
+            record.status = "uncertain"
+            record.message = "Delivery could not be confirmed. Check the terminal before sending again."
+        }
+        if let last = record.submissions?.indices.last { record.submissions?[last].status = record.status }
+        if !saveReply(record, for: row.id) {
+            record.status = "uncertain"
+            record.message = "Could not save the delivery result. Check the terminal before sending again."
+            record.text = originalDraft.text
+            record.imagePaths = originalDraft.imagePaths
+            replies[row.id] = record
+        }
+        replySending.remove(row.id)
+        await refresh()
+        await appendHistory(current)
     }
 
     func copy(_ text: String) {
@@ -991,11 +1107,11 @@ struct CopilotTrackingStatus: Decodable {
     }
     private func navigate(_ row: Session, fromMenu: Bool) async {
         await discoverTerminals()
-        let remembered = terminalChoices[row.id].flatMap { previous in terminalTargets.first { $0.stillMatchesChoice(previous) } }
+        let remembered = terminalChoices[row.id].flatMap { previous in terminalTargets.first { $0.stillMatchesChoice(previous, provider: row.provider) } }
         let automatic = matchingTerminal(for: row, targets: terminalTargets)
         let preferred = automatic?.matchRank(for: row) == 0 ? automatic : remembered ?? automatic
         if let match = preferred {
-            do { terminalProgress = "Opening terminal…"; try await TerminalNavigator.focus(match); onTerminalOpened?(); return }
+            do { terminalProgress = "Opening terminal…"; try await TerminalNavigator.focus(match); terminalChoices[row.id] = match; onTerminalOpened?(); return }
             catch { terminalMessage = error.localizedDescription }
         }
         if fromMenu {
@@ -1038,6 +1154,53 @@ struct CopilotTrackingStatus: Decodable {
                 terminalMessage = message
             }
         }
+    }
+    func installedLaunchAgents() -> [String] {
+        ["Codex", "Claude", "Copilot"].filter {
+            executable(for: Session(provider: $0, sessionID: "", title: "", cwd: "", state: .saved)) != nil
+        }
+    }
+    func startNewSession(provider: String, directory: String, claudeReplies: Bool) async -> String? {
+        guard ["Codex", "Claude", "Copilot"].contains(provider) else { return "Choose an installed agent." }
+        if provider == "Claude", claudeReplies {
+            return await launchConnectedClaude(sessionID: UUID().uuidString.lowercased(), directory: directory, resume: false)
+        }
+        if provider == "Copilot" {
+            return await launchConnectedCopilot(sessionID: UUID().uuidString.lowercased(), directory: directory, resume: false)
+        }
+        guard !navigatingTerminal else { return "A terminal is already opening. Try again in a moment." }
+        let row = Session(provider: provider, sessionID: "", title: "", cwd: directory, state: .saved)
+        guard let executable = executable(for: row) else { return "Install and sign in to \(provider) first." }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else { return "Choose an existing project folder." }
+        launch("cd -- \(ShellCommand.quote(directory)) && \(ShellCommand.quote(executable))", cwd: directory)
+        return nil
+    }
+    func launchConnectedClaude(sessionID: String, directory: String, resume: Bool) async -> String? {
+        let row = Session(provider: "Claude", sessionID: sessionID, title: "Claude session", cwd: directory, state: .saved)
+        guard !navigatingTerminal, let executable = executable(for: row) else { return "Install and sign in to Claude Code first." }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else { return "Choose an existing project folder." }
+        do {
+            let input = try JSONEncoder().encode(InlineReplyPayload(action: "setup", provider: "Claude", sessionID: sessionID, executable: executable, text: "", resume: resume))
+            let result = try JSONDecoder().decode(InlineReplyResult.self, from: await Bridge.run([], provider: "Reply", input: input))
+            guard result.outcome == "setup" else { return result.message }
+            launch("cd -- \(ShellCommand.quote(directory)) && " + result.message, cwd: directory)
+            return nil
+        } catch { return "Could not prepare Claude’s connection: \(error.localizedDescription)" }
+    }
+    func launchConnectedCopilot(sessionID: String, directory: String, resume: Bool) async -> String? {
+        let row = Session(provider: "Copilot", sessionID: sessionID, title: "Claude session", cwd: directory, state: .saved)
+        guard !navigatingTerminal, let executable = executable(for: row) else { return "Install and sign in to Copilot first." }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else { return "Choose an existing project folder." }
+        do {
+            let input = try JSONEncoder().encode(InlineReplyPayload(action: "setup", provider: "Copilot", sessionID: sessionID, executable: executable, text: "", resume: resume))
+            let result = try JSONDecoder().decode(InlineReplyResult.self, from: await Bridge.run([], provider: "Reply", input: input))
+            guard result.outcome == "setup" else { return result.message }
+            launch("cd -- \(ShellCommand.quote(directory)) && " + result.message, cwd: directory)
+            return nil
+        } catch { return "Could not prepare Copilot’s connection: \(error.localizedDescription)" }
     }
     func openAnotherTerminal(_ row: Session) {
         guard !row.simulated, let executable = executable(for: row), let command = ShellCommand.resume(row, executable: executable) else {

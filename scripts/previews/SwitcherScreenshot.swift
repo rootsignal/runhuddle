@@ -18,6 +18,7 @@ import SessionCore
     var terminalNavigationSessionID: String?
     var terminalProgress = ""
     var showSetup = false
+    var settingsTab = "general"
     var refreshing = false
     var notificationPreferences = NotificationPreferences()
     func displayName(for row: Session) -> String { row.title }

@@ -16,6 +16,7 @@ import SessionCore
                 }
                 .frame(minWidth: 760, minHeight: 640)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+                .disclosureGroupStyle(HuddleDisclosureStyle())
                 .toolbar {
                     ToolbarItem(placement: .navigation) {
                         HStack(spacing: 8) {
@@ -38,15 +39,17 @@ import SessionCore
         Window("Getting started", id: "getting-started") {
             GettingStartedView().environmentObject(model).environmentObject(updater)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+                .disclosureGroupStyle(HuddleDisclosureStyle())
         }.windowResizability(.contentSize)
         Settings {
             TabView(selection: $model.settingsTab) {
-                AppearanceSettings().environmentObject(switcher.hotKey).environmentObject(updater).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+                AppearanceSettings().environmentObject(switcher.hotKey).environmentObject(updater).environmentObject(loginItem).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
                 AgentSetupView(embeddedInSettings: true).environmentObject(model).tabItem { Label("Connections", systemImage: "link") }.tag("connections")
                 TerminalSettings().tabItem { Label("Terminal", systemImage: "terminal") }.tag("terminal")
                 NotificationSettingsView().environmentObject(model).tabItem { Label("Notifications", systemImage: "bell") }.tag("notifications")
             }
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+                .disclosureGroupStyle(HuddleDisclosureStyle())
         }
     }
 }
@@ -59,9 +62,11 @@ struct ContentView: View {
     @AppStorage("showGettingStartedAtStartup") private var showGuideAtStartup = true
     @ViewState private var didCheckStartupGuide = false
     @ViewState private var showDetails = false
+    @ViewState private var expandedSession = false
     @ViewState private var sidebarVisible = true
     private var hasSessionFilters: Bool { model.provider != "All tools" || model.projectFilter != "All projects" }
     private var isNow: Bool { model.filter == "Now" && model.query.isEmpty }
+    @ViewState private var showNewSession = false
     @ViewState private var confirmTerminalResume = false
     @ViewState private var bulkGeneration: BulkGenerationRequest?
     @AppStorage("showIconGuide") private var showIconGuide = false
@@ -153,8 +158,9 @@ struct ContentView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(model.isSearching ? "Search results" : model.filter).font(.system(size: 22, weight: .semibold, design: .rounded))
-                        Text(model.filter == "Now" && model.query.isEmpty ? "Your active work, with the next action in view." : "\(model.visible.count) \(model.visible.count == 1 ? "session" : "sessions") across \(model.projects) \(model.projects == 1 ? "project" : "projects")")
+                        Text(model.filter == "Now" && model.query.isEmpty ? "Pick up where you left off." : "\(model.visible.count) \(model.visible.count == 1 ? "session" : "sessions") across \(model.projects) \(model.projects == 1 ? "project" : "projects")")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        if isNow { ActivityOverview(sessions: model.visible) }
                         if model.filter == "Archived" && !model.visible.isEmpty {
                             Text(SessionStorageTotal(model.visible).label)
                                 .font(.caption).foregroundStyle(.secondary)
@@ -165,7 +171,7 @@ struct ContentView: View {
                     if model.selected != nil {
                         Button { showDetails.toggle() } label: {
                             Image(systemName: "sidebar.right")
-                        }.help(showDetails ? "Hide session details" : "Show session details")
+                        }.buttonStyle(QuietIconButtonStyle()).help(showDetails ? "Hide session details" : "Show session details")
                             .accessibilityLabel(showDetails ? "Hide session details" : "Show session details")
                     }
                     if model.cleaning { ProgressView().controlSize(.small); Text(model.cleanupProgress).font(.caption).foregroundStyle(.secondary) }
@@ -173,8 +179,10 @@ struct ContentView: View {
                         if model.manualRefreshing { ProgressView().controlSize(.small) }
                         else { Image(systemName: "arrow.clockwise") }
                     }
+                        .buttonStyle(QuietIconButtonStyle()).accessibilityLabel("Refresh sessions")
                         .help("Refresh live sessions").disabled(model.manualRefreshing || model.cleaning)
-                }.padding(.horizontal, 20).padding(.vertical, 12)
+                }.padding(.horizontal, 20).padding(.vertical, 14)
+                    .background(LinearGradient(colors: [HuddleStyle.accent.opacity(0.035), .clear], startPoint: .topLeading, endPoint: .bottomTrailing))
                 SessionFilterChips()
                 if isNow && model.visible.contains(where: { $0.state == .needsInput }) {
                     NowAttentionPanel(
@@ -186,11 +194,11 @@ struct ContentView: View {
                         showAll: { model.filter = "Needs input" }
                     ).padding(.horizontal, 24).padding(.bottom, 10)
                 }
-                SessionColumns(showDetails: showDetails) {
+                SessionColumns(showDetails: showDetails, expanded: expandedSession) {
                     VStack(spacing: 0) {
                         if !model.query.isEmpty {
                             HStack(spacing: 8) {
-                                Button("Done") { model.query = ""; model.libraryQuery = ""; searchFocused = false }
+                                Button("Clear search") { model.query = ""; model.libraryQuery = ""; searchFocused = false }
                                 Picker("Search scope", selection: $model.searchScope) {
                                     ForEach(SessionSearchScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                                 }.labelsHidden().fixedSize().help("Search all sessions includes archived sessions; tool and project filters still apply")
@@ -282,6 +290,11 @@ struct ContentView: View {
                             HStack {
                                     Text("SESSION DETAILS").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                                     Spacer()
+                                    Button { expandedSession.toggle() } label: {
+                                        Image(systemName: expandedSession ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                    }.buttonStyle(QuietIconButtonStyle())
+                                        .help(expandedSession ? "Return to session list" : "Expand conversation")
+                                        .accessibilityLabel(expandedSession ? "Return to session list" : "Expand conversation")
                                     Button { showDetails = false } label: { Image(systemName: "xmark") }
                                         .buttonStyle(.plain).help("Close session details").accessibilityLabel("Close session details")
                             }.padding(.horizontal, 24).padding(.top, 12)
@@ -312,7 +325,7 @@ struct ContentView: View {
                     Spacer()
                     if model.manualRefreshing { Text("Checking activity…") }
                     else {
-                        Text("Activity updates automatically")
+                        Label("Updates automatically", systemImage: "bolt.horizontal.circle")
                             .help(model.lastRefresh.map { "Last checked: " + $0.formatted(date: .omitted, time: .standard) } ?? "Waiting for the first activity check")
                     }
                 }.font(.caption).foregroundStyle(.secondary).padding(12)
@@ -343,8 +356,13 @@ struct ContentView: View {
                     .help(model.filter == "Saved work" ? "Search saved work (⌘F)" : "Search sessions (⌘F)")
             }
             ToolbarItem(placement: .primaryAction) { if model.filter != "Saved work" { SessionFilterMenu() } }
+            ToolbarItem(placement: .primaryAction) {
+                Button { showNewSession = true } label: { Label("New session…", systemImage: "plus.bubble") }
+                    .help("Start a session with an installed AI agent")
+            }
 
         }
+        .sheet(isPresented: $showNewSession) { NewSessionLaunchView(initialDirectory: model.selected?.cwd ?? "") }
         .focusedSceneValue(\.searchSessions, { searchFocused = true })
         .tint(HuddleStyle.accent)
         .background(HuddleStyle.canvas)
@@ -542,7 +560,7 @@ struct SessionTerminalButton: View {
             Group {
                 if busy { ProgressView().controlSize(.small) }
                 else { Image(systemName: row.state == .saved ? "play.rectangle" : "terminal") }
-            }.frame(width: 28, height: 28)
+            }.frame(width: 32, height: 32)
                 .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain).foregroundStyle(HuddleStyle.accent)
@@ -568,9 +586,11 @@ struct SessionRow: View {
 struct SessionDetail: View {
     @EnvironmentObject var model: AppModel
     let row: Session
-    @ViewState private var tab = "Overview"
+    @ViewState private var tab = "Activity"
     @ViewState private var confirmFresh = false
-    @ViewState private var showSessionInfo = false
+    @ViewState private var repository: RepositoryContext?
+    @ViewState private var repositoryLoading = false
+    @ViewState private var repositoryRefresh = UUID()
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -583,76 +603,50 @@ struct SessionDetail: View {
                 Text(model.displayName(for: row)).font(.system(size: 20, weight: .semibold, design: .rounded)).lineLimit(2).textSelection(.enabled)
                 Spacer()
                 Button { model.beginRename(row) } label: { Image(systemName: "pencil") }
-                    .help("Rename session").accessibilityLabel("Rename session")
+                    .buttonStyle(QuietIconButtonStyle()).help("Rename session").accessibilityLabel("Rename session")
             }
             VStack(alignment: .leading, spacing: 5) {
                 Label(row.project, systemImage: "folder").font(.system(size: 12, weight: .medium)).foregroundStyle(HuddleStyle.accent)
-
+                if !row.simulated {
+                    Button { tab = "Details" } label: {
+                        Label(repository.map { "\($0.branch) · " + ($0.changedFiles == 0 ? "Clean" : "\($0.changedFiles) changed") } ?? (repositoryLoading ? "Reading repository…" : "Repository unavailable"), systemImage: "arrow.triangle.branch")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading).contentShape(Rectangle())
+                    }.buttonStyle(.plain).help("View repository details · shared working-tree state")
+                        .accessibilityLabel("View repository details")
+                }
             }
             if row.state == .disconnected {
-                Text("RunHuddle previously saw this session running, but cannot confirm its current activity. Its terminal may have closed, the agent may have stopped, or tracking may be unavailable. Check the agent or locate its terminal. Recorded history is still available.")
+                Text("Live activity is unavailable. Your recorded history is still here; locate the terminal to check this session.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             ViewThatFits(in: .horizontal) {
                 HStack { terminalButton; secondaryActions }
                 VStack(alignment: .leading, spacing: 8) { terminalButton; secondaryActions }
             }
-            if !row.simulated { RepositoryContextView(directory: row.cwd) }
-            Picker("Detail", selection: $tab) {
-                Text("Overview").tag("Overview")
+            Picker("Session section", selection: $tab) {
+                Text("Activity").tag("Activity")
                 Text("Handoff").tag("Handoff")
+                Text("Details").tag("Details")
             }.pickerStyle(.segmented).labelsHidden()
-            if tab == "Overview" {
+            if tab == "Activity" {
+                ConversationActivity(row: row)
+            } else if tab == "Details" {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if row.state == .needsInput { AttentionRequestCard(row: row) }
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Latest activity").font(.system(size: 14, weight: .semibold))
-                                if let context = model.contexts[row.id] {
-                                    Text("Updated \(context.updated, style: .relative) ago")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
+                    VStack(alignment: .leading, spacing: 18) {
+                            DisclosureGroup("Your notes") {
+                                TextField("Session purpose", text: Binding(get: { model.briefs[row.id]?.purpose ?? "" }, set: { value in
+                                    var brief = model.briefs[row.id] ?? SessionBrief(); brief.purpose = value; model.setBrief(brief, for: row)
+                                }), axis: .vertical).textFieldStyle(.roundedBorder)
+                                TextField("Next step or blocker", text: Binding(get: { model.briefs[row.id]?.nextStep ?? "" }, set: { value in
+                                    var brief = model.briefs[row.id] ?? SessionBrief(); brief.nextStep = value; model.setBrief(brief, for: row)
+                                }), axis: .vertical).textFieldStyle(.roundedBorder)
+                                Text("Saved automatically. These notes are not sent as a prompt.").font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
-                            Button { Task { await model.appendHistory(row) } } label: { Image(systemName: "arrow.clockwise") }
-                                .disabled(row.simulated || model.historyLoading.contains(row.id)).help("Refresh recorded activity")
+                        if !row.simulated {
+                            RepositoryContextView(context: repository, loading: repositoryLoading) { repositoryRefresh = UUID() }
                         }
-                        if model.historyLoading.contains(row.id) { ProgressView("Loading recorded activity…").controlSize(.small) }
-                        if let failure = model.historyErrors[row.id] {
-                            Text("Could not refresh activity. \(failure)").font(.caption).foregroundStyle(.orange)
-                        }
-                        if let context = model.contexts[row.id] {
-                            if (context.sessionUpdated ?? 0) < row.updated {
-                                Text("New session activity since this snapshot.").font(.caption).foregroundStyle(.secondary)
-                            }
-                            activityField("LATEST RESPONSE", context.latestResponse ?? "No recent response available.")
-                            DisclosureGroup("Latest request") {
-                                Text(HuddleStyle.inline(context.latestRequest ?? "No recent request available."))
-                                    .font(.callout).textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
-                            }.font(.callout)
 
-                        }
-                        DisclosureGroup("Your notes") {
-                            VStack(alignment: .leading, spacing: 12) {
-                                TextField("What is this session for?", text: Binding(
-                                    get: { model.briefs[row.id]?.purpose ?? "" },
-                                    set: { value in
-                                        var brief = model.briefs[row.id] ?? SessionBrief()
-                                        brief.purpose = value; model.setBrief(brief, for: row)
-                                    }), axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
-                                TextField("Next step or blocker", text: Binding(
-                                    get: { model.briefs[row.id]?.nextStep ?? "" },
-                                    set: { value in
-                                        var brief = model.briefs[row.id] ?? SessionBrief()
-                                        brief.nextStep = value; model.setBrief(brief, for: row)
-                                    }), axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
-                                Text("Saved automatically. Activity updates never replace your notes.").font(.caption).foregroundStyle(.secondary)
-                            }.padding(.top, 8)
-                        }
-                        DisclosureGroup("Session details", isExpanded: $showSessionInfo) {
-                            VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Context").font(.subheadline.bold())
@@ -692,21 +686,12 @@ struct SessionDetail: View {
                         field("STATUS SOURCE", row.reason)
                         field("PROJECT", row.project)
                         field("WORKING DIRECTORY", row.cwd)
-                        field("BRANCH", row.branch.isEmpty ? "Not recorded" : row.branch)
+                        field("RECORDED BRANCH", row.branch.isEmpty ? "Not recorded" : row.branch)
                         field("SESSION ID", row.sessionID)
                         Button("Copy session ID") { model.copy(row.sessionID) }
                         field("RECORDED PREVIEW", row.preview.isEmpty ? "No preview recorded" : row.preview)
-                            }.padding(.top, 10)
-                        }
-                        if row.simulated {
-                            Divider()
-                            Text("Simulate a Claude event").font(.headline)
-                            Text("These events change only this demo. No Claude calls or charges.").font(.caption).foregroundStyle(.secondary)
-                            ForEach(ClaudeEvent.allCases, id: \.rawValue) { event in
-                                Button(event.rawValue) { model.simulate(event, row: row) }
-                            }
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
+
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
                 }
             } else {
                 HandoffEditor(row: row) { confirmFresh = true }
@@ -714,7 +699,20 @@ struct SessionDetail: View {
             Spacer(minLength: 0)
         }.padding(18)
         .task(id: row.id + ":" + tab) {
-            await model.appendHistory(row)
+            if tab == "Activity" { await model.appendHistory(row) }
+        }
+        .task(id: row.cwd + repositoryRefresh.uuidString) {
+            repository = nil
+            guard !row.simulated else { return }
+            repositoryLoading = true
+            do {
+                let result = try await RepositoryContext.read(at: row.cwd)
+                guard !Task.isCancelled else { return }
+                repository = result
+            } catch {
+                guard !Task.isCancelled else { return }
+            }
+            repositoryLoading = false
         }
         .confirmationDialog("Start a new \(row.provider) session with this handoff?", isPresented: $confirmFresh) {
             Button("Start fresh in Terminal") { Task { await model.fresh(row) } }
@@ -724,6 +722,7 @@ struct SessionDetail: View {
                 Button { model.resume(row) } label: {
                     HStack(spacing: 6) {
                         if model.navigatingTerminal { ProgressView().controlSize(.small) }
+                        else { Image(systemName: row.state == .saved ? "play.rectangle" : "terminal") }
                         Text(model.navigatingTerminal ? model.terminalProgress : model.terminalActionTitle(for: row))
                     }
                 }
@@ -733,8 +732,10 @@ struct SessionDetail: View {
     private var secondaryActions: some View {
         HStack {
                 Button { NSWorkspace.shared.open(URL(fileURLWithPath: row.cwd)) } label: { Image(systemName: "folder") }
+                    .buttonStyle(QuietIconButtonStyle()).accessibilityLabel("Open project folder")
                     .help("Open project folder").disabled(row.simulated || row.cwd.isEmpty)
                 Button { model.togglePin(row) } label: { Image(systemName: model.pinned.contains(row.id) ? "pin.fill" : "pin") }
+                    .buttonStyle(QuietIconButtonStyle()).accessibilityLabel(model.pinned.contains(row.id) ? "Unpin session" : "Pin session")
                     .help(model.pinned.contains(row.id) ? "Unpin session" : "Pin session")
                 cleanupMenu
         }

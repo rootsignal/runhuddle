@@ -31,6 +31,16 @@ class BridgeTests(unittest.TestCase):
         self.assertIn("/tmp/file", result)
         self.assertLess(len(result), 11000)
 
+    def test_conversation_preserves_roles_order_and_identity(self):
+        result = continuation_context([{"items": [
+            {"id": "u1", "type": "userMessage", "content": [{"type": "text", "text": "Question"}]},
+            {"id": "a1", "type": "agentMessage", "text": "Answer"},
+            {"id": "tool", "type": "commandExecution", "command": "echo hi"},
+            {"id": "u2", "type": "userMessage", "content": [{"type": "text", "text": "Next question"}]}
+        ]}])
+        self.assertEqual([(m['id'], m['role'], m['text']) for m in result['messages']],
+                         [('u1', 'user', 'Question'), ('a1', 'assistant', 'Answer'), ('u2', 'user', 'Next question')])
+
     def test_waiting_takes_precedence(self):
         self.assertEqual(state_of({"type": "active", "activeFlags": ["waitingOnApproval"]})[0], "needsInput")
         self.assertEqual(state_of({"type": "active", "activeFlags": ["waitingOnUserInput"]})[0], "needsInput")

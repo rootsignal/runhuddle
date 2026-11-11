@@ -79,7 +79,7 @@ struct SavedWorkLibrary: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Saved work").font(.system(size: 22, weight: .semibold, design: .rounded))
-                Text("\(records.count) records · independent summaries and handoffs").font(.caption).foregroundStyle(.secondary)
+                Text("\(records.count) saved \(records.count == 1 ? "record" : "records") · ready to revisit or continue").font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Picker("Tool", selection: $tool) {
                         Text("All tools").tag("All tools")
@@ -103,17 +103,21 @@ struct SavedWorkLibrary: View {
                                 VStack(alignment: .leading, spacing: 7) {
                                     Text(record.title).font(.headline).lineLimit(2)
                                     Text(URL(fileURLWithPath: record.project).lastPathComponent + " · " + record.kind).font(.caption).foregroundStyle(.secondary)
-                                    Text(record.text).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                                    Text(HuddleStyle.inline(SessionPresentation.excerpt(record.text, limit: 240))).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
                                     Text(record.createdAt, style: .date).font(.caption2).foregroundStyle(.secondary)
-                                }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                                    .background(selection == record.id ? HuddleStyle.accent.opacity(0.12) : Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
-                                    .contentShape(Rectangle())
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                    .modifier(SessionCardSurface(selected: selection == record.id))
                             }.buttonStyle(.plain)
                         }
                     }.padding(14)
                 }.overlay {
                     if records.isEmpty {
-                        ContentUnavailableView("No matching saved work", systemImage: "books.vertical", description: Text("Save a work summary or handoff from a session, or adjust your library search and filters."))
+                        VStack(spacing: 12) {
+                            ContentUnavailableView(model.savedWork.isEmpty ? "Keep the work worth returning to" : "No matching saved work", systemImage: "books.vertical", description: Text(model.savedWork.isEmpty ? "Save a summary or handoff from any session. It stays here even after that session is deleted." : "Try another search or clear your library filters."))
+                            if !model.savedWork.isEmpty {
+                                Button("Clear search and filters") { model.libraryQuery = ""; tool = "All tools"; project = "All projects" }
+                            }
+                        }
                     }
                 }
             } detail: {
@@ -121,7 +125,7 @@ struct SavedWorkLibrary: View {
                     HStack {
                         Text("SAVED WORK DETAILS").font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Button { showDetails = false } label: { Image(systemName: "xmark") }.help("Close saved work details")
+                        Button { showDetails = false } label: { Image(systemName: "xmark") }.buttonStyle(QuietIconButtonStyle()).help("Close saved work details").accessibilityLabel("Close saved work details")
                     }
                     if let selection { SavedWorkEditor(id: selection).id(selection) }
                 }.padding(18).background(HuddleStyle.panel)
@@ -142,6 +146,7 @@ struct SavedWorkEditor: View {
     let id: UUID
     @ViewState private var confirmDelete = false
     @ViewState private var startSession = false
+    @ViewState private var copied = false
     private var record: SavedWork? { model.savedWork.first { $0.id == id } }
     private func binding(_ key: WritableKeyPath<SavedWork, String>) -> Binding<String> {
         Binding(get: { record?[keyPath: key] ?? "" }, set: { value in
@@ -154,13 +159,16 @@ struct SavedWorkEditor: View {
         if let record {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Title", text: binding(\.title)).textFieldStyle(.roundedBorder)
-                Button("Start new session from this…") { startSession = true }
+                Button { startSession = true } label: { Label("Continue in a new session…", systemImage: "play.rectangle") }
                     .buttonStyle(.borderedProminent).disabled(model.navigatingTerminal || record.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Text("\(record.kind) · \(record.sourceProvider) · saved \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Edits save automatically. This record is independent of the original session.")
+                Label("Changes save automatically", systemImage: "checkmark.circle")
+                    .help("This saved record is independent of the original session.")
                     .font(.caption2).foregroundStyle(.secondary)
-                TextEditor(text: binding(\.text)).font(.system(size: 13)).border(.quaternary)
+                TextEditor(text: binding(\.text)).font(.system(size: 13)).scrollContentBackground(.hidden)
+                    .padding(8).background(HuddleStyle.raised, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(HuddleStyle.border))
                     .accessibilityLabel("Saved work content")
                 DisclosureGroup("Source and provenance") {
                     VStack(alignment: .leading, spacing: 4) {
@@ -174,12 +182,17 @@ struct SavedWorkEditor: View {
                     }.font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                 }.font(.caption)
                 HStack {
-                    Button("Copy") { model.copy(record.markdown) }
-                    Button("Export Markdown…") { model.exportWork(record) }
+                    Button { model.copy(record.markdown); copied = true } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                     Spacer()
-                    Button("Delete record…", role: .destructive) { confirmDelete = true }
+                    Menu {
+                        Button("Export Markdown…") { model.exportWork(record) }
+                        Divider()
+                        Button("Delete record…", role: .destructive) { confirmDelete = true }
+                    } label: { Label("More", systemImage: "ellipsis") }
+                    .fixedSize()
                 }
             }.sheet(isPresented: $startSession) { SavedWorkLaunchView(record: record) }
+            .onChange(of: record.text) { _, _ in copied = false }
             .confirmationDialog("Delete this saved record? This does not delete its original session.", isPresented: $confirmDelete) {
                 Button("Delete record", role: .destructive) { model.deleteWork(record) }
             }

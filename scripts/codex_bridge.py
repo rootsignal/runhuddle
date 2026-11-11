@@ -167,15 +167,18 @@ def apply_cleanup(client, action, thread_id, expected_ids):
 def continuation_context(turns, has_older=False):
     """Extract recorded context without claiming to synthesize or verify results."""
     users, assistants, commands, files = [], [], [], []
+    messages = []
     for turn in turns:
         for item in turn.get("items", []):
             kind = item.get("type")
             if kind == "agentMessage" and item.get("text"):
                 assistants.append(item["text"])
+                messages.append({"id": item.get("id") or str(len(messages)), "role": "assistant", "text": item["text"][:32000]})
             elif kind == "userMessage":
                 text = "\n".join(part.get("text", "") for part in item.get("content", []) if part.get("type") == "text")
                 if text:
                     users.append(text)
+                    messages.append({"id": item.get("id") or str(len(messages)), "role": "user", "text": text[:32000]})
             elif kind == "commandExecution":
                 commands.append(f"- {item.get('command', '(command unavailable)')[:500]} | status: {item.get('status', 'unknown')} | exit: {item.get('exitCode', 'not recorded')}")
             elif kind == "fileChange":
@@ -198,7 +201,7 @@ def continuation_context(turns, has_older=False):
         parts += ["### Files mentioned by change events", "\n".join('- ' + clip(path, 300) for path in dict.fromkeys(files[-20:]))]
     if not any([users, assistants, commands, files]):
         parts.append("No supported history items were returned. Add context manually.")
-    return {"text": "\n\n".join(parts), "latestRequest": users[-1][:5000] if users else None,
+    return {"messages": messages[-40:], "text": "\n\n".join(parts), "latestRequest": users[-1][:5000] if users else None,
             "latestResponse": assistants[-1][:9000] if assistants else None}
 
 

@@ -6,6 +6,7 @@ import argparse
 from contextlib import contextmanager
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -138,7 +139,7 @@ def record(event, payload, identity=None, stamp=None):
 
 
 def message(event):
-    if event.get('isSidechain') or event.get('isMeta') or event.get('type') not in ('user', 'assistant'):
+    if event.get('isSidechain') or event.get('type') not in ('user', 'assistant'):
         return None
     data = event.get('message')
     if not isinstance(data, dict):
@@ -146,6 +147,13 @@ def message(event):
     body = data.get('content')
     if isinstance(body, list):
         body = '\n'.join(p.get('text', '') for p in body if isinstance(p, dict) and p.get('type') == 'text' and isinstance(p.get('text'), str))
+    # Channel events may be marked metadata even though they contain the user's
+    # explicit follow-up. Only unwrap our own single channel envelope.
+    channel_message = re.fullmatch(r'<channel\s+source="runhuddle"(?:\s+[^>]*)?>\n?([\s\S]*?)\n?</channel>\s*', body.strip()) if isinstance(body, str) and event['type'] == 'user' else None
+    if channel_message and '</channel>' not in channel_message.group(1):
+        body = channel_message.group(1)
+    elif event.get('isMeta'):
+        return None
     if isinstance(body, str) and event['type'] == 'user' and body.lstrip().startswith('<task-notification>'):
         return None  # Internal background-task notices are not the user's request.
     return (event['type'], body) if isinstance(body, str) and body.strip() else None
@@ -419,9 +427,15 @@ def main():
     else:
         path = paths().get(args.argument)
         if path is None:
-            raise ValueError('Claude transcript is not available yet.')
+            # A newly opened Claude process can exist before its first transcript.
+            known = any(entry.get('sessionId') == args.argument for entry in cli_sessions() or [])
+            if known and args.command == 'history':
+                print(json.dumps({'text': '', 'messages': [], 'latestRequest': None, 'latestResponse': None}))
+                return
+            raise ValueError('No recorded Claude conversation is available for this session.')
         _, messages = transcript(path)
         print(json.dumps({'text': 'Recent recorded messages (may be incomplete):\n\n' + '\n\n'.join((messages[:4] + ['[Intervening messages omitted]'] + messages[-80:]) if args.command == 'handoff-context' and len(messages) > 84 else messages if args.command == 'handoff-context' else messages[-12:]),
+                          'messages': [{'id': str(i), 'role': 'user' if m.startswith('User: ') else 'assistant', 'text': m[6:] if m.startswith('User: ') else m[11:]} for i, m in list(enumerate(messages))[-12:] if m.startswith(('User: ', 'Assistant: '))],
                           'latestRequest': next((m[6:] for m in reversed(messages) if m.startswith('User: ')), None),
                           'latestResponse': next((m[11:] for m in reversed(messages) if m.startswith('Assistant: ')), None)}))
 

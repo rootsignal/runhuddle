@@ -29,16 +29,19 @@ public struct TerminalTarget: Identifiable, Hashable {
         let folder = URL(fileURLWithPath: row.cwd).lastPathComponent
         guard !row.title.isEmpty, !folder.isEmpty else { return false }
         if !cwd.isEmpty && URL(fileURLWithPath: cwd).standardized.path != URL(fileURLWithPath: row.cwd).standardized.path { return false }
-        var candidates = [title]
-        // Codex decorates its terminal title while waiting for input. Strip only
-        // the observed status prefix, never arbitrary text or the project suffix.
-        if row.provider == "Codex", row.state == .needsInput {
-            candidates.append(title.replacingOccurrences(
-                of: #"^\[\s*\.\s*\] Action Required \| "#,
-                with: "", options: .regularExpression))
-        }
-        return candidates.contains { $0 == row.title + " | " + folder || (!cwd.isEmpty && $0 == row.title) }
+        let candidate = Self.matchingTitle(title, provider: row.provider,
+            live: [.working, .idle, .needsInput].contains(row.state))
+        return candidate == row.title + " | " + folder || (!cwd.isEmpty && candidate == row.title)
     }
+    // Status decorations are presentation, not session identity. Do not depend on
+    // the status snapshot: the terminal and provider can update at different times.
+    public static func matchingTitle(_ title: String, provider: String, live: Bool = true) -> String {
+        let value = cleanTitle(title)
+        guard provider == "Codex", live else { return value }
+        return value.replacingOccurrences(of: #"^\[\s*[.!]\s*\]\s+Action Required\s*\|\s*"#,
+                                         with: "", options: .regularExpression)
+    }
+
     public func matchRank(for row: Session) -> Int {
         if let tty = row.terminalTTY, !tty.isEmpty,
            [.working, .idle, .needsInput].contains(row.state), sessionTTY == tty { return 0 }
@@ -51,9 +54,9 @@ public struct TerminalTarget: Identifiable, Hashable {
         default: return "Other terminal"
         }
     }
-    public func stillMatchesChoice(_ previous: TerminalTarget) -> Bool {
+    public func stillMatchesChoice(_ previous: TerminalTarget, provider: String = "") -> Bool {
         id == previous.id && applicationPID != nil && applicationPID == previous.applicationPID &&
-        tty == previous.tty && tmux == previous.tmux && Self.cleanTitle(title) == Self.cleanTitle(previous.title) && cwd == previous.cwd
+        tty == previous.tty && tmux == previous.tmux && Self.matchingTitle(title, provider: provider) == Self.matchingTitle(previous.title, provider: provider) && cwd == previous.cwd
     }
     public static func ordered(_ targets: [TerminalTarget], for row: Session) -> [TerminalTarget] {
         targets.sorted {

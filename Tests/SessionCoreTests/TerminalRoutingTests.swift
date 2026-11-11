@@ -2,6 +2,22 @@ import XCTest
 @testable import SessionCore
 
 final class TerminalRoutingTests: XCTestCase {
+    func testCodexStatusDecorationsAcrossLiveStates() {
+        for state in [SessionState.idle, .working, .needsInput] {
+            let row = Session(provider: "Codex", sessionID: "one", title: "Task", cwd: "/work/repo", state: state)
+            for prefix in ["", "⠴ ", "[ . ] Action Required | ", "[ ! ] Action Required | ", "[!] Action Required | "] {
+                let target = TerminalTarget(app: "Terminal", window: "1", identity: "tty", title: prefix + "Task | repo", applicationPID: 42)
+                XCTAssertEqual(TerminalTarget.uniqueMatch(for: row, sessions: [row], targets: [target]), target)
+                XCTAssertNil(TerminalTarget.uniqueMatch(for: row, sessions: [row], targets: [target, target]))
+                let plain = TerminalTarget(app: "Terminal", window: "1", identity: "tty", title: "Task | repo", applicationPID: 42)
+                XCTAssertTrue(target.stillMatchesChoice(plain, provider: "Codex"))
+                let different = TerminalTarget(app: "Terminal", window: "1", identity: "tty", title: "Different | repo", applicationPID: 42)
+                XCTAssertFalse(target.stillMatchesChoice(different, provider: "Codex"))
+                let restarted = TerminalTarget(app: "Terminal", window: "1", identity: "tty", title: target.title, applicationPID: 43)
+                XCTAssertFalse(target.stillMatchesChoice(restarted, provider: "Codex"))
+            }
+        }
+    }
     func testITermPaneTTYAndSafeRememberedChoice() {
         var row = Session(provider: "Claude", sessionID: "one", title: "Task", cwd: "/work/repo", state: .idle)
         row.terminalTTY = "/dev/ttys001"

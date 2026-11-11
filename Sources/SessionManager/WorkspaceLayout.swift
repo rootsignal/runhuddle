@@ -21,11 +21,12 @@ struct WorkspaceLayout<Sidebar: View, Detail: View>: View {
 
 struct SessionColumns<ListContent: View, Detail: View>: View {
     let showDetails: Bool
+    var expanded: Bool = false
     @ViewBuilder var list: () -> ListContent
     @ViewBuilder var detail: () -> Detail
     var body: some View {
         GeometryReader { geometry in
-            let sideBySide = geometry.size.width >= 660
+            let sideBySide = geometry.size.width >= 660 && !expanded
             let detailWidth = min(520, max(340, geometry.size.width * 0.46))
             HStack(spacing: 0) {
                 if !showDetails || sideBySide {

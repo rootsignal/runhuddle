@@ -26,7 +26,10 @@ with tempfile.TemporaryDirectory(prefix='runhuddle standalone ') as temp:
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     assert 'ProjectRoot' not in info
     run(python, '-E', '-s', '-B', '-c', 'import websockets, yaml, sqlite3; sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE search USING fts5(text)")')
-    run(python, '-E', '-s', '-B', '-c', 'import sys; sys.path.insert(0, sys.argv[1]); import codex_events, handoff_ai', resources / 'bridge')
+    run(python, '-E', '-s', '-B', '-c', 'import sys; sys.path.insert(0, sys.argv[1]); import codex_events, handoff_ai, claude_channel, copilot_reply', resources / 'bridge')
+    assert json.loads(bridge('session_reply.py', input=json.dumps({'provider':'Copilot','action':'install','sessionID':'','executable':''})))['outcome'] == 'installed'
+    assert (home / '.copilot/extensions/runhuddle-replies/extension.mjs').exists()
+    assert (home / '.copilot/extensions/runhuddle-replies/bridge.mjs').exists()
     assert json.loads(bridge('copilot_bridge.py', 'snapshot')) == []
     bridge('copilot_bridge.py', 'install-hooks')
     config = json.loads((home / '.copilot/hooks/agent-session-manager.json').read_text())

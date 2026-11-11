@@ -9,7 +9,10 @@ struct SessionIconGuide: View {
             entry("archivebox", "Previous session", "History is available; live activity is not confirmed.")
             entry("archivebox.fill", "Archived", "Kept out of your main session lists.")
             Divider()
-            entry("circle.dotted", "Context %", "Last reported context usage, when available.")
+            HStack(alignment: .top, spacing: 8) {
+                ContextUsageIndicator(fraction: 0.65)
+                Text("Context used · last reported estimate").font(.caption).foregroundStyle(.secondary)
+            }
             entry("arrow.triangle.2.circlepath", "Compactions", "Count observed in available history or tracking hooks. Earlier events may be missing.")
             entry("doc.text.fill", "Handoff ready", "A generated handoff is available.", color: HuddleStyle.accent)
             entry("doc.badge.clock", "Review handoff", "New activity since generation, or a replacement awaits review. Hover for details.", color: .orange)

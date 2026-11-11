@@ -13,4 +13,4 @@ swiftc -parse-as-library -I "$build_dir/Modules" -I Sources/CSQLite \
   Sources/SessionManager/RunHuddleIcon.swift \
   Sources/SessionManager/ViewState.swift \
   "$build_dir"/SessionCore.build/*.o -lsqlite3 -o "$preview_dir/render"
-"$preview_dir/render" "$PWD/docs/images/runhuddle-switcher.png"
+"$preview_dir/render" "${1:-$PWD/docs/images/runhuddle-switcher.png}"

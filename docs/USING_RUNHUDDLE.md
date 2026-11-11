@@ -161,4 +161,54 @@ A filled **books** icon on a session means at least one Saved work record refere
 
 Archived shows the allocated disk space for the primary transcript files in the current results. Filters and search affect the total; shared files are counted once. Sessions without an accessible transcript are reported as unavailable rather than counted as zero.
 
-Expand **Session details** for an individual session’s transcript file size, allocated disk space, and check age. Measurements update with agent snapshots. These figures exclude project files, attachments, agent indexes, and RunHuddle saved-work records. APFS can share disk blocks, so this is not a promise of space recoverable by deleting a session.
+Open the **Details** tab for an individual session’s transcript file size, allocated disk space, and check age. Measurements update with agent snapshots. These figures exclude project files, attachments, agent indexes, and RunHuddle saved-work records. APFS can share disk blocks, so this is not a promise of space recoverable by deleting a session.
+
+Expandable section headers are clickable across the whole row, including the label and empty space. Hover highlights the header; keyboard focus and activation use a standard button.
+
+The compact activity graphic in **Now** shows the current distribution of waiting, working, and idle sessions in the view; it is not a historical chart. The ring beside a session’s percentage shows its last reported context usage. Hover for the label and use **Icon guide** for the full legend. Long titles and metadata adapt to narrow columns.
+
+**Settings → General** also includes **Open RunHuddle at login**. Saved work confirms Copy with a checkmark, and its More menu contains export and deletion actions.
+
+Session panels use three tabs: **Activity** for the recent conversation; **Handoff** for preparing a continuation; and **Details** for your notes, repository state, context usage, compactions, transcript storage, and identifiers. The compact branch/change-count line beneath the project opens Details. Repository snapshots are shared between that line and the Details card.
+
+### Inline follow-ups (local preview)
+
+In **Activity**, connected Codex sessions have a **Follow-up** composer. Write a message and choose **Send** or press Return (Shift-Return inserts a new line; Command-Return also sends). The message is queued in that existing session; a working session processes it when ready. A queue confirmation means Codex accepted the message, not that work has finished. Drafts persist per session.
+
+Questions, choices, and approval dialogs still need an answer in the terminal. Claude and Copilot do not yet support inline sending in RunHuddle. If delivery cannot be confirmed, check the terminal before enabling another send to avoid duplicate prompts.
+
+Use the expand icon beside the session panel’s close button to fill the main workspace with that session. The same icon returns to the split view. Activity shows recent messages chronologically, refreshes while open, and offers **Latest** when you scroll away from the newest activity. The view is a recent conversation, not a complete terminal transcript; tool output and older turns may be omitted.
+
+The follow-up input grows as you type. Submitted text appears with its queue status until it is observed in recorded history. Pasted image files and local image paths appear as removable preview cards. Their exact paths are included in the text sent to Codex; these are local file references, not uploaded image attachments. Raw clipboard images without a file path still show a terminal fallback. Claude and Copilot conversations can be read here; sending still uses their terminals.
+
+Activity uses a rolling recent-history window: up to 8 Codex turns capped at 40 text messages, or 12 Claude/Copilot messages. Older messages leave this view without being deleted from the agent’s history. Use the agent’s terminal or history tools for older content.
+
+Local image references in user messages show a thumbnail and filename; hover for the full path. Missing files keep a reference card labeled Preview unavailable. A working indicator stays immediately above the composer while the agent reports work in progress.
+
+When an agent needs approval or an answer, a request card replaces the composer at the bottom of Activity. Choose **Review in Terminal** to open that session. The card shows available request details; if the agent exposes only a waiting status, read the full request in the terminal. When the request clears, the composer returns with your draft preserved.
+
+### Claude replies (experimental)
+
+Use **New session…** in the main toolbar, choose **Claude Code** and a project, leave **Enable replies in RunHuddle** on, and choose **Start Claude**. Claude opens in your preferred terminal. Accept Claude's development-channel prompt there. Then select the new session in RunHuddle and send follow-ups in Activity.
+
+For an existing conversation, choose **Connect Claude replies…** in Activity. Exit the old Claude process with `/exit` in its terminal, then choose **Resume with replies**. RunHuddle checks that the same conversation is not still running before launching it. Your saved conversation is resumed with the same session ID.
+
+Sessions started normally outside RunHuddle remain available for conversation viewing and terminal switching, but cannot receive in-app replies. Use the connected launch option each time you want replies; no special command needs to be typed or copied. Ordinary resume, handoff, and saved-work launch actions do not automatically enable this experimental connection.
+
+Follow-ups retain Claude's model and permission settings. Image attachments are local file paths that Claude can read using its normal tools; they are not uploaded as native image blocks. Approvals and questions must still be answered in the terminal. **Forwarded** means the event was written to the channel; **Received by Claude** appears after Claude calls the receipt tool (allow that tool in Claude if asked). If a message remains forwarded, check Claude's terminal and channel status before sending it again. Channels may be blocked by organization policy. RunHuddle does not change global Claude configuration or bypass permissions.
+
+This integration uses [Claude's research-preview channels](https://code.claude.com/docs/en/channels-reference).
+
+### Start a session
+
+Choose **New session…** in the main toolbar. The agent picker lists detected Codex, Claude Code, and GitHub Copilot CLI installations. Choose a project folder and start the agent in your preferred terminal. The dialog explains reply support for each agent. It defaults to the selected session’s project, or your last successful launch folder, and remembers your last agent. Claude replies can be enabled or disabled before launch.
+
+### Copilot replies
+
+Choose Copilot in **New session** and start it. RunHuddle installs its local reply extension and launches Copilot with experimental extension support automatically. No setup command is required.
+
+For an existing session without a reply connection, choose **Reconnect with replies…** in Activity. After you confirm, RunHuddle gracefully closes the verified idle Copilot process and resumes the same conversation ID in your preferred terminal. It refuses to stop a busy session or one waiting for approval. If its identity cannot be verified, exit it in the terminal first, then reconnect.
+
+The extension lives in `~/.copilot/extensions/runhuddle-replies`. Sessions launched outside RunHuddle need Copilot’s experimental extension support enabled. For troubleshooting, `/extensions manage` shows whether the extension loaded. Installation alone does not establish a connection.
+
+Follow-ups target the exact connected session. Model and permission settings remain controlled by Copilot; questions and approvals stay in its terminal. If delivery cannot be confirmed, check the terminal before sending again. To remove the connection, remove the extension directory and restart Copilot.

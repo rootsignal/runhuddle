@@ -32,6 +32,7 @@ struct AppearanceSettings: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage("showGettingStartedAtStartup") private var showGuideAtStartup = true
     @EnvironmentObject var hotKey: SwitcherHotKey
+    @EnvironmentObject var loginItem: LoginItem
     @EnvironmentObject var updater: AppUpdater
     var body: some View {
         ScrollView {
@@ -52,6 +53,11 @@ struct AppearanceSettings: View {
                 .font(.caption).foregroundStyle(.secondary)
             if let error = hotKey.error { Text(error).font(.caption).foregroundStyle(.orange) }
             Divider()
+            Text("Startup").font(.headline)
+            Toggle("Open RunHuddle at login", isOn: Binding(get: { loginItem.enabled }, set: { loginItem.setEnabled($0) }))
+            if loginItem.needsApproval { Button("Open macOS Login Items settings…") { loginItem.openSettings() } }
+            if let error = loginItem.error { Text(error).font(.caption).foregroundStyle(.orange) }
+            Divider()
             Text("Help and guidance").font(.headline)
             Toggle("Show getting started guide at startup", isOn: $showGuideAtStartup)
             Button("Open getting started guide…") { openWindow(id: "getting-started") }
@@ -64,6 +70,7 @@ struct AppearanceSettings: View {
         }
         .frame(width: 520, height: 590)
         .tint(HuddleStyle.accent)
+        .onAppear { loginItem.refresh() }
     }
 }
 

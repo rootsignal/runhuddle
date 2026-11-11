@@ -53,7 +53,7 @@ import SessionCore
             .environmentObject(model).environmentObject(loginItem).environmentObject(updater)
             .environmentObject(hotKey)
         popover.contentViewController = NSHostingController(rootView: view)
-        popover.contentSize = NSSize(width: 440, height: 590)
+        popover.contentSize = NSSize(width: 440, height: SessionSwitcherView.preferredHeight(sessions: model.sessions))
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         loginItem.refresh()

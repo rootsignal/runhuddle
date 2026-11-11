@@ -14,6 +14,13 @@ struct SessionSwitcherView: View {
     private var rows: [Session] { SessionSwitcher.rows(model.sessions, query: query, names: model.displayNames) }
     private var summary: SessionMenu { SessionMenu(sessions: model.sessions, alerts: []) }
 
+    static func preferredHeight(sessions: [Session]) -> CGFloat {
+        let rows = SessionSwitcher.rows(sessions, query: "", names: [:])
+        let groups = Set(rows.map(\.state)).count
+        let content = rows.reduce(CGFloat(0)) { $0 + ($1.state == .needsInput ? 120 : 62) }
+        return min(590, max(310, 250 + CGFloat(groups) * 38 + content))
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 16) {
@@ -21,7 +28,7 @@ struct SessionSwitcherView: View {
                     Image(nsImage: RunHuddleIcon.image(size: 32, appTile: true)).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("RunHuddle").font(.system(size: 20, weight: .semibold, design: .rounded))
-                        Text("\(summary.needsInput.count) need you · \(summary.working.count) working · \(summary.idle.count) idle")
+                        Text("\(summary.needsInput.count) waiting · \(summary.working.count) working · \(summary.idle.count) idle")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -66,7 +73,7 @@ struct SessionSwitcherView: View {
                             VStack(spacing: 10) {
                                 Image(systemName: query.isEmpty ? "moon" : "magnifyingglass").font(.title2).foregroundStyle(.secondary)
                                 Text(query.isEmpty ? "No active sessions" : "No matching sessions").font(.headline)
-                                Text("Open RunHuddle to browse saved sessions and history.").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                                Text(query.isEmpty ? "Your sessions will appear here when an agent is running." : "Try a different title, project, or agent.").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             }.frame(maxWidth: .infinity).padding(.vertical, 36)
                         }
                     }.padding(.horizontal, 10).padding(.bottom, 12)
@@ -81,7 +88,7 @@ struct SessionSwitcherView: View {
                     .buttonStyle(.plain)
                 Spacer()
                 Menu {
-                    Button("Connections…") { model.showSetup = true; controller.openMain() }
+                    Button("Connections…") { model.settingsTab = "connections"; controller.openSettings() }
                     Menu("Appearance") { AppearancePicker() }
                     Toggle("Global shortcut: \(hotKey.shortcut.label)", isOn: Binding(get: { hotKey.enabled }, set: { hotKey.setEnabled($0) }))
                     Button("Settings…") { controller.openSettings() }
@@ -96,11 +103,11 @@ struct SessionSwitcherView: View {
                     Divider()
                     Button("Quit RunHuddle") { NSApp.terminate(nil) }
                 } label: { Image(systemName: "gearshape") }
-                    .menuStyle(.borderlessButton).fixedSize().help("RunHuddle settings and actions")
+                    .menuStyle(.borderlessButton).fixedSize().help("RunHuddle settings and actions").accessibilityLabel("RunHuddle settings and actions")
             }.padding(.horizontal, 18).padding(.top, 14)
             Text(model.navigatingTerminal ? model.terminalProgress : "↑ ↓ to choose · Return to switch · Esc to dismiss")
                 .font(.system(size: 10)).foregroundStyle(.secondary).padding(.vertical, 10)
-        }.frame(width: 440, height: 590)
+        }.frame(width: 440, height: Self.preferredHeight(sessions: model.sessions))
             .background(HuddleStyle.canvas).tint(HuddleStyle.accent)
             .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
             .onAppear { searchFocused = true; selected = rows.first?.id }
@@ -124,8 +131,8 @@ struct SwitcherSessionRow: View {
     @ViewState private var hovered = false
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: row.state == .idle ? "circle" : "circle.fill")
-                .font(.system(size: 9)).foregroundStyle(row.state.color).frame(width: 12)
+            Image(systemName: row.state.symbol)
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(row.state.color).frame(width: 12)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                 if row.state == .needsInput {

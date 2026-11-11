@@ -8,7 +8,7 @@ struct SessionFilterMenu: View {
     var body: some View {
         Button { presented.toggle() } label: {
             Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
-        }.help("Filter sessions by tool and project")
+        }.accessibilityLabel("Filter sessions by tool and project").help("Filter sessions by tool and project")
             .popover(isPresented: $presented, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -25,6 +25,9 @@ struct SessionFilterMenu: View {
                     ScrollView {
                         VStack(spacing: 2) {
                             projectRow("All projects", title: "All projects")
+                            if !projectQuery.isEmpty && !model.projectPaths.contains(where: { $0.localizedCaseInsensitiveContains(projectQuery) }) {
+                                Text("No projects match “\(projectQuery)”").font(.callout).foregroundStyle(.secondary).padding(12)
+                            }
                             ForEach(model.projectPaths.filter { projectQuery.isEmpty || $0.localizedCaseInsensitiveContains(projectQuery) }, id: \.self) { path in
                                 projectRow(path, title: ProjectFilter.title(path))
                             }

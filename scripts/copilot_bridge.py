@@ -200,8 +200,24 @@ def snapshot():
             if sid in folders and has_open_cli(folders[sid]):
                 state = 'disconnected'
                 data['reason'] = 'Copilot CLI is open; live activity has not been confirmed by tracker hooks.'
+        # An attached SDK extension provides exact foreground-session identity,
+        # including a new session that has not produced its first hook yet.
+        from copilot_reply import candidates
+        connections = candidates(sid)
+        if len(connections) == 1:
+            connection = connections[0][1]
+            if connection.get('state') in ('idle', 'working', 'needsInput'):
+                identity = process_info(connection['ownerPID'])
+                if identity:
+                    tty = subprocess.run(['/bin/ps', '-p', str(connection['ownerPID']), '-o', 'tty='], capture_output=True, text=True, timeout=1).stdout.strip()
+                    state = connection['state']
+                    data['identity'] = {'pid': connection['ownerPID'], 'start': identity[1], 'tty': '/dev/' + tty if tty and tty != '??' else ''}
+                    data['reason'] = 'Copilot reply extension connected'
+        elif len(connections) > 1:
+            state = 'disconnected'
+            data['reason'] = 'This Copilot conversation is open in multiple processes.'
         cwd = data.get('cwd', '')
-        rows.append(dict(provider='Copilot', sessionID=sid, title=data.get('title', 'Copilot session'), cwd=cwd,
+        rows.append(dict(provider='Copilot' , sessionID=sid, title=data.get('title', 'Copilot session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=data.get('reason', '') if state != 'saved' else 'Saved session; live activity is not confirmed.',
                          storage=transcript_storage(path), compactions=read_compactions(path, "Copilot"), updated=data.get('updated', 0), attention=data.get('attention') if state == 'needsInput' else None, simulated=False,
@@ -300,6 +316,7 @@ def main():
             return
         _, messages = transcript(folder / 'events.jsonl')
         print(json.dumps({'text': 'Recent recorded messages (may be incomplete):\n\n' + '\n\n'.join((messages[:4] + ['[Intervening messages omitted]'] + messages[-80:]) if args.command == 'handoff-context' and len(messages) > 84 else messages if args.command == 'handoff-context' else messages[-12:]),
+                          'messages': [{'id': str(i), 'role': 'user' if m.startswith('User: ') else 'assistant', 'text': m[6:] if m.startswith('User: ') else m[11:]} for i, m in list(enumerate(messages))[-12:] if m.startswith(('User: ', 'Assistant: '))],
                           'latestRequest': next((m[6:] for m in reversed(messages) if m.startswith('User: ')), None),
                           'latestResponse': next((m[11:] for m in reversed(messages) if m.startswith('Assistant: ')), None)}))
 
