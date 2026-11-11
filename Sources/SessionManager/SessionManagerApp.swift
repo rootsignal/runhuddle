@@ -161,7 +161,7 @@ struct ContentView: View {
                     }
                         .help("Refresh live sessions").disabled(model.manualRefreshing || model.cleaning)
                 }.padding(.horizontal, 20).padding(.vertical, 12)
-                if isNow {
+                if isNow && model.visible.contains(where: { $0.state == .needsInput }) {
                     NowAttentionPanel(
                         sessions: model.visible,
                         title: { model.displayName(for: $0) },
