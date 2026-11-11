@@ -20,6 +20,14 @@ RunHuddle is an early preview, distributed directly with Developer ID signing an
 - Resume saved conversations and generate AI handoffs when you’re ready for a fresh session.
 - Pin important sessions and clean up old ones with bulk actions.
 
+## Stay in your terminal
+
+Press **Control–Option–Space** or click the menu-bar owl to see who needs you and jump to a session’s terminal.
+
+![RunHuddle’s session switcher over a staged terminal, with fictional Claude, Codex, and Copilot sessions needing input, working, and idle.](docs/images/runhuddle-switcher.png)
+
+*Example sessions in the actual RunHuddle interface, shown over a staged terminal.*
+
 ## Supported agents
 
 **Codex CLI, Claude Code, and GitHub Copilot CLI**, with terminal navigation for **Terminal.app, Ghostty, and iTerm2**, plus attached tmux panes. Support and validation vary by integration; see [Agent connections](docs/AGENT_CONNECTIONS.md) for compatibility details.

@@ -35,6 +35,10 @@ bash scripts/build-app.sh
 open dist/RunHuddle.app
 ```
 
+## Documentation screenshots
+
+Run `bash scripts/render-switcher-screenshot.sh` to regenerate the README’s session-switcher image. It renders the production SwiftUI view offscreen with fictional sessions and a staged terminal background. The fixture uses inert dependencies: it does not read your sessions, launch agents, or register a shortcut. No app installation is needed.
+
 ## Troubleshooting builds
 
 See [source-build troubleshooting](TROUBLESHOOTING.md#source-build-errors).
