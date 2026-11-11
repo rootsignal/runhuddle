@@ -143,9 +143,9 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(model.filter == "Now" && !model.query.isEmpty ? "Search results" : model.filter).font(.system(size: 25, weight: .semibold, design: .rounded))
+                        Text(model.filter == "Now" && !model.query.isEmpty ? "Search results" : model.filter).font(.system(size: 22, weight: .semibold, design: .rounded))
                         Text(model.filter == "Now" && model.query.isEmpty ? "Your active work, with the next action in view." : "\(model.visible.count) \(model.visible.count == 1 ? "session" : "sessions") across \(model.projects) \(model.projects == 1 ? "project" : "projects")")
-                            .foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
                     if model.selected != nil {
@@ -160,7 +160,7 @@ struct ContentView: View {
                         else { Image(systemName: "arrow.clockwise") }
                     }
                         .help("Refresh live sessions").disabled(model.manualRefreshing || model.cleaning)
-                }.padding(.horizontal, 24).padding(.vertical, 20)
+                }.padding(.horizontal, 20).padding(.vertical, 12)
                 if isNow {
                     NowAttentionPanel(
                         sessions: model.visible,
@@ -509,7 +509,7 @@ struct SessionDetail: View {
     @ViewState private var confirmFresh = false
     @ViewState private var showSessionInfo = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 SessionStatusBadge(state: row.state)
                 Spacer()
@@ -517,16 +517,15 @@ struct SessionDetail: View {
                 if row.simulated { Text("SIMULATED SESSION").font(.caption.bold()).foregroundStyle(.purple) }
             }.font(.subheadline.bold())
             HStack(alignment: .top) {
-                Text(model.displayName(for: row)).font(.system(size: 22, weight: .semibold, design: .rounded)).textSelection(.enabled)
+                Text(model.displayName(for: row)).font(.system(size: 20, weight: .semibold, design: .rounded)).lineLimit(2).textSelection(.enabled)
                 Spacer()
                 Button { model.beginRename(row) } label: { Image(systemName: "pencil") }
                     .help("Rename session").accessibilityLabel("Rename session")
             }
             VStack(alignment: .leading, spacing: 5) {
                 Label(row.project, systemImage: "folder").font(.system(size: 12, weight: .medium)).foregroundStyle(HuddleStyle.accent)
-                Text(SessionPresentation.statusSummary(row)).font(.caption).foregroundStyle(.secondary)
+
             }
-            if row.state == .needsInput { AttentionRequestCard(row: row) }
             if row.state == .disconnected {
                 Text("Check the agent or locate its terminal before resuming. Recorded history is still available below.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -535,22 +534,23 @@ struct SessionDetail: View {
                 HStack { terminalButton; secondaryActions }
                 VStack(alignment: .leading, spacing: 8) { terminalButton; secondaryActions }
             }
+            if !row.simulated { RepositoryContextView(directory: row.cwd) }
             Picker("Detail", selection: $tab) {
                 Text("Overview").tag("Overview")
                 Text("Handoff").tag("Handoff")
             }.pickerStyle(.segmented).labelsHidden()
             if tab == "Overview" {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        if let purpose = model.briefs[row.id]?.purpose, !purpose.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("PURPOSE").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(.secondary)
-                                Text(purpose).font(.callout).textSelection(.enabled)
-                            }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                                .background(HuddleStyle.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-                        }
+                    VStack(alignment: .leading, spacing: 12) {
+                        if row.state == .needsInput { AttentionRequestCard(row: row) }
                         HStack {
-                            Text("Latest activity").font(.system(size: 15, weight: .semibold))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Latest activity").font(.system(size: 14, weight: .semibold))
+                                if let context = model.contexts[row.id] {
+                                    Text("Updated \(context.updated, style: .relative) ago")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
                             Spacer()
                             Button { Task { await model.appendHistory(row) } } label: { Image(systemName: "arrow.clockwise") }
                                 .disabled(row.simulated || model.historyLoading.contains(row.id)).help("Refresh recorded activity")
@@ -560,8 +560,6 @@ struct SessionDetail: View {
                             Text("Could not refresh activity. \(failure)").font(.caption).foregroundStyle(.orange)
                         }
                         if let context = model.contexts[row.id] {
-                            Text("Recorded activity · updated \(context.updated, style: .relative) ago")
-                                .font(.caption).foregroundStyle(.secondary)
                             if (context.sessionUpdated ?? 0) < row.updated {
                                 Text("New session activity since this snapshot.").font(.caption).foregroundStyle(.secondary)
                             }
@@ -573,7 +571,6 @@ struct SessionDetail: View {
                             }.font(.callout)
 
                         }
-                        if !row.simulated { RepositoryContextView(directory: row.cwd) }
                         DisclosureGroup("Your notes") {
                             VStack(alignment: .leading, spacing: 12) {
                                 TextField("What is this session for?", text: Binding(
@@ -642,7 +639,7 @@ struct SessionDetail: View {
                 HandoffEditor(row: row) { confirmFresh = true }
             }
             Spacer(minLength: 0)
-        }.padding(24)
+        }.padding(18)
         .task(id: row.id + ":" + tab) {
             await model.appendHistory(row)
         }

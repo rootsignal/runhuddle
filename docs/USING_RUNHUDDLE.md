@@ -90,3 +90,5 @@ This is shared repository state, not changes attributed to the selected agent. I
 ## Window layout
 
 Columns resize automatically with the window. On narrow windows, opening session details replaces the list; use the close button in the details header to return. Hide or show the navigation sidebar with its toolbar button. Column dividers are automatically sized rather than draggable.
+
+The compact repository summary stays above the Overview/Handoff content so branch and changed-file count remain visible while reading activity. Expand the worktree row for the full path, snapshot time, and shared-state explanation. Latest responses show three preview lines; expand “Read full message” to see the recorded text.

@@ -37,7 +37,7 @@ info = {
     "CFBundleExecutable": "SessionManager", "CFBundleIdentifier": "local.rickbaker.agent-sessions",
     "CFBundleName": "RunHuddle", "CFBundleDisplayName": "RunHuddle",
     "CFBundleIconFile": "RunHuddle",
-    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.11.2", "CFBundleVersion": "32",
+    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.11.3", "CFBundleVersion": "33",
     "SUFeedURL": "https://raw.githubusercontent.com/rootsignal/runhuddle/main/updates/appcast.xml",
     "SUPublicEDKey": (root / 'config/sparkle-public-key.txt').read_text().strip(),
     "SURequireSignedFeed": True,

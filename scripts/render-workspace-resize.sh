@@ -10,6 +10,6 @@ output_dir="${1:-/tmp/runhuddle-resize-previews}"
 mkdir -p "$output_dir"
 swiftc -parse-as-library -I "$build_dir/Modules" -I Sources/CSQLite \
   scripts/previews/WorkspaceResize.swift Sources/SessionManager/WorkspaceLayout.swift \
-  Sources/SessionManager/HuddleStyle.swift Sources/SessionManager/ViewState.swift \
+  Sources/SessionManager/HuddleStyle.swift Sources/SessionManager/RepositoryContextView.swift Sources/SessionManager/ViewState.swift \
   "$build_dir"/SessionCore.build/*.o -lsqlite3 -o "$preview_dir/render"
 "$preview_dir/render" "$output_dir"

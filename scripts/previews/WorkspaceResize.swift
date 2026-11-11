@@ -16,9 +16,12 @@ struct PreviewContent: View {
     SessionColumns(showDetails: true) {
      VStack { SessionCardContent(row: row, title: row.title, summary: "Updated navigation and checked the responsive layout.", match: nil, pinned: false); Spacer() }.padding(20)
     } detail: {
-     VStack(alignment: .leading, spacing: 20) {
+     VStack(alignment: .leading, spacing: 10) {
       HStack { Text("SESSION DETAILS"); Spacer(); Image(systemName: "xmark") }.font(.caption)
       Text(row.title).font(.title2)
+      HStack { Button("Go to terminal") {}; Spacer(); Image(systemName: "folder"); Image(systemName: "pin") }
+      RepositoryContextView(directory: FileManager.default.currentDirectoryPath)
+      Text("Overview    Handoff").font(.caption).foregroundStyle(.secondary)
       RecordedMessageCard(title: "LATEST RESPONSE", value: "Updated navigation and checked the responsive layout. This longer response should wrap within the current detail column without pushing the sidebar outside the window.")
       Spacer()
      }.padding(24).background(HuddleStyle.panel)
@@ -38,7 +41,7 @@ struct PreviewContent: View {
    window.setContentSize(NSSize(width: width, height: 680))
    host.frame = NSRect(x: 0, y: 0, width: width, height: 680)
    host.layoutSubtreeIfNeeded()
-   RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+   RunLoop.current.run(until: Date().addingTimeInterval(1))
    let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
    host.cacheDisplay(in: host.bounds, to: bitmap)
    try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "\(CommandLine.arguments[1])/resize-\(width).png"))

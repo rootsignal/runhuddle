@@ -9,36 +9,40 @@ struct RepositoryContextView: View {
     @ViewState private var refreshID = UUID()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Text("Repository").font(.system(size: 13, weight: .semibold))
-                Spacer()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                if let context {
+                    Label(context.branch, systemImage: "arrow.triangle.branch")
+                        .font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                        .help(context.branch)
+                    Spacer(minLength: 4)
+                    Text(context.changedFiles == 0 ? "Clean" : "\(context.changedFiles) changed")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize()
+                } else {
+                    Text(unavailable ? "Repository unavailable" : "Reading repository…")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
                 if loading { ProgressView().controlSize(.mini) }
                 Button { refreshID = UUID() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).disabled(loading).help("Refresh repository context")
                     .accessibilityLabel("Refresh repository context")
             }
-            if let context {
-                Label(context.branch, systemImage: "arrow.triangle.branch")
-                    .font(.callout).textSelection(.enabled)
-                HStack {
-                    Text(context.changedFiles == 0 ? "Working tree clean" : "\(context.changedFiles) changed \(context.changedFiles == 1 ? "file" : "files")")
-                    Spacer()
-                    Text(context.linkedWorktree ? "Linked worktree" : "Main worktree")
-                }.font(.caption).foregroundStyle(.secondary)
-                Text(context.root).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(2).truncationMode(.middle).textSelection(.enabled).help(context.root)
-                Text("Checked \(context.checkedAt, style: .relative) ago · includes untracked files")
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let context {
+                        Text(context.root).textSelection(.enabled)
+                        Text("Checked \(context.checkedAt, style: .relative) ago · includes untracked files")
+                    } else {
+                        Text("This folder may be missing, inaccessible, or outside a Git worktree.")
+                    }
+                    Text("Shared repository state, not changes attributed to this session.")
+                }.font(.caption2).foregroundStyle(.secondary).padding(.top, 4)
+            } label: {
+                Text(context.map { ($0.linkedWorktree ? "Linked worktree" : "Main worktree") + " · shared state" } ?? "Repository details")
                     .font(.caption2).foregroundStyle(.secondary)
-            } else if unavailable {
-                Text("Repository unavailable. This folder may be missing, inaccessible, or outside a Git worktree.")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                Text("Reading repository…").font(.caption).foregroundStyle(.secondary)
             }
-            Text("Shared repository state, not changes attributed to this session.")
-                .font(.caption2).foregroundStyle(.secondary)
-        }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(HuddleStyle.raised.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
             .task(id: directory + refreshID.uuidString) {
                 loading = true

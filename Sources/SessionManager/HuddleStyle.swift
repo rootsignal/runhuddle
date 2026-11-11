@@ -104,7 +104,7 @@ struct RecordedMessageCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title).font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(.secondary)
             if !expanded {
-                Text(SessionPresentation.excerpt(value, limit: 300)).font(.system(size: 13)).lineSpacing(3).textSelection(.enabled).lineLimit(5).fixedSize(horizontal: false, vertical: true)
+                Text(SessionPresentation.excerpt(value, limit: 220)).font(.system(size: 13)).lineSpacing(3).textSelection(.enabled).lineLimit(3).fixedSize(horizontal: false, vertical: true)
             }
             DisclosureGroup(expanded ? "Full message" : "Read full message", isExpanded: $expanded) {
                 Text(HuddleStyle.inline(value)).font(.system(size: 13)).lineSpacing(3).textSelection(.enabled)
