@@ -6,31 +6,30 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.10.0</title>
-            <pubDate>Tue, 10 Nov 2026 20:28:08 -0600</pubDate>
-            <sparkle:version>29</sparkle:version>
-            <sparkle:shortVersionString>0.10.0</sparkle:shortVersionString>
+            <title>0.11.0</title>
+            <pubDate>Tue, 10 Nov 2026 21:08:55 -0600</pubDate>
+            <sparkle:version>30</sparkle:version>
+            <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.10.0 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.0 preview
 
-More useful attention requests, quieter alerts, and better navigation to existing terminals.
+Session details now include a compact repository context section:
 
-- Needs input details show the request type, observed waiting time, and bounded request excerpts when available. Waiting sessions are ordered oldest first. Missing prompt details are explicit; all answers still happen in the terminal.
-- Settings → Notifications includes independent input/completion alerts, sound, quiet hours, one-hour snooze, and optional one-time waiting reminders. Session actions can mute a project’s alerts.
-- Bursts are combined into one notification. Resolved requests are dropped before delivery; grouped alerts open Now.
-- iTerm2 discovery includes split panes and verified TTY matching. Manual terminal choices are remembered only while their identifying details remain unchanged in the current app run. Closed-history duplicates no longer block an otherwise unique live title match.
-- Attached tmux panes on the default local server can be selected through Terminal.app or iTerm2. No session creation or keystroke injection.
+- Current branch or detached HEAD, main/linked worktree, and worktree path.
+- Changed-file count including staged, unstaged, and untracked files.
+- Explicit shared-state labeling: repository changes are not attributed to one agent.
+- Local, read-only inspection when opened, with manual refresh and a snapshot timestamp. No background Git polling.
 
-Validation: 46 Swift and 77 Python tests, light/dark offscreen component review, and isolated tmux inventory/pane selection. The release pipeline additionally checks standalone packaging and signed updates. iTerm2/Ghostty and end-to-end tmux UI validation remain pending on those setups. Codex currently supplies the request category, not the full prompt text, through this status adapter.
+Missing or inaccessible repositories are handled quietly. PR and CI integration will follow separately.
 
-Project context is next; no MCP integration was added.
+Validation includes real temporary Git repositories, unborn and detached branches, linked worktrees, rename/newline filename parsing, and missing folders, plus light/dark component rendering. Full release checks cover Swift/Python tests, standalone packaging, and the updater.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.10.0/RunHuddle-0.10.0-arm64.dmg" length="42963238" type="application/octet-stream" sparkle:edSignature="inAuxgM4yeQGNQ7u3w//vpFnub0aOOKp6I6Y/k0kn6HggVpt/0w4tFCP6XQZ/aGjJ+AZOUMmYkQYgaLy14GqDw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.0/RunHuddle-0.11.0-arm64.dmg" length="43563744" type="application/octet-stream" sparkle:edSignature="B+c7avttJzCRotGH43rvmHgsm8PE3sKT2YyTvRtIHZ1IGi2vYpIp4Tgumfbvu8mxCXSFRU1jG8cOFUHJcctzDA=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: spktJ6FOvuBbhYE2gUVCtCUIvqB0HwvjsAAXAHfDK+9DKUdusfPzMxtCKbOOIQuAnj0vt2saUpnF+8CgymwdBw==
-length: 2734
+edSignature: LK+yJmg0x/RWs9pLUu2LZpJhUWgE61tlQIsNcUe0pTXn2ddRP/adq1i5HRq0RWLncYew5lao9VzzZQI5ji63Ag==
+length: 2033
 -->
