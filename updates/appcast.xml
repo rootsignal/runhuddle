@@ -6,21 +6,19 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.8.3</title>
-            <pubDate>Tue, 10 Nov 2026 19:20:01 -0600</pubDate>
-            <sparkle:version>25</sparkle:version>
-            <sparkle:shortVersionString>0.8.3</sparkle:shortVersionString>
+            <title>0.8.4</title>
+            <pubDate>Tue, 10 Nov 2026 19:27:31 -0600</pubDate>
+            <sparkle:version>26</sparkle:version>
+            <sparkle:shortVersionString>0.8.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[The menu bar now shows an amber needs-input count beside the owl. The badge disappears at zero, remains visible while locating a terminal, and displays 99+ for larger counts. The exact count remains available to accessibility and in the dropdown, alongside active session totals.
-
-Codex sessions waiting for input now match terminal titles with the “Action Required” prefix. A unique title/project match opens directly; duplicate or uncertain matches still use the chooser.
+            <description sparkle:format="markdown"><![CDATA[Session rows now include a subtle terminal shortcut. Live sessions locate their existing terminal; saved sessions use the existing resume flow. Clicking the rest of the row opens details. Progress appears on the session being opened, and repeated navigation is disabled until it finishes. Archived, simulated, and bulk-selection rows do not show the shortcut.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.8.3/RunHuddle-0.8.3-arm64.dmg" length="42775848" type="application/octet-stream" sparkle:edSignature="tkm4f4qEbBBH2APPp+vfYDa8/WTpZULG3I/ssGjmn0GoYNweibAxZkXiy4LUj8FNlxvQbi/zo0MXCZhJmVEdDQ=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.8.4/RunHuddle-0.8.4-arm64.dmg" length="42447742" type="application/octet-stream" sparkle:edSignature="7DUh3YVjbSGxexkWaR64U8d99QCSRrey/gmxxLU6vTGfj+LcE6F3ZjIhRdXdJYdG3Wm9HPxEezMdg4DPRwemDw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: aOlnxYeA8j0wl24ER0j4TeNSN8TNmy+XfrC4cXE4xiYRCC7ZDLwWAVfQDTwJ4GoRU7sAYZmcAR9se2aqHpMTDg==
-length: 1681
+edSignature: n98a9rtfaC+q3UrgVxyuxxei44TCyz87ZetYzvqg6ZgbIWcT3pU8G2SwhZrjzfMhrdJ0OxROq1X/5E+QvQG1BA==
+length: 1563
 -->
