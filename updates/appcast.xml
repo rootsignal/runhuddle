@@ -6,28 +6,30 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.11.2</title>
-            <pubDate>Tue, 10 Nov 2026 21:18:56 -0600</pubDate>
-            <sparkle:version>32</sparkle:version>
-            <sparkle:shortVersionString>0.11.2</sparkle:shortVersionString>
+            <title>0.11.3</title>
+            <pubDate>Tue, 10 Nov 2026 21:22:59 -0600</pubDate>
+            <sparkle:version>33</sparkle:version>
+            <sparkle:shortVersionString>0.11.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.2 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.3 preview
 
-Correct the remaining narrow-window clipping that 0.11.1 did not resolve.
+Bring useful context into view without scrolling past conversation excerpts.
 
-- Replace nested native split views with columns calculated from the current available width.
-- Sidebar and session details stay within the window as it narrows. Below the two-column breakpoint, details replace the list; close details to return to the list.
-- The sidebar can still be hidden from the toolbar. Details can be closed in every filter.
-- Minimum window width is 760 points. Column sizing is automatic rather than manually draggable.
+- Compact session header and terminal actions.
+- Branch and changed-file count stay above the activity scroll area, including while viewing Handoff.
+- Worktree type and shared-state label remain visible; expand for path, check time, and explanation.
+- Needs input requests lead the Overview activity area.
+- Latest response previews are limited to three lines; full messages remain expandable.
+- Notes and technical details remain collapsed. Shorter Now heading and tighter activity metadata reduce wasted space.
 
-Validation: built successfully and rendered the production layout containers with representative session content at 1320 → 900 → 760 → 1320 points in the same offscreen window. Sidebar labels and wrapped detail text remain within bounds. This fixture is reproducible with `bash scripts/render-workspace-resize.sh`. Live multi-monitor interaction remains unverified.
+Includes the responsive workspace layout from 0.11.2. Verified by compilation and offscreen renders of the production layout and repository/response components at wide and narrow widths. Release validation covers the full test suite, standalone packaging, updater verification, and Apple notarization.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.2/RunHuddle-0.11.2-arm64.dmg" length="43047691" type="application/octet-stream" sparkle:edSignature="eef01BAb5g5ziVc7Y6Q7M8TTlQzRHW/lCYH3YoW9fvAUNKjvFyGpXpHmQuLDnGh16wNRypLZ2NXq0Oe3OIIfBg=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.3/RunHuddle-0.11.3-arm64.dmg" length="43208089" type="application/octet-stream" sparkle:edSignature="CWHks12GG1oPjWDxISaR0lZTmbKGzqfiR1HPyo/o1B4NReR0BL2DkHpwT2TCin6SIvtZ79Ev0JX5dvQIjCsxCg=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: B2hO105AuoAfCLlvgFV/qO2fhTiV3lIqfvGPz/R5mllZ22qMh95/darxZXfODSctfarJdt7WPzT37rqM/mHPBA==
+edSignature: ndcd4ubzMtpx+Nr4pNhlzV9+nTHdqBARM85o9ahPfM370ZZMwUx9wljBVwaBtlPYffXasC+AHkUvYeB8IVNQBA==
 length: 2129
 -->
