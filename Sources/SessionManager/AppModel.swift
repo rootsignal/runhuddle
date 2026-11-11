@@ -62,6 +62,8 @@ struct CopilotTrackingStatus: Decodable {
         }
     }
     @Published var query = ""
+    @Published var searchScope = SessionSearchScope.everywhere
+    var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     @Published var briefs: [String: SessionBrief] = [:]
     @Published var historyMatches: [String: HistoryMatch] = [:]
     @Published var historySearchQuery = ""
@@ -272,13 +274,12 @@ struct CopilotTrackingStatus: Decodable {
     private var matchingSessions: [Session] {
         sessions.filter {
             (!$0.simulated || showDemo) && matchesSearch($0)
-            && (provider == "All tools" || $0.provider == provider)
-            && (projectFilter == "All projects" || $0.cwd == projectFilter)
+            && ((isSearching && searchScope == .everywhere) || ((provider == "All tools" || $0.provider == provider)
+            && (projectFilter == "All projects" || $0.cwd == projectFilter)))
         }
     }
     var visible: [Session] {
-        let effectiveFilter = filter == "Now" && !query.isEmpty ? "All sessions" : filter
-        return matchingSessions.filter { SessionPresentation.includes($0, filter: effectiveFilter, pinned: pinned) }.sorted {
+        return matchingSessions.filter { searchScope.includes($0, searching: isSearching, filter: filter, provider: provider, project: projectFilter, pinned: pinned) }.sorted {
             if $0.state.rank != $1.state.rank { return $0.state.rank < $1.state.rank }
             if $0.state == .needsInput, $1.state == .needsInput {
                 let left = $0.attention?.since ?? $0.updated, right = $1.attention?.since ?? $1.updated
@@ -470,6 +471,7 @@ struct CopilotTrackingStatus: Decodable {
         historyMatches = [:]
         historySearchQuery = ""
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            searchScope = .everywhere
             historySearchStatus = ""; searchingHistory = false; return
         }
         searchingHistory = true
@@ -496,7 +498,7 @@ struct CopilotTrackingStatus: Decodable {
             guard query == requested else { return }
             historyMatches = Dictionary(result.matches.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             historySearchQuery = requested
-            historySearchStatus = "Searched \(result.indexedSessions) local transcripts · current filters apply" + (result.warning.isEmpty ? "" : " · " + result.warning)
+            historySearchStatus = "Searched \(result.indexedSessions) local transcripts" + (result.warning.isEmpty ? "" : " · " + result.warning)
         } catch {
             guard query == requested else { return }
             historySearchStatus = "History search unavailable; title and project search still work."

@@ -5,7 +5,7 @@
 ## Your sessions
 
 - Opens on a focused Now view: needs input, working, recently finished, and idle sessions. Older sessions remain in All sessions.
-- Pin important sessions and filter by the exact project folder. Search from Now also searches saved sessions.
+- Pin important sessions and filter by the exact project folder. The main search includes saved and archived sessions by default.
 - Tracks Working, Needs input, Idle, and Saved sessions, with a menu-bar overview and desktop notifications.
 - Finds sessions by project, custom name, branch, path, purpose, and recorded conversation history.
 - Shows latest recorded activity alongside editable purpose and next-step notes.
@@ -45,7 +45,7 @@ For **tmux**, RunHuddle discovers panes on the default local server that are att
 
 ## Finding sessions
 
-Press **⌘F** to focus search. The search field finds session titles, projects, and recorded messages. Use **×** or **Escape** to clear it, or **Back to Now** to return to active work. Choosing a sidebar view also clears the search; tool and project filters remain selected. Session cards use a subtle outline for selection and text-and-icon status badges in both light and dark appearances.
+Press **⌘F** to focus search. The search field finds session titles, projects, and recorded messages. Search defaults to **Everywhere**, including archived sessions across all agents and projects regardless of your sidebar filters. Archived matches retain their status label. Choose **Current view** beside the results to apply the selected view, agent, and project filters. Use **×**, **Escape**, or **Done** to clear the query and return to the selected view. Each new search starts with Everywhere. Choosing a sidebar view also clears the search; tool and project filters remain selected. Session cards use a subtle outline for selection and text-and-icon status badges in both light and dark appearances.
 
 ## Live activity updates
 

@@ -143,7 +143,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(model.filter == "Now" && !model.query.isEmpty ? "Search results" : model.filter).font(.system(size: 22, weight: .semibold, design: .rounded))
+                        Text(model.isSearching ? "Search results" : model.filter).font(.system(size: 22, weight: .semibold, design: .rounded))
                         Text(model.filter == "Now" && model.query.isEmpty ? "Your active work, with the next action in view." : "\(model.visible.count) \(model.visible.count == 1 ? "session" : "sessions") across \(model.projects) \(model.projects == 1 ? "project" : "projects")")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -175,11 +175,17 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         if !model.query.isEmpty {
                             HStack(spacing: 8) {
-                                Button("Back to Now") { model.query = ""; model.filter = "Now"; searchFocused = false }
+                                Button("Done") { model.query = ""; searchFocused = false }
+                                Picker("Search scope", selection: $model.searchScope) {
+                                    ForEach(SessionSearchScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                                }.labelsHidden().fixedSize().help("Everywhere includes archived sessions and ignores agent, project, and view filters")
                                 if model.searchingHistory { ProgressView().controlSize(.small) }
                                 Text(model.historySearchStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 Spacer(minLength: 0)
-                            }.padding(.horizontal, 16).padding(.vertical, 8)
+                            }.padding(.horizontal, 16).padding(.top, 8)
+                            Text(model.searchScope == .everywhere ? "All agents and projects · includes archived sessions" : "\(model.filter) · \(model.provider) · \(model.projectFilter == "All projects" ? "All projects" : URL(fileURLWithPath: model.projectFilter).lastPathComponent)")
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 8)
                         }
                         if model.bulkMode {
                             VStack(alignment: .leading, spacing: 8) {
@@ -243,7 +249,7 @@ struct ContentView: View {
                                 } description: {
                                     Text("Search your history, browse all sessions, or start work in your preferred agent.")
                                 } actions: {
-                                    Button("Browse all sessions") { model.filter = "All sessions" }
+                                    Button("Browse all sessions") { model.query = ""; model.filter = "All sessions" }
                                 }
                             }
                         }
