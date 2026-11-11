@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """RunHuddle Claude observer. Never approves tools or injects context."""
 from compaction_count import read_compactions
+from session_storage import transcript_storage
 import argparse
 from contextlib import contextmanager
 import json
@@ -315,7 +316,7 @@ def snapshot():
         rows.append(dict(provider='Claude', sessionID=sid, title=data.get('title', 'Claude session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=reason, updated=data.get('updated', 0),
-                         compactions=compactions, attention=data.get('attention') if state == 'needsInput' else None, simulated=False, agentPID=(identity or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(identity or {}).get('tty') if state not in ('saved', 'disconnected') else None))
+                         storage=transcript_storage(path), compactions=compactions, attention=data.get('attention') if state == 'needsInput' else None, simulated=False, agentPID=(identity or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(identity or {}).get('tty') if state not in ('saved', 'disconnected') else None))
     return rows
 
 

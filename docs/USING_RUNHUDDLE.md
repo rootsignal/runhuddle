@@ -156,3 +156,9 @@ Renaming a live session also attempts to update a uniquely matched Apple Termina
 Expand **Icon guide** below Library in the sidebar for session-state, context, compaction, and handoff explanations. It starts collapsed and remembers your choice. Row indicators stay compact, with full descriptions on hover and for accessibility.
 
 A filled **books** icon on a session means at least one Saved work record references that session. Hover for the record count. This includes saved summaries and handoff snapshots; it does not mean the record includes the session’s latest activity. Deleting the last corresponding library record removes the indicator.
+
+### Session storage
+
+Archived shows the allocated disk space for the primary transcript files in the current results. Filters and search affect the total; shared files are counted once. Sessions without an accessible transcript are reported as unavailable rather than counted as zero.
+
+Expand **Session details** for an individual session’s transcript file size, allocated disk space, and check age. Measurements update with agent snapshots. These figures exclude project files, attachments, agent indexes, and RunHuddle saved-work records. APFS can share disk blocks, so this is not a promise of space recoverable by deleting a session.

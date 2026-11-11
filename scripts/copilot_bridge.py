@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only Copilot transcript adapter; hooks write only tracker-owned state."""
 from compaction_count import read_compactions
+from session_storage import transcript_storage
 import argparse
 from contextlib import contextmanager
 import json
@@ -203,7 +204,7 @@ def snapshot():
         rows.append(dict(provider='Copilot', sessionID=sid, title=data.get('title', 'Copilot session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=data.get('reason', '') if state != 'saved' else 'Saved session; live activity is not confirmed.',
-                         compactions=read_compactions(path, "Copilot"), updated=data.get('updated', 0), attention=data.get('attention') if state == 'needsInput' else None, simulated=False,
+                         storage=transcript_storage(path), compactions=read_compactions(path, "Copilot"), updated=data.get('updated', 0), attention=data.get('attention') if state == 'needsInput' else None, simulated=False,
                          agentPID=(data.get('identity') or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(data.get('identity') or {}).get('tty') if state not in ('saved', 'disconnected') else None))
     return rows
 

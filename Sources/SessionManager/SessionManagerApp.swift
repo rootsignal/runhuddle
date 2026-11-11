@@ -155,6 +155,11 @@ struct ContentView: View {
                         Text(model.isSearching ? "Search results" : model.filter).font(.system(size: 22, weight: .semibold, design: .rounded))
                         Text(model.filter == "Now" && model.query.isEmpty ? "Your active work, with the next action in view." : "\(model.visible.count) \(model.visible.count == 1 ? "session" : "sessions") across \(model.projects) \(model.projects == 1 ? "project" : "projects")")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        if model.filter == "Archived" && !model.visible.isEmpty {
+                            Text(SessionStorageTotal(model.visible).label)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .help("Allocated space for available primary transcript files in these results. Shared files counted once. Excludes project files, attachments, agent indexes, and RunHuddle’s library. APFS shared blocks may not be uniquely reclaimable.")
+                        }
                     }
                     Spacer()
                     if model.selected != nil {
@@ -676,6 +681,13 @@ struct SessionDetail: View {
                         if model.displayNames[row.id] != nil {
                             field("ORIGINAL TITLE", row.title)
                             Button("Reset to original name") { model.saveDisplayName("", for: row) }
+                        }
+                        if let storage = row.storage {
+                            field("TRANSCRIPT STORAGE", "\(SessionStorage.formatted(storage.allocatedBytes)) on disk · \(SessionStorage.formatted(storage.bytes)) file size")
+                            Text("Primary conversation transcript only. Excludes project files, attachments, agent indexes, and saved work. Disk blocks may be shared by APFS. Checked \(Date(timeIntervalSince1970: storage.checkedAt), style: .relative) ago.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            field("TRANSCRIPT STORAGE", "Unavailable — no accessible transcript file")
                         }
                         field("STATUS SOURCE", row.reason)
                         field("PROJECT", row.project)

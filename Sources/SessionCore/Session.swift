@@ -34,6 +34,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public var updated: Double
     public var contextUsage: ContextUsage?
     public var compactions: CompactionCount?
+    public var storage: SessionStorage?
     public var terminalTTY: String?
     public var agentPID: Int32?
     public var attention: AttentionRequest?
