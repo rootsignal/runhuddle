@@ -6,21 +6,30 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.11.4</title>
-            <pubDate>Tue, 10 Nov 2026 21:29:14 -0600</pubDate>
-            <sparkle:version>34</sparkle:version>
-            <sparkle:shortVersionString>0.11.4</sparkle:shortVersionString>
+            <title>0.12.0</title>
+            <pubDate>Tue, 10 Nov 2026 21:45:21 -0600</pubDate>
+            <sparkle:version>35</sparkle:version>
+            <sparkle:shortVersionString>0.12.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.4 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.12.0 preview
 
-Hide the Now attention banner when no sessions in the current view need input. Its padding disappears too, moving the session list upward. The banner returns when a visible session needs attention; session counts remain in the sidebar.
+Main-window search now searches everywhere by default, including archived sessions.
+
+- Match active, saved, disconnected, and archived sessions across all agents and projects.
+- Use the new Current view scope to respect the selected sidebar view, agent, and project filters.
+- Search results show their scope explicitly, and archived matches retain their Archived label.
+- Done, Escape, or clearing the query returns to the selected view. Each new search defaults to Everywhere.
+
+Titles, project details, notes, and available recorded conversation history remain searchable. Permanently deleted histories are not restored or searched. The menu-bar switcher remains focused on active sessions.
+
+Validation covers all session states across Codex, Claude, and Copilot, current-view filter combinations, and unchanged non-search browsing behavior. The release pipeline checks the full Swift/Python suite, packaging, signed updates, and notarization.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.4/RunHuddle-0.11.4-arm64.dmg" length="43208288" type="application/octet-stream" sparkle:edSignature="zGqnWBBIwkQsJRHD21fB2MEdvtMMs5qFEG32TvJa46yBkIeui60lYOmN9R9oFA6ooToG2SFYmh7veLw9HumZCA=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.12.0/RunHuddle-0.12.0-arm64.dmg" length="42890542" type="application/octet-stream" sparkle:edSignature="q/i8qVgSgdpWNOYuwkOQgXYaY8RJ55ybd0dFOxiSq6ogS21zPiKYk2saXyAhoq7KcLRNvSnMfoBjWTc27rLJCg=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 5QCFEuCx4UCcE4Z/ulaBxAi84xSb0WN0IgKtWSPIAtq9mSJs0CCnqd9po+lQo/P3NNr2RbqzbmmX1BQ/LmRyBA==
-length: 1471
+edSignature: mSRhJnfZzITPFpncTBB+nYyC5VOwbLkWzffpQyM/bp6/wbZAezc+BqYB3z4ryWv+M+Vuo8NNuEGgnILZQURKAw==
+length: 2181
 -->
