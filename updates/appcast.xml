@@ -6,23 +6,29 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.6.1</title>
-            <pubDate>Tue, 10 Nov 2026 18:11:57 -0600</pubDate>
-            <sparkle:version>14</sparkle:version>
-            <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
+            <title>0.7.0</title>
+            <pubDate>Tue, 10 Nov 2026 18:25:46 -0600</pubDate>
+            <sparkle:version>16</sparkle:version>
+            <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[RunHuddle 0.6.1 clarifies the handoff experience.
+            <description sparkle:format="markdown"><![CDATA[RunHuddle 0.7.0 refreshes the session workspace and makes search easier to find and leave.
 
-- Sessions without an explicitly generated AI handoff now show an empty state. Legacy templates are neither displayed as handoffs nor passed to the first AI generation. Any saved legacy text is retained separately as a backup when a generated handoff replaces it.
-- Generation shows a readable stage message and explains that it can take a minute or two, especially for longer sessions. You can keep browsing while it runs.
-- Existing AI handoffs and your edits remain intact.
+- A clearer search field with a magnifying-glass icon, stronger contrast, a focus outline, and Command-F.
+- Clear search with the field’s × button or Escape. Back to Now returns to active sessions; selecting any sidebar view also clears the query.
+- A navy-and-cyan palette in dark mode and a coordinated light appearance, with a clearer sidebar and quieter counts.
+- Session cards with an outlined selection, hover feedback, readable status badges, and clearer title/project hierarchy.
+- Separate request and response cards in the detail panel. The repeated response preview is removed; a user-maintained purpose appears when provided.
+- Markdown is cleaned from compact previews and rendered in expanded messages.
+- Arrow-key navigation and bulk selection remain available. Tool and project filters are preserved when leaving search.
+
+Validation: Swift/Python regression suites, rendered shared components in light and dark appearances, standalone package and updater checks. Full native keyboard and multi-monitor interaction was not automated in this environment.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.6.1/RunHuddle-0.6.1-arm64.dmg" length="42715609" type="application/octet-stream" sparkle:edSignature="JoMGiC354icMDpghMAm6AhIlLClpKqhr7vk+sSBLu+waOUWAQMSNxCmtGXcyRHukhPAAHeUYT/d+23+AsAZUDw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.7.0/RunHuddle-0.7.0-arm64.dmg" length="44389040" type="application/octet-stream" sparkle:edSignature="apsTHhcje7phYY56k0yOnAIOp0JP06JoHfhKmGrAxw4xxSiZuLG3OsMIWAYS8K97fJ+WQ/ZJkKSM2Xct28KsAg=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: lDpT3xdBG3ZQzAfZOdpKRCd++947R4DJuflqJ6xh4kRWcXEf/Et8GdwpLOF2L1qHVKaDHEN6lXg/DiiSwEXxCw==
-length: 1731
+edSignature: pKt7CqCXtSOwfzHUuSY5FrObs/K9O4/hnZlZ5sKjL44HcWebIg2GSpC4dpKP8oeAu/dROPxxSe6oWlVpqN8oBw==
+length: 2366
 -->
