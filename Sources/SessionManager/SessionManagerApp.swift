@@ -2,6 +2,7 @@ import SwiftUI
 import SessionCore
 
 @main struct SessionManagerApp: App {
+    @AppStorage("appearance") private var appearance = AppAppearance.system.rawValue
     @StateObject private var model = AppModel()
     @StateObject private var loginItem = LoginItem()
     @StateObject private var updater = AppUpdater()
@@ -9,11 +10,16 @@ import SessionCore
         Window("RunHuddle", id: "main") {
             ContentView().environmentObject(model).environmentObject(updater)
                 .frame(minWidth: 1000, minHeight: 640)
+                .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }
         .defaultSize(width: 1320, height: 820)
         .commands {
             CommandGroup(after: .appInfo) { UpdateButton().environmentObject(updater) }
             SearchSessionCommands()
+        }
+        Settings {
+            AppearanceSettings()
+                .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }
         MenuBarExtra {
             MenuContent().environmentObject(model).environmentObject(loginItem).environmentObject(updater)
@@ -54,6 +60,7 @@ struct MenuContent: View {
         }
         Button("Open RunHuddle") { showWindow() }
         Button("Connections…") { model.showSetup = true; showWindow() }
+        Menu("Appearance") { AppearancePicker() }
         UpdateButton()
         Button(model.manualRefreshing ? "Refreshing…" : "Refresh") { Task { await model.refresh(userInitiated: true) } }
             .disabled(model.manualRefreshing || model.cleaning)
