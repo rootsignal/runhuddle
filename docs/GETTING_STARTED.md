@@ -7,9 +7,9 @@
 Requires macOS 14 or newer. The current package is for Apple Silicon; Intel builds have not been verified.
 
 <!-- current-download:start -->
-**[Download RunHuddle 0.13.0 for Apple Silicon](https://github.com/rootsignal/runhuddle/releases/download/v0.13.0/RunHuddle-0.13.0-arm64.dmg)**
+**[Download RunHuddle 0.13.1 for Apple Silicon](https://github.com/rootsignal/runhuddle/releases/download/v0.13.1/RunHuddle-0.13.1-arm64.dmg)**
 
-[Release notes](https://github.com/rootsignal/runhuddle/releases/tag/v0.13.0) · [All releases](https://github.com/rootsignal/runhuddle/releases)
+[Release notes](https://github.com/rootsignal/runhuddle/releases/tag/v0.13.1) · [All releases](https://github.com/rootsignal/runhuddle/releases)
 <!-- current-download:end -->
 
 1. Download the installer above, then open the `.dmg`.

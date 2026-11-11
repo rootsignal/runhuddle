@@ -6,31 +6,26 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.13.0</title>
-            <pubDate>Tue, 10 Nov 2026 22:07:14 -0600</pubDate>
-            <sparkle:version>36</sparkle:version>
-            <sparkle:shortVersionString>0.13.0</sparkle:shortVersionString>
+            <title>0.13.1</title>
+            <pubDate>Wed, 11 Nov 2026 07:19:57 -0600</pubDate>
+            <sparkle:version>37</sparkle:version>
+            <sparkle:shortVersionString>0.13.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.13.0 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.13.1
 
-Preserve useful AI work independently of the original conversation with the new Saved work library.
+- Added a reusable four-step Getting started guide covering agent connections, notifications, terminal switching, shortcuts, handoffs, and Saved work.
+- Added a startup checkbox, with permanent access from Help and General settings even when automatic opening is disabled.
+- Added Help menu links to the user guide, troubleshooting, and GitHub issues.
+- Notification permission remains opt-in through the guide’s Enable notifications button.
 
-- Save a manual or AI-generated work summary from session actions. Review before saving.
-- Preserve an existing edited handoff as a separate library snapshot.
-- Search and edit saved records, copy them, or export Markdown with source metadata.
-- Session deletion keeps independent records and offers Save summary first.
-- Explicit library deletion removes only the selected record after confirmation.
-
-Generation reuses the isolated signed-in CLI workflow. No automatic background AI usage, cloud sync, or memory injection. Library search is separate from session search. Records preserve source IDs, project, dates, generator attribution, and caveats; they are not full transcript backups.
-
-Validation: independent persistence through source removal and database reopen, snapshot identities, search/export provenance, and work-summary prompt constraints; light/dark offscreen composer/library review. The existing isolated generation commands remain unchanged; no new live paid-generation test was run. Release checks include full Swift/Python tests, standalone packaging, updater verification, and notarization.
+Validation: native build and release test suite; offscreen guide checks in light and dark appearance. Live macOS permission prompts are not exercised automatically.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.13.0/RunHuddle-0.13.0-arm64.dmg" length="43418218" type="application/octet-stream" sparkle:edSignature="bOkOkVYjDRBldogtxbBqnLRDYOm3L19jpXaZauqDi4dNMnksV4s4rCh1VcwFSadn3xV0Oz/n4NeWG2Cl2iS7Bg=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.13.1/RunHuddle-0.13.1-arm64.dmg" length="44148980" type="application/octet-stream" sparkle:edSignature="GYtSPz6Klg8K9pJ6TpTE5VZ0w4NDDSVPci3y5UBxhJbW/efOI2yTjkvUhBBHhAyDE7CVpHjpG9ZxOAlUMV4oCw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: CzUMbZ9UYKxmpoEDe/OmfK+APTJ53NIdaLywnqf2vzC/vxgVVywi18Vk3hV/rZriFPzgOlKYW6s7bOG9dC6fDQ==
-length: 2450
+edSignature: VmB1hykttds8SWbeG+lBaYmwsZ1rlmxsULuppy9IjR64vFQqoXgEsvwmfxnu3llnkJKmkfESrRTrVEqgDfqFBw==
+length: 1837
 -->
