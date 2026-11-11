@@ -6,30 +6,31 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.12.0</title>
-            <pubDate>Tue, 10 Nov 2026 21:45:21 -0600</pubDate>
-            <sparkle:version>35</sparkle:version>
-            <sparkle:shortVersionString>0.12.0</sparkle:shortVersionString>
+            <title>0.13.0</title>
+            <pubDate>Tue, 10 Nov 2026 22:07:14 -0600</pubDate>
+            <sparkle:version>36</sparkle:version>
+            <sparkle:shortVersionString>0.13.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.12.0 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.13.0 preview
 
-Main-window search now searches everywhere by default, including archived sessions.
+Preserve useful AI work independently of the original conversation with the new Saved work library.
 
-- Match active, saved, disconnected, and archived sessions across all agents and projects.
-- Use the new Current view scope to respect the selected sidebar view, agent, and project filters.
-- Search results show their scope explicitly, and archived matches retain their Archived label.
-- Done, Escape, or clearing the query returns to the selected view. Each new search defaults to Everywhere.
+- Save a manual or AI-generated work summary from session actions. Review before saving.
+- Preserve an existing edited handoff as a separate library snapshot.
+- Search and edit saved records, copy them, or export Markdown with source metadata.
+- Session deletion keeps independent records and offers Save summary first.
+- Explicit library deletion removes only the selected record after confirmation.
 
-Titles, project details, notes, and available recorded conversation history remain searchable. Permanently deleted histories are not restored or searched. The menu-bar switcher remains focused on active sessions.
+Generation reuses the isolated signed-in CLI workflow. No automatic background AI usage, cloud sync, or memory injection. Library search is separate from session search. Records preserve source IDs, project, dates, generator attribution, and caveats; they are not full transcript backups.
 
-Validation covers all session states across Codex, Claude, and Copilot, current-view filter combinations, and unchanged non-search browsing behavior. The release pipeline checks the full Swift/Python suite, packaging, signed updates, and notarization.
+Validation: independent persistence through source removal and database reopen, snapshot identities, search/export provenance, and work-summary prompt constraints; light/dark offscreen composer/library review. The existing isolated generation commands remain unchanged; no new live paid-generation test was run. Release checks include full Swift/Python tests, standalone packaging, updater verification, and notarization.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.12.0/RunHuddle-0.12.0-arm64.dmg" length="42890542" type="application/octet-stream" sparkle:edSignature="q/i8qVgSgdpWNOYuwkOQgXYaY8RJ55ybd0dFOxiSq6ogS21zPiKYk2saXyAhoq7KcLRNvSnMfoBjWTc27rLJCg=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.13.0/RunHuddle-0.13.0-arm64.dmg" length="43418218" type="application/octet-stream" sparkle:edSignature="bOkOkVYjDRBldogtxbBqnLRDYOm3L19jpXaZauqDi4dNMnksV4s4rCh1VcwFSadn3xV0Oz/n4NeWG2Cl2iS7Bg=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: mSRhJnfZzITPFpncTBB+nYyC5VOwbLkWzffpQyM/bp6/wbZAezc+BqYB3z4ryWv+M+Vuo8NNuEGgnILZQURKAw==
-length: 2181
+edSignature: CzUMbZ9UYKxmpoEDe/OmfK+APTJ53NIdaLywnqf2vzC/vxgVVywi18Vk3hV/rZriFPzgOlKYW6s7bOG9dC6fDQ==
+length: 2450
 -->

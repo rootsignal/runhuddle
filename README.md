@@ -5,9 +5,9 @@
 ## Download
 
 <!-- current-download:start -->
-**[Download RunHuddle 0.12.0 for Apple Silicon](https://github.com/rootsignal/runhuddle/releases/download/v0.12.0/RunHuddle-0.12.0-arm64.dmg)**
+**[Download RunHuddle 0.13.0 for Apple Silicon](https://github.com/rootsignal/runhuddle/releases/download/v0.13.0/RunHuddle-0.13.0-arm64.dmg)**
 
-[Release notes](https://github.com/rootsignal/runhuddle/releases/tag/v0.12.0) · [All releases](https://github.com/rootsignal/runhuddle/releases)
+[Release notes](https://github.com/rootsignal/runhuddle/releases/tag/v0.13.0) · [All releases](https://github.com/rootsignal/runhuddle/releases)
 <!-- current-download:end -->
 
 Requires **macOS 14 or newer on Apple Silicon**. No Python, Swift, or source checkout required. Your agent CLIs and accounts are installed separately.
