@@ -80,3 +80,9 @@ Removal requires archiving first. Codex deletion is permanent. Claude and Copilo
 - The development bundle retains its original bundle identifier and storage paths to preserve existing local installations. Mac App Store distribution has not been implemented. Bundled third-party license notices are included in the app’s Resources directory.
 
 See [development and integration notes](DEVELOPMENT.md) for implementation details and validation history.
+
+## Repository context
+
+The Overview shows the current Git branch (or detached HEAD), main/linked worktree, worktree path, and changed-file count. Counts include staged, unstaged, and untracked files; a rename counts once. Ignored files are excluded. Submodule changes appear as a changed submodule entry, not a recursive file count.
+
+This is shared repository state, not changes attributed to the selected agent. It is read locally when the section opens; use its refresh button for a new snapshot. There is no background repository polling or GitHub request. Missing or inaccessible repositories show an unavailable message. PR and CI status are not included yet.

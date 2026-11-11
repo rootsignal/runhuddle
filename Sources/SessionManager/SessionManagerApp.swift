@@ -580,6 +580,7 @@ struct SessionDetail: View {
                             }.font(.callout)
 
                         }
+                        if !row.simulated { RepositoryContextView(directory: row.cwd) }
                         DisclosureGroup("Your notes") {
                             VStack(alignment: .leading, spacing: 12) {
                                 TextField("What is this session for?", text: Binding(
