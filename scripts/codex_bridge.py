@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from context_usage import read_context
+from compaction_count import read_compactions
 from websockets.sync.client import unix_connect
 
 
@@ -54,6 +55,7 @@ def normalize(row, projects, archived=False):
             "preview": (row.get("preview") or "")[:8000], "state": state, "reason": reason,
             "updated": row.get("updatedAt") or 0, "simulated": False,
             "contextUsage": read_context(row.get("path")),
+            "compactions": read_compactions(row.get("path"), "Codex"),
             "attention": {"kind": "permission" if "waitingOnApproval" in (row.get("status") or {}).get("activeFlags", []) else "question"}
                 if state == "needsInput" else None}
 

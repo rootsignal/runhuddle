@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """RunHuddle Claude observer. Never approves tools or injects context."""
+from compaction_count import read_compactions
 import argparse
 from contextlib import contextmanager
 import json
@@ -94,6 +95,8 @@ def record(event, payload, identity=None, stamp=None):
             return
         data = json.loads(old[1]) if old else {}
         previous = dict(data)
+        if compact and (not old or old[0] != stamp):
+            data['compactionCount'] = data.get('compactionCount', 0) + 1
         if compact:
             state = data.get('state', 'disconnected')
         pending = data.get('pending', {})
@@ -126,7 +129,7 @@ def record(event, payload, identity=None, stamp=None):
         db.execute('INSERT OR REPLACE INTO states VALUES (?,?,?)', (sid, stamp, json.dumps(data)))
     # Signal only after commit. Snapshots never touch this file, preventing refresh loops.
     try:
-        if any(previous.get(key) != data.get(key) for key in ('state', 'cwd', 'preview', 'identity', 'attention')):
+        if any(previous.get(key) != data.get(key) for key in ('state', 'cwd', 'preview', 'identity', 'attention', 'compactionCount')):
             Path(str(STATE) + '.signal').touch(mode=0o600)
     except OSError:
         pass  # The durable hook record remains available to reconciliation.
@@ -305,10 +308,14 @@ def snapshot():
             data['attention'] = hook.get('attention') if compatible and not resolved_after_hook else None
         identity = data.get('identity')
         cwd = data.get('cwd', '')
+        compactions = read_compactions(path, 'Claude')
+        hook_count = hooks.get(sid, {}).get('compactionCount', 0)
+        if hook_count > (compactions or {}).get('count', 0):
+            compactions = {'count': hook_count, 'source': 'Claude compaction hooks observed since tracking was enabled'}
         rows.append(dict(provider='Claude', sessionID=sid, title=data.get('title', 'Claude session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=reason, updated=data.get('updated', 0),
-                         attention=data.get('attention') if state == 'needsInput' else None, simulated=False, agentPID=(identity or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(identity or {}).get('tty') if state not in ('saved', 'disconnected') else None))
+                         compactions=compactions, attention=data.get('attention') if state == 'needsInput' else None, simulated=False, agentPID=(identity or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(identity or {}).get('tty') if state not in ('saved', 'disconnected') else None))
     return rows
 
 

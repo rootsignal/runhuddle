@@ -2,6 +2,22 @@ import XCTest
 @testable import SessionCore
 
 final class NavigationAndAlertTests: XCTestCase {
+    func testSavedResumeUsesOriginalProjectAndSessionDespiteUnrelatedTerminals() {
+        for provider in ["Codex", "Claude", "Copilot"] {
+            var saved = Session(provider: provider, sessionID: "old-session-id", title: "Old Club Spite work",
+                                cwd: "/work/Club Spite", state: .saved)
+            saved.terminalTTY = "/dev/ttys004" // Stale TTY now belongs to another project.
+            let unrelated = TerminalTarget(app: "Terminal", window: "1", identity: "/dev/ttys004",
+                                           title: "local ledger | local-ledger", cwd: "/work/local-ledger")
+            XCTAssertNil(TerminalTarget.uniqueMatch(for: saved, sessions: [saved], targets: [unrelated]))
+            let arguments = provider == "Codex"
+                ? "'resume' '--remote' 'unix://' 'old-session-id'"
+                : "'--resume' 'old-session-id'"
+            XCTAssertEqual(ShellCommand.resume(saved, executable: "/bin/agent"),
+                           "cd -- '/work/Club Spite' && '/bin/agent' " + arguments)
+        }
+    }
+
     func testCodexActionRequiredTitleMatchesUniquely() {
         let session = Session(provider: "Codex", sessionID: "one", title: "Investigate AI session tracker MVP",
                               cwd: "/work/agent-session-manager", state: .needsInput)

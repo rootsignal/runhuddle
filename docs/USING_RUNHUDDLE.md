@@ -113,7 +113,7 @@ Reopen it any time through **Help → Getting started…** or **Settings → Gen
 
 The **Help** menu links to this user guide, troubleshooting, and GitHub issues. Those detailed guides open in your browser and require an internet connection; the introductory guide is built into the app.
 
-Use **Filters** beside search to choose a tool or project. Active filters appear as removable chips above the session list. Click a chip’s × to remove it, or **Clear filters** to reset both. With no chips selected, all tools and projects are included. Tracking setup notices live beside Connections in the sidebar footer.
+Use **Filters** beside search to choose a tool or project. Active filters appear as removable chips above the session list. Click a chip’s × to remove it, or **Clear filters** to reset both. With no chips selected, all tools and projects are included. Open **Settings…** at the bottom of the sidebar for connection status and tracking setup notices. An attention badge appears when a connection needs attention. Settings groups appearance, shortcuts, help, and updates under **General**, agent tracking under **Connections**, launch preferences under **Terminal**, and alert permissions and behavior under **Notifications**.
 
 ## Session navigation
 
@@ -124,3 +124,35 @@ Use **Filters** beside search to choose a tool or project. Active filters appear
 The separate **Library → Saved work** count represents saved summary/handoff records. Its own search and tool/project filters are independent of session filters.
 
 Project filters group system temporary directories (including macOS `/var/folders` and `/tmp`) and missing working directories under **Temporary / other**. This is a display grouping, not deletion: the sessions and their original paths remain available, including archived history. A regular project is not grouped merely because its name begins with `tmp`.
+
+## Bulk handoffs and work summaries
+
+Select sessions through **Bulk actions**, then choose **Generate handoffs…** or **Save work summaries…**. Review the selected sessions and choose an AI CLI before starting. Generation uses that account’s allowance and processes sessions one at a time; **Stop after current** leaves remaining sessions unprocessed. Failures are shown per session without discarding successful results.
+
+Handoffs are saved to their source sessions; manually edited handoffs keep their edits and receive a replacement candidate for review. Work summaries remain editable drafts in the bulk dialog until you explicitly save them individually or choose **Save all reviewed summaries**. Closing with unsaved summary drafts asks before discarding them. Saved summaries are independent records in **Library → Saved work**.
+
+Right-click a session for **Generate handoff…** (or **Update handoff…**), **Save work summary…**, and **Archive…**. Handoff generation opens the provider/usage review before starting. Archive uses the existing cleanup review and is enabled only for sessions confirmed closed; archived sessions offer **Restore…** instead.
+
+Saved work opens as a workspace view, with records on the left and editable details on the right. At narrow widths, details replace the list until closed. The toolbar search searches saved records while this view is selected; its library filters remain independent of session filters.
+
+Choose **Start new session from this…** in a saved record’s details to pick Codex, Claude, or Copilot and an existing project folder. Review/edit the initial prompt, then choose **Start in Terminal**. This opens a new session in Apple Terminal using your signed-in CLI account and sends the saved context as its initial prompt. It does not resume the old session or change the saved record, and it works without the original session. If the original folder is gone, choose another before starting.
+
+## Compaction and handoff indicators
+
+Session rows show an observed compaction count when recorded events are available and the count is above zero. Codex transcript markers, Claude compaction boundaries/hooks, and successful Copilot `session.compaction_complete` events are counted. Failed Copilot attempts and token-percentage drops are not counted. Counts reflect available history or hooks observed since tracking began, not a guaranteed lifetime total. Expanded session details include the source; unavailable evidence is not shown as zero. Transcript counts are cached and updated from appended records.
+
+A document icon means a handoff exists. Its tooltip distinguishes ready, outdated after new activity/notes, and a generated replacement awaiting review. No icon means no generated handoff.
+
+## Terminal launch and tab names
+
+Resuming a saved conversation opens a new Terminal tab or window directly in its saved project folder, using its exact agent session ID. Unrelated open terminals do not trigger a chooser. Sessions currently known to be running still return to their matching terminal; ambiguous live matches retain the terminal-location dialog.
+
+**Settings → Terminal** selects Terminal, iTerm2, or Ghostty as the preferred app for saved-session resumes, fresh handoffs, and saved-work launches. Apps not installed are labeled and unavailable for selection. Running sessions still return to their existing terminal. Choose a new tab or window; when no window exists, a new one opens. A missing preferred app produces an error rather than silently switching apps.
+
+Terminal.app tabs require macOS Accessibility access. Terminal settings show the current permission status, explain the steps, and link directly to macOS Accessibility settings. When a launch falls back to a window, a prominent message includes a **Terminal settings…** button. iTerm2 and Ghostty use their native scripting support for tab/window creation and may request Automation permission. Ghostty requires version 1.3 or later with AppleScript enabled. Commands are supplied only to newly created tabs/windows; launch errors never retry into an existing pane.
+
+Renaming a live session also attempts to update a uniquely matched Apple Terminal tab’s custom title. Unsupported terminals, tmux panes, ambiguous matches, and closed tabs keep their existing titles. The RunHuddle name remains saved even if the tab update fails. An agent may subsequently overwrite its tab title. Renaming does not change the underlying agent session name.
+
+Expand **Icon guide** below Library in the sidebar for session-state, context, compaction, and handoff explanations. It starts collapsed and remembers your choice. Row indicators stay compact, with full descriptions on hover and for accessibility.
+
+A filled **books** icon on a session means at least one Saved work record references that session. Hover for the record count. This includes saved summaries and handoff snapshots; it does not mean the record includes the session’s latest activity. Deleting the last corresponding library record removes the indicator.

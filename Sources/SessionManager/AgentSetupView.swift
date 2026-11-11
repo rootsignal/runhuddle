@@ -3,7 +3,7 @@ import SwiftUI
 struct AgentSetupView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var updater: AppUpdater
+    var embeddedInSettings = false
     @ViewState private var installed: [String: String] = [:]
     @ViewState private var busy = false
     @ViewState private var message: String?
@@ -75,29 +75,15 @@ struct AgentSetupView: View {
                     Text("Codex uses its shared local server. Claude uses its live session list when supported, with hooks as a fallback. Copilot hooks load when its CLI starts.")
                 }.font(.caption).foregroundStyle(.secondary)
             }
-            Divider()
-            HStack {
-                UpdateButton()
-                Spacer()
-                Toggle("Check automatically", isOn: Binding(get: { updater.checksAutomatically }, set: { updater.checksAutomatically = $0 }))
-                    .toggleStyle(.checkbox)
-            }
-            DisclosureGroup("Notifications") {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let note = model.notificationMessage { Text(note).font(.caption).foregroundStyle(.secondary) }
-                    Button("Notification settings…") { model.openNotificationSettings() }
-                    Button("Send test alert") { Task { await model.testNotification() } }
-                }
-            }
             }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(maxHeight: 500)
             HStack {
                 Button("Check again") { Task { await detect() } }.disabled(busy)
                 Spacer()
-                Button("Done") { finish() }.keyboardShortcut(.defaultAction).disabled(busy)
+                if !embeddedInSettings { Button("Done") { finish() }.keyboardShortcut(.defaultAction).disabled(busy) }
 
             }
-        }.padding(24).frame(width: 520).task { await detect() }
+        }.padding(24).frame(width: 520).frame(height: embeddedInSettings ? 590 : nil).task { await detect() }
     }
     private func status(_ provider: String) -> String {
         guard detected.contains(provider) else { return "Not detected yet" }

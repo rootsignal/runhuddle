@@ -89,7 +89,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var drafts: [String: String] = [:]
     @Published var savedWork: [SavedWork] = []
     private var savedWorkLoaded = false
-    @Published var showSavedWork = false
+    @Published var libraryQuery = ""
     @Published var workSource: Session?
     @Published var workError: String?
     @Published var workNotice: String?
@@ -132,6 +132,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var cleanupProgress = ""
     @Published var cleaning = false { didSet { if !cleaning { cleanupProgress = "" } } }
     @Published var cleanupMessage: String?
+    @Published var terminalLaunchNotice: String?
     private var store: Store?
     private var timer: Task<Void, Never>?
     private var hookWatcher: HookEventWatcher?
@@ -324,7 +325,7 @@ struct CopilotTrackingStatus: Decodable {
     }
     func terminalActionTitle(for row: Session) -> String {
         if row.state == .saved { return "Resume session…" }
-        if TerminalTarget.uniqueMatch(for: row, sessions: sessions, targets: terminalTargets) != nil { return "Go to terminal" }
+        if matchingTerminal(for: row, targets: terminalTargets) != nil { return "Go to terminal" }
         return "Locate terminal…"
     }
     var selected: Session? { visible.first { $0.id == selection } }
@@ -528,6 +529,22 @@ struct CopilotTrackingStatus: Decodable {
             try store.save(updated, key: "displayNames")
             displayNames = updated
             renameError = nil
+            let appliedName = updated[row.id] ?? row.title
+            Task { @MainActor in
+                guard [.working, .idle, .needsInput].contains(row.state) else { return }
+                let result = await TerminalNavigator.discover()
+                guard displayName(for: row) == appliedName else { return }
+                let remembered = terminalChoices[row.id].flatMap { previous in result.targets.first { $0.stillMatchesChoice(previous) } }
+                guard let target = remembered ?? matchingTerminal(for: row, targets: result.targets), target.app == "Terminal", target.tmux == nil else {
+                    cleanupMessage = "Name saved in RunHuddle. No unique supported Terminal tab was found to rename."; return
+                }
+                do {
+                    let title = appliedName + " | " + URL(fileURLWithPath: row.cwd).lastPathComponent
+                    try await TerminalNavigator.rename(target, title: title)
+                    terminalChoices[row.id] = TerminalTarget(app: target.app, window: target.window, identity: target.identity, title: title, cwd: target.cwd, tty: target.tty, applicationPID: target.applicationPID)
+                    cleanupMessage = "Session and Terminal tab renamed. The agent may later update its tab title."
+                } catch { cleanupMessage = "Name saved in RunHuddle; Terminal tab title was not updated: " + error.localizedDescription }
+            }
             return true
         } catch {
             let message = "Could not save session name: \(error.localizedDescription)"
@@ -945,8 +962,25 @@ struct CopilotTrackingStatus: Decodable {
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
         return (candidates + additional.map { $0 + "/" + name }).first { FileManager.default.isExecutableFile(atPath: $0) }
     }
+    private func matchingTerminal(for row: Session, targets: [TerminalTarget]) -> TerminalTarget? {
+        if let original = TerminalTarget.uniqueMatch(for: row, sessions: sessions, targets: targets) { return original }
+        var renamed = row; renamed.title = displayName(for: row)
+        let renamedPeers = sessions.map { session -> Session in
+            var peer = session; peer.title = displayName(for: session); return peer
+        }
+        return TerminalTarget.uniqueMatch(for: renamed, sessions: renamedPeers, targets: targets)
+    }
     func resume(_ row: Session, fromMenu: Bool = false) {
+        // The menu/detail view may hold an older snapshot; prefer current liveness.
+        let row = sessions.first(where: { $0.id == row.id }) ?? row
         guard !row.simulated, row.state != .archived, !navigatingTerminal else { return }
+        if row.state == .saved {
+            // Saved conversations have no known live process. Resume their exact ID
+            // in their saved project, without offering unrelated terminals or stale
+            // remembered choices. launch() owns the navigation lock for this path.
+            openAnotherTerminal(row)
+            return
+        }
         navigatingTerminal = true
         terminalNavigationSessionID = row.id
         terminalProgress = "Finding terminal…"
@@ -958,7 +992,7 @@ struct CopilotTrackingStatus: Decodable {
     private func navigate(_ row: Session, fromMenu: Bool) async {
         await discoverTerminals()
         let remembered = terminalChoices[row.id].flatMap { previous in terminalTargets.first { $0.stillMatchesChoice(previous) } }
-        let automatic = TerminalTarget.uniqueMatch(for: row, sessions: sessions, targets: terminalTargets)
+        let automatic = matchingTerminal(for: row, targets: terminalTargets)
         let preferred = automatic?.matchRank(for: row) == 0 ? automatic : remembered ?? automatic
         if let match = preferred {
             do { terminalProgress = "Opening terminal…"; try await TerminalNavigator.focus(match); onTerminalOpened?(); return }
@@ -1023,6 +1057,20 @@ struct CopilotTrackingStatus: Decodable {
         let prompt = "Continue from this handoff. First inspect the current project state.\n\n" + completeHandoff(row)
         launch("cd -- \(ShellCommand.quote(row.cwd)) && \(ShellCommand.quote(executable)) \(row.provider == "Copilot" ? "-i " : "")\(ShellCommand.quote(prompt))", cwd: row.cwd)
     }
+    func startFromSavedWork(_ record: SavedWork, provider: String, directory: String, prompt: String) -> Bool {
+        let row = Session(provider: provider, sessionID: "", title: record.title, cwd: directory, state: .saved)
+        guard ["Codex", "Claude", "Copilot"].contains(provider), let executable = executable(for: row) else {
+            workError = "Install and sign into the selected AI CLI first."; return false
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+            workError = "Choose an existing project folder."; return false
+        }
+        guard !navigatingTerminal, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        workError = nil
+        launch("cd -- \(ShellCommand.quote(directory)) && \(ShellCommand.quote(executable)) \(provider == "Copilot" ? "-i " : "")\(ShellCommand.quote(prompt))", cwd: directory)
+        return true
+    }
     private func launch(_ command: String, cwd: String) {
         var directory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: cwd, isDirectory: &directory), directory.boolValue else {
@@ -1030,16 +1078,19 @@ struct CopilotTrackingStatus: Decodable {
         }
         guard !navigatingTerminal else { return }
         navigatingTerminal = true
-        terminalProgress = "Opening Terminal…"
+        terminalProgress = "Opening preferred terminal…"
         Task { @MainActor in
             defer { navigatingTerminal = false; terminalProgress = "" }
             do {
-                _ = try await TerminalNavigator.run("""
-                    var app = Application("com.apple.Terminal");
-                    app.doScript(\(TerminalNavigator.literal(command)));
-                    app.activate();
-                    """)
-            } catch { self.error = "Could not confirm that Terminal opened: \(error.localizedDescription). Check Terminal before trying again." }
+                let preferTab = UserDefaults.standard.string(forKey: "terminalLaunchStyle") != "window"
+                let terminal = PreferredTerminal.stored(UserDefaults.standard.string(forKey: "preferredTerminal"))
+                terminalLaunchNotice = nil
+                if let notice = try await TerminalNavigator.launchNew(command, cwd: cwd, terminal: terminal, preferTab: preferTab) {
+                    terminalLaunchNotice = notice
+                    openMainWindow?()
+                }
+                onTerminalOpened?()
+            } catch { self.error = "Could not confirm that the preferred terminal opened: \(error.localizedDescription). Check the selected terminal before trying again." }
         }
     }
     func export(_ row: Session) async {

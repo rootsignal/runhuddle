@@ -74,6 +74,7 @@ class ClaudeTests(unittest.TestCase):
         self.send('UserPromptSubmit')
         self.send('SessionStart', source='compact')
         self.assertEqual(self.row()['state'], 'working')
+        self.assertEqual(self.row()['compactions']['count'], 3)
 
     def test_out_of_order_events(self):
         bridge.record('Stop', {'session_id': 'example'}, self.identity, stamp=200)

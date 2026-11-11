@@ -46,6 +46,8 @@ struct SessionCardContent: View {
     let summary: String
     let match: String?
     let pinned: Bool
+    var handoffStatus: String = ""
+    var savedWorkCount: Int = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
@@ -70,6 +72,23 @@ struct SessionCardContent: View {
                         Image(systemName: "circle.dotted").font(.system(size: 10))
                         Text("\(Int((fraction * 100).rounded()))% context").monospacedDigit()
                     }.font(.system(size: 10)).foregroundStyle(fraction >= 0.8 ? Color.orange : .secondary)
+                }
+                if let count = row.compactions, count.count > 0 {
+                    Label("\(count.count)", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .help("\(count.count) compactions observed. " + count.source)
+                        .accessibilityLabel("\(count.count) compactions observed")
+                }
+                if !handoffStatus.isEmpty {
+                    Image(systemName: handoffStatus == "Handoff ready" ? "doc.text.fill" : "doc.badge.clock")
+                        .font(.system(size: 10)).foregroundStyle(handoffStatus == "Handoff ready" ? HuddleStyle.accent : .orange)
+                        .help(handoffStatus).accessibilityLabel(handoffStatus)
+                }
+                if savedWorkCount > 0 {
+                    Image(systemName: "books.vertical.fill")
+                        .font(.system(size: 10)).foregroundStyle(HuddleStyle.accent)
+                        .help("\(savedWorkCount) saved work \(savedWorkCount == 1 ? "record" : "records") in Library — independent snapshots, which may predate later activity")
+                        .accessibilityLabel("\(savedWorkCount) saved work records in Library")
                 }
                 Spacer(minLength: 4)
                 Text(Date(timeIntervalSince1970: row.updated), style: .relative)

@@ -69,7 +69,9 @@ struct GettingStartedView: View {
                         Text("Click the owl in your menu bar to see active sessions without opening the main window. Choose a session to bring its terminal forward.")
                         Text("Use ↑ and ↓ to choose, Return to switch, and Escape to dismiss. Configure a global shortcut in General settings to open the switcher from any app.").foregroundStyle(.secondary)
                         Button("Customize keyboard shortcut…") { settings("general") }
-                        Text("If a terminal cannot be matched confidently, RunHuddle asks you to choose its tab or pane. In the main window, click a session for details or its terminal icon to jump directly.").font(.callout)
+                        Text("Saved sessions reopen in your preferred terminal. Choose Terminal, iTerm2, or Ghostty and whether to open tabs or windows. Terminal tabs require Accessibility access; setup explains how to enable it.").font(.callout)
+                        Button("Set up your terminal…") { settings("terminal") }
+                        Text("If a running session cannot be matched confidently, RunHuddle asks you to locate its tab or pane.").font(.callout)
                     default:
                         Text("Archive a session to remove it from your active lists while keeping its history available.")
                         Text("Generate a handoff when you want to continue work in a new session. Review and edit it before using it.")

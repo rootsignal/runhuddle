@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import SessionCore
 
 @MainActor enum TerminalNavigator {
@@ -9,11 +10,11 @@ import SessionCore
         NSError(domain: "TerminalNavigator", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
     // Apple Events can take seconds (or await permission). Never wait on the UI thread.
-    static func run(_ source: String) async throws -> Data {
+    static func run(_ source: String, language: String = "JavaScript") async throws -> Data {
         try await Task.detached {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            process.arguments = ["-l", "JavaScript", "-e", source]
+            process.arguments = ["-l", language, "-e", source]
             let output = Pipe(), errors = Pipe()
             process.standardOutput = output; process.standardError = errors
             try process.run()
@@ -30,6 +31,85 @@ import SessionCore
             return data
         }.value
     }
+    static func launchNew(_ command: String, cwd: String, terminal: PreferredTerminal, preferTab: Bool) async throws -> String? {
+        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: terminal.bundleID) != nil else {
+            throw failure("\(terminal.title) is not installed. Choose an installed terminal in Terminal settings.")
+        }
+        if let script = terminal.creationScript(command: command, cwd: cwd, preferTab: preferTab) {
+            _ = try await run(script, language: "AppleScript")
+            return nil
+        }
+        return try await launchNew(command, preferTab: preferTab)
+    }
+
+    // Return a note only when tab creation was unavailable before any command was sent.
+    static func launchNew(_ command: String, preferTab: Bool) async throws -> String? {
+        let canCreateTab = preferTab && AXIsProcessTrusted()
+        let source = """
+        var app = Application("com.apple.Terminal");
+        function launch() {
+            if (!\(canCreateTab ? "true" : "false") || !app.running() || app.windows().length === 0) {
+                app.doScript(\(literal(command))); app.activate(); return 'window';
+            }
+            var w = app.windows()[0];
+            // Terminal can change its exposed window identity when a tab becomes active.
+            // Snapshot every TTY so an existing tab can never qualify as the new one.
+            var before = [];
+            for (var win of app.windows()) {
+                for (var tab of win.tabs()) before.push(tab.tty());
+            }
+            w.miniaturized = false; w.index = 1; app.activate();
+            var se = Application('com.apple.systemevents');
+            var process = se.applicationProcesses.byName('Terminal');
+            for (var i = 0; i < 30 && !process.frontmost(); i++) delay(0.05);
+            if (!process.frontmost()) throw Error('Could not bring Terminal forward. No command was sent.');
+            se.keystroke('t', {using: 'command down'});
+            for (var i = 0; i < 160; i++) {
+                delay(0.05);
+                var matches = [];
+                for (var win of app.windows()) {
+                    for (var tab of win.tabs()) {
+                        var tty = tab.tty();
+                        if (tty && before.indexOf(tty) < 0 && !matches.some(function(t) { return t.tty() === tty; })) matches.push(tab);
+                    }
+                }
+                if (matches.length === 1 && matches[0].selected() && !matches[0].busy()) {
+                    app.doScript(\(literal(command)), {in: matches[0]}); app.activate(); return 'tab';
+                }
+                if (matches.length > 1) throw Error('Multiple new tabs appeared. No command was sent; choose a tab manually.');
+            }
+            throw Error('The new Terminal tab could not be confirmed as ready within 8 seconds. No resume command was sent. Close the empty tab before trying again.');
+        }
+        JSON.stringify(launch());
+        """
+        let result = try await run(source)
+        let opened = try? JSONDecoder().decode(String.self, from: result)
+        return preferTab && !canCreateTab && opened == "window"
+            ? "Opened in a window because Terminal tab access is off." : nil
+    }
+
+    static func rename(_ target: TerminalTarget, title: String) async throws {
+        guard target.app == "Terminal", target.tmux == nil,
+              let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Terminal").first,
+              target.applicationPID == app.processIdentifier else { throw failure("This tab cannot be renamed automatically.") }
+        _ = try await run("""
+        var app = Application('com.apple.Terminal');
+        function rename() {
+            if (!app.running()) throw Error('Terminal closed.');
+            for (var w of app.windows()) {
+                if (String(w.id()) !== \(literal(target.window))) continue;
+                for (var t of w.tabs()) {
+                    if (t.tty() !== \(literal(target.identity))) continue;
+                    if (t.customTitle() !== \(literal(target.title))) throw Error('Tab changed; title was not updated.');
+                    t.customTitle = \(literal(title)); return true;
+                }
+            }
+            throw Error('Tab closed; title was not updated.');
+        }
+        JSON.stringify(rename());
+        """)
+    }
+
     static func discover() async -> (targets: [TerminalTarget], errors: [String]) {
         var targets: [TerminalTarget] = [], errors: [String] = []
         for (app, bundleID) in [("Terminal", "com.apple.Terminal"), ("Ghostty", "com.mitchellh.ghostty"), ("iTerm2", "com.googlecode.iterm2")] {

@@ -4,6 +4,13 @@ struct NotificationSettingsView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         Form {
+            Section("Permission") {
+                if let message = model.notificationMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
+                Button(model.notifications ? "Notifications enabled" : model.notificationBlocked ? "Open macOS notification settings…" : "Enable notifications") {
+                    if model.notificationBlocked { model.openNotificationSettings() }
+                    else { Task { await model.enableNotifications() } }
+                }.disabled(model.notifications)
+            }
             Section("Alerts") {
                 Toggle("Sessions needing input", isOn: $model.notificationPreferences.input)
                 Toggle("Work ready for review", isOn: $model.notificationPreferences.completion)
@@ -56,6 +63,7 @@ struct NotificationSettingsView: View {
                 Text("Test alerts bypass quiet hours and snooze. macOS notification permission is still required.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-        }.formStyle(.grouped).frame(width: 500, height: 590)
+        }.formStyle(.grouped).frame(width: 520, height: 590)
+            .task { await model.refreshNotificationStatus() }
     }
 }

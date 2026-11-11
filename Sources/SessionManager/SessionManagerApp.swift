@@ -41,7 +41,9 @@ import SessionCore
         }.windowResizability(.contentSize)
         Settings {
             TabView(selection: $model.settingsTab) {
-                AppearanceSettings().environmentObject(switcher.hotKey).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+                AppearanceSettings().environmentObject(switcher.hotKey).environmentObject(updater).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+                AgentSetupView(embeddedInSettings: true).environmentObject(model).tabItem { Label("Connections", systemImage: "link") }.tag("connections")
+                TerminalSettings().tabItem { Label("Terminal", systemImage: "terminal") }.tag("terminal")
                 NotificationSettingsView().environmentObject(model).tabItem { Label("Notifications", systemImage: "bell") }.tag("notifications")
             }
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
@@ -61,8 +63,14 @@ struct ContentView: View {
     private var hasSessionFilters: Bool { model.provider != "All tools" || model.projectFilter != "All projects" }
     private var isNow: Bool { model.filter == "Now" && model.query.isEmpty }
     @ViewState private var confirmTerminalResume = false
+    @ViewState private var bulkGeneration: BulkGenerationRequest?
+    @AppStorage("showIconGuide") private var showIconGuide = false
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
+    private func generateBulk(summaries: Bool) {
+        let rows = model.sessions.filter { model.bulkSelection.contains($0.id) && !$0.simulated }
+        bulkGeneration = BulkGenerationRequest(summaries: summaries, sessions: rows)
+    }
     private func bulk(_ operation: String) {
         let rows = model.sessions.filter { model.bulkSelection.contains($0.id) }
         Task { await model.prepareBulkCleanup(operation, rows: rows) }
@@ -90,15 +98,20 @@ struct ContentView: View {
                     Divider().padding(.vertical, 8)
                     Text("LIBRARY").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 9)
-                    Button { model.workError = nil; model.showSavedWork = true } label: {
+                    Button { model.workError = nil; model.filter = "Saved work"; showDetails = false } label: {
                         HStack {
                             Label("Saved work", systemImage: "books.vertical")
                             Spacer()
                             Text("\(model.savedWork.count)").font(.caption).foregroundStyle(.secondary)
                         }.font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading).padding(9).contentShape(Rectangle())
                     }.buttonStyle(.plain)
+                    .background(model.filter == "Saved work" ? HuddleStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 }
                 Divider()
+                DisclosureGroup("Icon guide", isExpanded: $showIconGuide) {
+                    SessionIconGuide().padding(.top, 8)
+                }.font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 9)
                 #if DEBUG
                 DisclosureGroup("Demo sessions") {
                     Toggle("Show Claude demo", isOn: $model.showDemo)
@@ -114,27 +127,20 @@ struct ContentView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 12) {
-                Button { model.showSetup = true } label: {
+                Button {
+                    if model.connectionNeedsAttention { model.settingsTab = "connections" }
+                    openSettings()
+                } label: {
                     HStack {
-                        Label("Connections…", systemImage: "link")
+                        Label("Settings…", systemImage: "gearshape")
                         Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").font(.caption2)
+                        if model.connectionNeedsAttention {
+                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+                                .accessibilityLabel("Connections need attention")
+                        }
                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.bordered).controlSize(.small).font(.caption)
-                if model.claudeRepairNotice != nil || model.copilotConnectionNotice != nil {
-                    Button { model.showSetup = true } label: {
-                        Label("Tracking setup updated", systemImage: "info.circle")
-                    }.font(.caption)
-                }
-                Label(model.connectionSummary, systemImage: model.connectionNeedsAttention ? "exclamationmark.circle" : "checkmark.circle")
-                    .font(.caption2).foregroundStyle(model.connectionNeedsAttention ? Color.orange : .secondary)
-                Button {
-                    if model.notifications || model.notificationBlocked { model.settingsTab = "notifications"; openSettings() }
-                    else { Task { await model.enableNotifications() } }
-                } label: {
-                    Label(model.notifications || model.notificationBlocked ? "Notification settings…" : "Enable notifications", systemImage: "bell")
-                        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                }.font(.caption).buttonStyle(.bordered).controlSize(.small)
+                    .help(model.connectionNeedsAttention ? "Open Settings — connections need attention" : "Open Settings")
                 Text("RunHuddle \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Development")")
                     .font(.caption2).foregroundStyle(.secondary)
                     .help(Bundle.main.bundlePath)
@@ -142,6 +148,7 @@ struct ContentView: View {
             }
 
         } detail: {
+            if model.filter == "Saved work" { SavedWorkLibrary() } else {
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
@@ -178,7 +185,7 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         if !model.query.isEmpty {
                             HStack(spacing: 8) {
-                                Button("Done") { model.query = ""; searchFocused = false }
+                                Button("Done") { model.query = ""; model.libraryQuery = ""; searchFocused = false }
                                 Picker("Search scope", selection: $model.searchScope) {
                                     ForEach(SessionSearchScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                                 }.labelsHidden().fixedSize().help("Search all sessions includes archived sessions; tool and project filters still apply")
@@ -202,6 +209,10 @@ struct ContentView: View {
                                     }
                                 }
                                 HStack {
+                                    Button("Generate handoffs…") { generateBulk(summaries: false) }
+                                    Button("Save work summaries…") { generateBulk(summaries: true) }
+                                }.disabled(model.bulkSelection.isEmpty)
+                                HStack {
                                     Button("Archive…") { bulk("archive") }
                                     Button("Restore…") { bulk("restore") }
                                     Button("Delete archived…", role: .destructive) { bulk("delete") }
@@ -215,7 +226,7 @@ struct ContentView: View {
                                     Label("Bulk actions", systemImage: "checklist")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }.buttonStyle(.plain).disabled(model.cleaning)
-                                    .help("Select sessions to archive, restore, or delete")
+                                    .help("Select sessions for handoffs, summaries, archiving, restoring, or deletion")
                             }.padding(.horizontal, 16).frame(height: 28)
                         }
                         ScrollViewReader { proxy in
@@ -273,9 +284,22 @@ struct ContentView: View {
                             else { ContentUnavailableView("Choose a session", systemImage: "rectangle.stack", description: Text("Review its status, resume work, or prepare a handoff.")) }
                         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(HuddleStyle.panel)
                 }
+                if let notice = model.terminalLaunchNotice {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Session opened in a new window").font(.headline)
+                            Text(notice + " Allow RunHuddle in macOS Accessibility settings to open tabs instead.")
+                                .font(.callout).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Button("Terminal settings…") { model.settingsTab = "terminal"; openSettings() }
+                        Button { model.terminalLaunchNotice = nil } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.plain).accessibilityLabel("Dismiss terminal notice")
+                    }.padding(16).background(Color.orange.opacity(0.12))
+                }
                 Divider()
                 HStack {
-                    Button("Connections…") { model.showSetup = true }.buttonStyle(.plain)
                     if let message = model.cleanupMessage {
                         Text(message).lineLimit(2).help(message)
                         Button { model.cleanupMessage = nil } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).help("Dismiss cleanup result")
@@ -288,6 +312,7 @@ struct ContentView: View {
                     }
                 }.font(.caption).foregroundStyle(.secondary).padding(12)
             }
+            }
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -298,21 +323,21 @@ struct ContentView: View {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Search sessions", text: $model.query)
+                    TextField(model.filter == "Saved work" ? "Search saved work" : "Search sessions", text: Binding(get: { model.filter == "Saved work" ? model.libraryQuery : model.query }, set: { if model.filter == "Saved work" { model.libraryQuery = $0 } else { model.query = $0 } }))
                         .textFieldStyle(.plain).focused($searchFocused)
-                        .onExitCommand { model.query = ""; searchFocused = false }
-                        .accessibilityLabel("Search sessions, projects, and messages")
-                    if !model.query.isEmpty {
-                        Button { model.query = ""; searchFocused = true } label: { Image(systemName: "xmark.circle.fill") }
+                        .onExitCommand { model.query = ""; model.libraryQuery = ""; searchFocused = false }
+                        .accessibilityLabel(model.filter == "Saved work" ? "Search saved work" : "Search sessions, projects, and messages")
+                    if !(model.filter == "Saved work" ? model.libraryQuery : model.query).isEmpty {
+                        Button { if model.filter == "Saved work" { model.libraryQuery = "" } else { model.query = "" }; searchFocused = true } label: { Image(systemName: "xmark.circle.fill") }
                             .buttonStyle(.plain).foregroundStyle(.secondary)
                             .help("Clear search (Escape)").accessibilityLabel("Clear search")
                     }
                 }.padding(.horizontal, 8).frame(width: 210, height: 28)
                     .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
                     .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(searchFocused ? HuddleStyle.accent : .clear))
-                    .help("Search sessions (⌘F)")
+                    .help(model.filter == "Saved work" ? "Search saved work (⌘F)" : "Search sessions (⌘F)")
             }
-            ToolbarItem(placement: .primaryAction) { SessionFilterMenu() }
+            ToolbarItem(placement: .primaryAction) { if model.filter != "Saved work" { SessionFilterMenu() } }
 
         }
         .focusedSceneValue(\.searchSessions, { searchFocused = true })
@@ -333,14 +358,14 @@ struct ContentView: View {
             model.openMainWindow = { openWindow(id: "main") }
             model.openSettingsWindow = { openSettings() }
         }
-        .sheet(isPresented: $model.showSavedWork) { SavedWorkLibrary() }
+        .sheet(item: $bulkGeneration) { BulkGenerationView(request: $0) }
         .sheet(item: $model.workSource) { row in WorkSummaryComposer(source: row, title: model.displayName(for: row)) }
         .sheet(item: $model.bulkReview) { BulkCleanupView(review: $0) }
         .sheet(isPresented: $model.showSetup) { AgentSetupView() }
         .sheet(item: $model.renameSession) { row in
             VStack(alignment: .leading, spacing: 16) {
                 Text("Rename session").font(.title2.bold())
-                Text("This name is used in RunHuddle. The original agent title stays unchanged.")
+                Text("This name is used in RunHuddle. A uniquely matched Apple Terminal tab is renamed too; the agent may later overwrite its title.")
                     .font(.callout).foregroundStyle(.secondary)
                 TextField("Session name", text: $model.renameText).textFieldStyle(.roundedBorder)
                     .onSubmit { saveRename(row) }
@@ -410,14 +435,14 @@ struct ContentView: View {
                     Button("Refresh") { model.refreshTerminals() }
                     Spacer()
                     Button("Cancel") { model.terminalSession = nil }
-                    Button(row.state == .saved ? "Resume in Terminal" : "Open another Terminal window…") {
+                    Button(row.state == .saved ? "Resume in preferred terminal" : "Open another terminal session…") {
                         if row.state == .saved { model.openAnotherTerminal(row) }
                         else { confirmTerminalResume = true }
                     }
                 }.disabled(model.navigatingTerminal)
             }.padding(24).frame(width: 640).interactiveDismissDisabled(model.navigatingTerminal)
             .confirmationDialog("Resume in another terminal?", isPresented: $confirmTerminalResume) {
-                Button("Resume in another Terminal window") { model.openAnotherTerminal(row) }
+                Button("Resume in another Terminal session") { model.openAnotherTerminal(row) }
             } message: {
                 Text("This session may still have a running process. Resuming opens another terminal; it does not stop the existing process.")
             }
@@ -460,10 +485,23 @@ struct ContentView: View {
                 .listRowInsets(EdgeInsets(top: 2, leading: 14, bottom: 2, trailing: 14))
                 .id(row.id).contextMenu {
                 Button(model.pinned.contains(row.id) ? "Unpin session" : "Pin session") { model.togglePin(row) }
-                Button("Save work summary…") { model.workError = nil; model.workSource = row }.disabled(row.simulated)
                 Button("Rename…") { model.beginRename(row) }
                 if model.displayNames[row.id] != nil {
                     Button("Reset to original name") { model.saveDisplayName("", for: row) }
+                }
+                Divider()
+                Button(model.handoffs[row.id] == nil ? "Generate handoff…" : "Update handoff…") {
+                    bulkGeneration = BulkGenerationRequest(summaries: false, sessions: [row])
+                }.disabled(row.simulated || model.cleaning || model.handoffGenerating.contains(row.id))
+                Button("Save work summary…") { model.workError = nil; model.workSource = row }.disabled(row.simulated || model.cleaning)
+                Divider()
+                if row.state == .archived {
+                    Button("Restore…") { Task { await model.prepareBulkCleanup("restore", rows: [row]) } }
+                        .disabled(row.simulated || model.cleaning)
+                } else {
+                    Button("Archive…") { Task { await model.prepareBulkCleanup("archive", rows: [row]) } }
+                        .disabled(row.simulated || model.cleaning || row.state != .saved)
+                    if row.state != .saved { Text("Session must be confirmed closed before archiving") }
                 }
             }
         }
@@ -517,7 +555,7 @@ struct SessionRow: View {
     var body: some View {
         SessionCardContent(row: row, title: model.displayName(for: row), summary: model.activitySummary(for: row),
                            match: model.historySearchQuery == model.query ? model.historyMatches[row.id].map { $0.role.capitalized + ": " + $0.excerpt } : nil,
-                           pinned: model.pinned.contains(row.id))
+                           pinned: model.pinned.contains(row.id), handoffStatus: model.handoffs[row.id] == nil ? "" : (model.handoffCandidates[row.id] != nil ? "Updated handoff awaiting review" : model.handoffIsStale(row) ? "Handoff outdated — new activity or notes" : "Handoff ready"), savedWorkCount: model.savedWork.filter { $0.sourceID == row.id }.count)
             .accessibilityElement(children: .combine)
     }
 }
@@ -615,6 +653,9 @@ struct SessionDetail: View {
                     Text("Context").font(.subheadline.bold())
                     Spacer()
                     Button("Prepare handoff") { tab = "Handoff" }
+                }
+                if let compactions = row.compactions {
+                    field("COMPACTIONS OBSERVED", "\(compactions.count) · " + compactions.source)
                 }
                 if let usage = row.contextUsage, let fraction = usage.fraction {
                     HStack {

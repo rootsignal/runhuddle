@@ -15,6 +15,11 @@ public enum SessionState: String, Codable, CaseIterable, Sendable {
     public var rank: Int { Self.allCases.firstIndex(of: self)! }
 }
 
+public struct CompactionCount: Codable, Hashable, Sendable {
+    public let count: Int
+    public let source: String
+}
+
 public struct Session: Codable, Identifiable, Hashable, Sendable {
     public var id: String { provider + ":" + sessionID }
     public var provider: String
@@ -28,6 +33,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public var reason: String
     public var updated: Double
     public var contextUsage: ContextUsage?
+    public var compactions: CompactionCount?
     public var terminalTTY: String?
     public var agentPID: Int32?
     public var attention: AttentionRequest?

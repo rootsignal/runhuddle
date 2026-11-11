@@ -68,67 +68,72 @@ struct WorkSummaryComposer: View {
 
 struct SavedWorkLibrary: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @ViewState private var query = ""
     @ViewState private var selection: UUID?
+    @ViewState private var showDetails = false
     @ViewState private var tool = "All tools"
     @ViewState private var project = "All projects"
-    private var records: [SavedWork] { model.savedWork.filter { $0.matches(query) && (tool == "All tools" || $0.sourceProvider == tool) && ProjectFilter.matches($0.project, selection: project) }.sorted { $0.createdAt > $1.createdAt } }
-    private var selectedRecord: SavedWork? { model.savedWork.first { $0.id == selection } ?? records.first }
+    private var records: [SavedWork] {
+        model.savedWork.filter { $0.matches(model.libraryQuery) && (tool == "All tools" || $0.sourceProvider == tool) && ProjectFilter.matches($0.project, selection: project) }.sorted { $0.createdAt > $1.createdAt }
+    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Saved work").font(.title2.bold())
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-            }
-            Text("Independent summaries and handoffs. Deleting a session does not delete these records.")
-                .font(.caption).foregroundStyle(.secondary)
-            TextField("Search titles, projects, dates, or saved content", text: $query).textFieldStyle(.roundedBorder)
-            HStack {
-                Picker("Tool", selection: $tool) {
-                    Text("All tools").tag("All tools")
-                    ForEach(Array(Set(model.savedWork.map(\.sourceProvider))).sorted(), id: \.self) { Text($0).tag($0) }
-                }
-                Picker("Project", selection: $project) {
-                    Text("All projects").tag("All projects")
-                    ForEach(ProjectFilter.options(model.savedWork.map(\.project)), id: \.self) { Text($0.replacingOccurrences(of: NSHomeDirectory(), with: "~")).tag($0) }
-                }
-                if tool != "All tools" || project != "All projects" {
-                    Button("Clear filters") { tool = "All tools"; project = "All projects" }
-                }
-            }
-            Text("Library filters are separate from session filters.").font(.caption2).foregroundStyle(.secondary)
-            if let error = model.workError { Text(error).foregroundStyle(.orange).font(.caption) }
-            if records.isEmpty && selectedRecord == nil {
-                ContentUnavailableView(query.isEmpty && tool == "All tools" && project == "All projects" ? "No saved work yet" : "No matching records", systemImage: "books.vertical", description: Text("Choose Save work summary from a session’s actions, or Save to library from its handoff."))
-            } else {
-                HStack(alignment: .top, spacing: 16) {
-                    ScrollView {
-                        VStack(spacing: 8) {
-                            ForEach(records) { record in
-                                Button { selection = record.id } label: {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(record.title).font(.headline).lineLimit(2)
-                                        Text(URL(fileURLWithPath: record.project).lastPathComponent + " · " + record.kind).font(.caption)
-                                        Text(record.createdAt, style: .date).font(.caption2)
-                                    }.foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                                        .background((selection ?? records.first?.id) == record.id ? HuddleStyle.accent.opacity(0.15) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-                                }.buttonStyle(.plain)
-                            }
-                        }
-                    }.frame(width: 230)
-                    Divider()
-                    if let record = selectedRecord {
-                        SavedWorkEditor(id: record.id).id(record.id)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Saved work").font(.system(size: 22, weight: .semibold, design: .rounded))
+                Text("\(records.count) records · independent summaries and handoffs").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Picker("Tool", selection: $tool) {
+                        Text("All tools").tag("All tools")
+                        ForEach(Array(Set(model.savedWork.map(\.sourceProvider))).sorted(), id: \.self) { Text($0).tag($0) }
+                    }
+                    Picker("Project", selection: $project) {
+                        Text("All projects").tag("All projects")
+                        ForEach(ProjectFilter.options(model.savedWork.map(\.project)), id: \.self) { Text($0.replacingOccurrences(of: NSHomeDirectory(), with: "~")).tag($0) }
+                    }
+                    if tool != "All tools" || project != "All projects" {
+                        Button("Clear filters") { tool = "All tools"; project = "All projects" }
                     }
                 }
+                if let error = model.workError { Text(error).font(.caption).foregroundStyle(.orange) }
+            }.padding(.horizontal, 20).padding(.top, 12)
+            SessionColumns(showDetails: showDetails && selection != nil) {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(records) { record in
+                            Button { selection = record.id; showDetails = true } label: {
+                                VStack(alignment: .leading, spacing: 7) {
+                                    Text(record.title).font(.headline).lineLimit(2)
+                                    Text(URL(fileURLWithPath: record.project).lastPathComponent + " · " + record.kind).font(.caption).foregroundStyle(.secondary)
+                                    Text(record.text).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                                    Text(record.createdAt, style: .date).font(.caption2).foregroundStyle(.secondary)
+                                }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                                    .background(selection == record.id ? HuddleStyle.accent.opacity(0.12) : Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+                                    .contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(14)
+                }.overlay {
+                    if records.isEmpty {
+                        ContentUnavailableView("No matching saved work", systemImage: "books.vertical", description: Text("Save a work summary or handoff from a session, or adjust your library search and filters."))
+                    }
+                }
+            } detail: {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("SAVED WORK DETAILS").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button { showDetails = false } label: { Image(systemName: "xmark") }.help("Close saved work details")
+                    }
+                    if let selection { SavedWorkEditor(id: selection).id(selection) }
+                }.padding(18).background(HuddleStyle.panel)
             }
-        }.padding(24).frame(width: 860, height: 650).background(HuddleStyle.canvas).tint(HuddleStyle.accent)
-            .onAppear { selection = records.first?.id }
-            .onChange(of: query) { _, _ in selection = records.first?.id }
-            .onChange(of: tool) { _, _ in selection = records.first?.id }
-            .onChange(of: project) { _, _ in selection = records.first?.id }
+        }.background(HuddleStyle.canvas).tint(HuddleStyle.accent)
+            .onChange(of: model.libraryQuery) { _, _ in reconcileSelection() }
+            .onChange(of: tool) { _, _ in reconcileSelection() }
+            .onChange(of: project) { _, _ in reconcileSelection() }
+            .onChange(of: model.savedWork.map(\.id)) { _, _ in reconcileSelection() }
+    }
+    private func reconcileSelection() {
+        if !records.contains(where: { $0.id == selection }) { selection = nil; showDetails = false }
     }
 }
 
@@ -136,6 +141,7 @@ struct SavedWorkEditor: View {
     @EnvironmentObject var model: AppModel
     let id: UUID
     @ViewState private var confirmDelete = false
+    @ViewState private var startSession = false
     private var record: SavedWork? { model.savedWork.first { $0.id == id } }
     private func binding(_ key: WritableKeyPath<SavedWork, String>) -> Binding<String> {
         Binding(get: { record?[keyPath: key] ?? "" }, set: { value in
@@ -148,6 +154,8 @@ struct SavedWorkEditor: View {
         if let record {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Title", text: binding(\.title)).textFieldStyle(.roundedBorder)
+                Button("Start new session from this…") { startSession = true }
+                    .buttonStyle(.borderedProminent).disabled(model.navigatingTerminal || record.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Text("\(record.kind) · \(record.sourceProvider) · saved \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("Edits save automatically. This record is independent of the original session.")
@@ -171,9 +179,57 @@ struct SavedWorkEditor: View {
                     Spacer()
                     Button("Delete record…", role: .destructive) { confirmDelete = true }
                 }
-            }.confirmationDialog("Delete this saved record? This does not delete its original session.", isPresented: $confirmDelete) {
+            }.sheet(isPresented: $startSession) { SavedWorkLaunchView(record: record) }
+            .confirmationDialog("Delete this saved record? This does not delete its original session.", isPresented: $confirmDelete) {
                 Button("Delete record", role: .destructive) { model.deleteWork(record) }
             }
         }
+    }
+}
+
+struct SavedWorkLaunchView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let record: SavedWork
+    @ViewState private var provider: String
+    @ViewState private var directory: String
+    @ViewState private var prompt: String
+    init(record: SavedWork) {
+        self.record = record
+        _provider = ViewState(initialValue: record.sourceProvider)
+        _directory = ViewState(initialValue: record.project)
+        _prompt = ViewState(initialValue: "Continue from this saved work record. It may be incomplete or outdated. First inspect the current project state and ask about unclear next steps.\n\n" + record.markdown)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Start a new session").font(.title2.bold())
+            Text("Opens a new Terminal session and sends the prompt below to your selected agent using its signed-in account. The saved record and original session remain unchanged.")
+                .font(.callout).foregroundStyle(.secondary)
+            Picker("Agent", selection: $provider) {
+                ForEach(["Codex", "Claude", "Copilot"], id: \.self) { Text($0).tag($0) }
+            }
+            HStack {
+                TextField("Project folder", text: $directory).textFieldStyle(.roundedBorder)
+                Button("Choose…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
+                    if panel.runModal() == .OK, let url = panel.url { directory = url.path }
+                }
+            }
+            Text("Initial prompt — review or edit before starting").font(.caption).foregroundStyle(.secondary)
+            TextEditor(text: $prompt).font(.system(size: 13)).border(.quaternary)
+                .accessibilityLabel("Initial prompt for new session")
+            if let error = model.workError { Text(error).font(.caption).foregroundStyle(.orange) }
+            HStack {
+                Button("Cancel") { dismiss() }
+                Spacer()
+                Button("Start in preferred terminal") {
+                    let path = (directory as NSString).expandingTildeInPath
+                    if model.startFromSavedWork(record, provider: provider, directory: path, prompt: prompt) { dismiss() }
+                }.buttonStyle(.borderedProminent)
+                    .disabled(model.navigatingTerminal || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || directory.isEmpty)
+            }
+        }.padding(24).frame(width: 610, height: 560).background(HuddleStyle.canvas).tint(HuddleStyle.accent)
+            .onAppear { model.workError = nil }
     }
 }
