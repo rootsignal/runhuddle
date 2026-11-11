@@ -6,27 +6,32 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.14.0</title>
-            <pubDate>Wed, 11 Nov 2026 08:16:05 -0600</pubDate>
-            <sparkle:version>40</sparkle:version>
-            <sparkle:shortVersionString>0.14.0</sparkle:shortVersionString>
+            <title>0.15.2</title>
+            <pubDate>Wed, 11 Nov 2026 09:11:19 -0600</pubDate>
+            <sparkle:version>44</sparkle:version>
+            <sparkle:shortVersionString>0.15.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.14.0
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.15.2
 
-- Simplified session navigation to Now, Pinned, All sessions, and Archived. Saved work lives in its own Library section with independent tool/project filters.
-- Search defaults to the current view, matching filter behavior. Search all sessions explicitly includes archived sessions while keeping tool/project selections.
-- Replaced nested filter menus with a popover containing direct tool choices and a searchable project list.
-- Grouped inactive history and unconfirmed live connections under Previous session, with uncertainty explained only in details.
-- Filtered empty states explain missing matches and offer Clear filters or View matching history.
+- Saved work now opens in the main workspace with a list and detail pane. Start a fresh Codex, Claude Code, or Copilot session from a reviewed saved summary.
+- Generate handoffs or draft work summaries for multiple selected sessions. Review generated summaries before saving them to the library.
+- Session context menus now include handoff generation and archiving. List icons show generated handoffs, saved work, and observed compaction counts, with a collapsible icon guide.
+- Track observed compactions from available Codex, Claude Code, and Copilot history. Counts describe recorded events, not guaranteed lifetime totals.
+- Choose Terminal, iTerm2, or Ghostty and a new tab or window for session launches. Terminal tab targeting handles changed window identities and slower shell startup while refusing ambiguous targets.
+- Renaming an active session can update its uniquely matched Terminal tab title.
+- Consolidated sidebar controls into Settings with General, Connections, Terminal, and Notifications tabs.
+- Temporary project folders are grouped under Temporary / other in filters.
 
-Validation: full release suite, native build, standalone packaging and updater checks. Live UI interaction is not automatically tested.
+Terminal.app tab creation requires Accessibility permission. iTerm2 and Ghostty use native scripting; Ghostty requires 1.3 or later with AppleScript enabled.
+
+Validation includes Swift and Python tests, simulated Terminal tab targeting, standalone packaging, and updater checks. Live terminal interaction is not automatically tested.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.14.0/RunHuddle-0.14.0-arm64.dmg" length="41996664" type="application/octet-stream" sparkle:edSignature="fMPa//TfMebFlOcV96cPaUHyDmCjgjILldWpluVDzc0J8nQibuxAkjyiX9YQTuVDMIuCPsMSrFLgc9ELH0tVCQ=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.15.2/RunHuddle-0.15.2-arm64.dmg" length="44387848" type="application/octet-stream" sparkle:edSignature="uis8we2NNcfJDLrnZktXDPTGXIoYz3TxhZZxgweLubv2Atmxlz0aKjpWB+i0bFJYMxl0K/pHUfnmD0DMbKAnAg=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: YbWHTeRDtOoqWn2oOUSNtGRr72Z8vWwkaP6lMy4bBykztxgaWMOKppoWNpnM/GWaYJMYI1M7DBv8Oy5HydfHAA==
-length: 2019
+edSignature: ASNL0BCTQVyHPn3nunFW9hdG9AeibYHcaWmXn/lSdMg9HbLcSTt/36Vw4fneIPtjNfh6BENUtwROUu77D8QVAQ==
+length: 2653
 -->
