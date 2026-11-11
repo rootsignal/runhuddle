@@ -3,6 +3,8 @@ import Foundation
 public enum SessionPresentation {
     public static func includes(_ row: Session, filter: String, pinned: Set<String> = []) -> Bool {
         switch filter {
+        case "Saved": return row.state == .saved
+        case "Disconnected": return row.state == .disconnected
         case "Now": return [.needsInput, .working, .idle].contains(row.state)
         case "Pinned": return pinned.contains(row.id) && row.state != .archived
         case "All sessions": return row.state != .archived
@@ -24,7 +26,7 @@ public enum SessionPresentation {
         case .needsInput: return "Waiting for your input"
         case .working: return "\(row.provider) reports work in progress"
         case .idle: return "Ready for your next prompt"
-        case .saved: return "Saved · resume when you’re ready"
+        case .saved: return "Previous session · resume when you’re ready"
         case .archived: return "Archived · history preserved until removal"
         case .disconnected:
             if row.reason.localizedCaseInsensitiveContains("no controlling terminal") {

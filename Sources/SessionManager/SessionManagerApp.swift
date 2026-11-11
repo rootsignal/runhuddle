@@ -58,7 +58,7 @@ struct ContentView: View {
     @ViewState private var didCheckStartupGuide = false
     @ViewState private var showDetails = false
     @ViewState private var sidebarVisible = true
-    @ViewState private var showHistoryFilters = false
+    private var hasSessionFilters: Bool { model.provider != "All tools" || model.projectFilter != "All projects" }
     private var isNow: Bool { model.filter == "Now" && model.query.isEmpty }
     @ViewState private var confirmTerminalResume = false
     @FocusState private var searchFocused: Bool
@@ -74,7 +74,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Image(nsImage: RunHuddleIcon.image(size: 22, appTile: true))
-                    Text("WORKSPACE")
+                    Text("SESSIONS")
                         .font(.system(size: 10, weight: .semibold)).tracking(1)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -86,6 +86,10 @@ struct ContentView: View {
                     filterButton("Now", symbol: "sparkle", color: .accentColor)
                     filterButton("Pinned", symbol: "pin", color: .secondary)
                     filterButton("All sessions", symbol: "rectangle.stack", color: .primary)
+                    filterButton("Archived", symbol: "archivebox", color: .secondary)
+                    Divider().padding(.vertical, 8)
+                    Text("LIBRARY").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 9)
                     Button { model.workError = nil; model.showSavedWork = true } label: {
                         HStack {
                             Label("Saved work", systemImage: "books.vertical")
@@ -93,16 +97,6 @@ struct ContentView: View {
                             Text("\(model.savedWork.count)").font(.caption).foregroundStyle(.secondary)
                         }.font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading).padding(9).contentShape(Rectangle())
                     }.buttonStyle(.plain)
-                    Divider().padding(.vertical, 8)
-                    ForEach([SessionState.needsInput, .working, .idle, .disconnected], id: \.self) { state in
-                        filterButton(state.title, symbol: state.symbol, color: state.color)
-                    }
-                    DisclosureGroup("History", isExpanded: $showHistoryFilters) {
-                        ForEach([SessionState.saved, .archived], id: \.self) { state in
-                            filterButton(state.title, symbol: state.symbol, color: state.color)
-                        }
-                    }.font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
-                        .padding(.horizontal, 9).padding(.top, 8)
                 }
                 Divider()
                 #if DEBUG
@@ -187,7 +181,7 @@ struct ContentView: View {
                                 Button("Done") { model.query = ""; searchFocused = false }
                                 Picker("Search scope", selection: $model.searchScope) {
                                     ForEach(SessionSearchScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                                }.labelsHidden().fixedSize().help("Everywhere includes archived sessions; tool and project filters still apply")
+                                }.labelsHidden().fixedSize().help("Search all sessions includes archived sessions; tool and project filters still apply")
                                 if model.searchingHistory { ProgressView().controlSize(.small) }
                                 Text(model.historySearchStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 Spacer(minLength: 0)
@@ -254,11 +248,14 @@ struct ContentView: View {
                         .overlay {
                             if model.visible.isEmpty {
                                 ContentUnavailableView {
-                                    Label(model.filter == "Now" && model.query.isEmpty ? "Nothing needs your attention" : "No matching sessions", systemImage: model.filter == "Now" ? "checkmark.circle" : "magnifyingglass")
+                                    Label(model.filter == "Now" ? (hasSessionFilters ? "No active sessions match these filters" : "No active sessions") : "No matching sessions", systemImage: "magnifyingglass")
                                 } description: {
-                                    Text("Search your history, browse all sessions, or start work in your preferred agent.")
+                                    Text(hasSessionFilters ? "Try removing a filter or view matching session history." : "Browse previous sessions or start work in your preferred agent.")
                                 } actions: {
-                                    Button("Browse all sessions") { model.query = ""; model.filter = "All sessions" }
+                                    if hasSessionFilters {
+                                        Button("Clear filters") { model.provider = "All tools"; model.projectFilter = "All projects" }
+                                    }
+                                    Button(hasSessionFilters ? "View matching history" : "Browse all sessions") { model.filter = "All sessions"; model.searchScope = .everywhere }
                                 }
                             }
                         }
@@ -550,7 +547,7 @@ struct SessionDetail: View {
 
             }
             if row.state == .disconnected {
-                Text("Check the agent or locate its terminal before resuming. Recorded history is still available below.")
+                Text("RunHuddle previously saw this session running, but cannot confirm its current activity. Its terminal may have closed, the agent may have stopped, or tracking may be unavailable. Check the agent or locate its terminal. Recorded history is still available.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             ViewThatFits(in: .horizontal) {

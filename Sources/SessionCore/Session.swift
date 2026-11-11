@@ -7,8 +7,8 @@ public enum SessionState: String, Codable, CaseIterable, Sendable {
         case .needsInput: "Needs input"
         case .working: "Working"
         case .idle: "Idle"
-        case .saved: "Saved"
-        case .disconnected: "Disconnected"
+        case .saved: "Previous session"
+        case .disconnected: "Activity unconfirmed"
         case .archived: "Archived"
         }
     }

@@ -71,7 +71,9 @@ struct SavedWorkLibrary: View {
     @Environment(\.dismiss) private var dismiss
     @ViewState private var query = ""
     @ViewState private var selection: UUID?
-    private var records: [SavedWork] { model.savedWork.filter { $0.matches(query) }.sorted { $0.createdAt > $1.createdAt } }
+    @ViewState private var tool = "All tools"
+    @ViewState private var project = "All projects"
+    private var records: [SavedWork] { model.savedWork.filter { $0.matches(query) && (tool == "All tools" || $0.sourceProvider == tool) && (project == "All projects" || $0.project == project) }.sorted { $0.createdAt > $1.createdAt } }
     private var selectedRecord: SavedWork? { model.savedWork.first { $0.id == selection } ?? records.first }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -83,9 +85,23 @@ struct SavedWorkLibrary: View {
             Text("Independent summaries and handoffs. Deleting a session does not delete these records.")
                 .font(.caption).foregroundStyle(.secondary)
             TextField("Search titles, projects, dates, or saved content", text: $query).textFieldStyle(.roundedBorder)
+            HStack {
+                Picker("Tool", selection: $tool) {
+                    Text("All tools").tag("All tools")
+                    ForEach(Array(Set(model.savedWork.map(\.sourceProvider))).sorted(), id: \.self) { Text($0).tag($0) }
+                }
+                Picker("Project", selection: $project) {
+                    Text("All projects").tag("All projects")
+                    ForEach(Array(Set(model.savedWork.map(\.project))).sorted(), id: \.self) { Text($0.replacingOccurrences(of: NSHomeDirectory(), with: "~")).tag($0) }
+                }
+                if tool != "All tools" || project != "All projects" {
+                    Button("Clear filters") { tool = "All tools"; project = "All projects" }
+                }
+            }
+            Text("Library filters are separate from session filters.").font(.caption2).foregroundStyle(.secondary)
             if let error = model.workError { Text(error).foregroundStyle(.orange).font(.caption) }
             if records.isEmpty && selectedRecord == nil {
-                ContentUnavailableView(query.isEmpty ? "No saved work yet" : "No matching records", systemImage: "books.vertical", description: Text("Choose Save work summary from a session’s actions, or Save to library from its handoff."))
+                ContentUnavailableView(query.isEmpty && tool == "All tools" && project == "All projects" ? "No saved work yet" : "No matching records", systemImage: "books.vertical", description: Text("Choose Save work summary from a session’s actions, or Save to library from its handoff."))
             } else {
                 HStack(alignment: .top, spacing: 16) {
                     ScrollView {
@@ -111,6 +127,8 @@ struct SavedWorkLibrary: View {
         }.padding(24).frame(width: 860, height: 650).background(HuddleStyle.canvas).tint(HuddleStyle.accent)
             .onAppear { selection = records.first?.id }
             .onChange(of: query) { _, _ in selection = records.first?.id }
+            .onChange(of: tool) { _, _ in selection = records.first?.id }
+            .onChange(of: project) { _, _ in selection = records.first?.id }
     }
 }
 

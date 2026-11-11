@@ -1,7 +1,7 @@
 import Foundation
 
 public enum SessionSearchScope: String, CaseIterable {
-    case everywhere = "Everywhere"
+    case everywhere = "Search all sessions"
     case currentView = "Current view"
 
     public func includes(_ row: Session, searching: Bool, filter: String, provider: String, project: String, pinned: Set<String>) -> Bool {

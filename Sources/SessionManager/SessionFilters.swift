@@ -2,23 +2,53 @@ import SwiftUI
 
 struct SessionFilterMenu: View {
     @EnvironmentObject var model: AppModel
+    @ViewState private var presented = false
+    @ViewState private var projectQuery = ""
     var body: some View {
-        Menu {
-            Picker("Tool", selection: $model.provider) {
-                ForEach(["All tools", "Codex", "Claude", "Copilot"], id: \.self) { Text($0).tag($0) }
-            }
-            Picker("Project", selection: $model.projectFilter) {
-                Text("All projects").tag("All projects")
-                ForEach(model.projectPaths, id: \.self) { path in
-                    Text(path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).tag(path)
-                }
-            }
-            Divider()
-            Button("Clear filters") { model.provider = "All tools"; model.projectFilter = "All projects" }
-                .disabled(model.provider == "All tools" && model.projectFilter == "All projects")
-        } label: {
+        Button { presented.toggle() } label: {
             Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
         }.help("Filter sessions by tool and project")
+            .popover(isPresented: $presented, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Filters").font(.headline)
+                        Spacer()
+                        Button("Done") { presented = false }
+                    }
+                    Text("Tool").font(.caption).foregroundStyle(.secondary)
+                    Picker("Tool", selection: $model.provider) {
+                        ForEach(["All tools", "Codex", "Claude", "Copilot"], id: \.self) { Text($0).tag($0) }
+                    }.pickerStyle(.segmented).labelsHidden()
+                    Text("Project").font(.caption).foregroundStyle(.secondary)
+                    TextField("Find a project", text: $projectQuery).textFieldStyle(.roundedBorder)
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            projectRow("All projects", title: "All projects")
+                            ForEach(model.projectPaths.filter { projectQuery.isEmpty || $0.localizedCaseInsensitiveContains(projectQuery) }, id: \.self) { path in
+                                projectRow(path, title: URL(fileURLWithPath: path).lastPathComponent)
+                            }
+                        }
+                    }.frame(height: 220)
+                    Button("Clear filters") { model.provider = "All tools"; model.projectFilter = "All projects"; projectQuery = "" }
+                        .disabled(model.provider == "All tools" && model.projectFilter == "All projects")
+                }.padding(16).frame(width: 360)
+            }
+    }
+    private func projectRow(_ path: String, title: String) -> some View {
+        Button { model.projectFilter = path } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).lineLimit(1)
+                    if path != "All projects" {
+                        Text(path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer()
+                if model.projectFilter == path { Image(systemName: "checkmark").foregroundStyle(HuddleStyle.accent) }
+            }.padding(7).frame(maxWidth: .infinity, alignment: .leading)
+                .background(model.projectFilter == path ? HuddleStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).help(path)
     }
 }
 

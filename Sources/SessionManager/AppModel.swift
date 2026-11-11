@@ -62,7 +62,7 @@ struct CopilotTrackingStatus: Decodable {
         }
     }
     @Published var query = ""
-    @Published var searchScope = SessionSearchScope.everywhere
+    @Published var searchScope = SessionSearchScope.currentView
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     @Published var briefs: [String: SessionBrief] = [:]
     @Published var historyMatches: [String: HistoryMatch] = [:]
@@ -479,7 +479,7 @@ struct CopilotTrackingStatus: Decodable {
         historyMatches = [:]
         historySearchQuery = ""
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            searchScope = .everywhere
+            searchScope = .currentView
             historySearchStatus = ""; searchingHistory = false; return
         }
         searchingHistory = true
