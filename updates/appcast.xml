@@ -6,21 +6,19 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.7.2</title>
-            <pubDate>Tue, 10 Nov 2026 18:33:04 -0600</pubDate>
-            <sparkle:version>18</sparkle:version>
-            <sparkle:shortVersionString>0.7.2</sparkle:shortVersionString>
+            <title>0.7.3</title>
+            <pubDate>Tue, 10 Nov 2026 18:38:41 -0600</pubDate>
+            <sparkle:version>19</sparkle:version>
+            <sparkle:shortVersionString>0.7.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[RunHuddle’s sidebar now uses a compact, fixed workspace header below the window controls. Navigation scrolls independently, keeping the header out of the title bar.
-
-Includes the saved System, Light, and Dark appearance setting in RunHuddle → Settings… (⌘,) and the menu bar’s Appearance menu.
+            <description sparkle:format="markdown"><![CDATA[A new joined RH monogram connects RunHuddle’s app icon and menu bar mark. The cyan/teal app tile and monochrome menu bar use the same vector silhouette, with open spacing for small sizes.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.7.2/RunHuddle-0.7.2-arm64.dmg" length="43990538" type="application/octet-stream" sparkle:edSignature="OrdPFCnukEM6SsQdYZTJR3gqjngS3EeavbghsvOe+dkvnmxToVPtjWjedxPEiL7DkqFnM9X5YHAT1xZHM4MABw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.7.3/RunHuddle-0.7.3-arm64.dmg" length="43666593" type="application/octet-stream" sparkle:edSignature="NvDpE+kbnVgk98Sw1PW3OoFw69cTCkiGHl3Qm4u1H158812TCaR+HWfCgh8UhltsahP32bJUtZAR/o2BdL+8DQ=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: hSKdaUj6KQOcUYjrqHYLWSTNFE+aTNSwsymBn1Porq7JcenhJc23hQXxOd49PvXe3yJjpNTiqjnEiOrF5lYCBQ==
-length: 1507
+edSignature: RMPqJeY6OdWIu1O+CcEI/c6WtDBaM3w57GrOXHf5kdLcZNhjlaH8vJfoP5IjLvfaBrsSfwStukCs+W9C6d9mAw==
+length: 1393
 -->
