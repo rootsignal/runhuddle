@@ -495,10 +495,19 @@ struct ContentView: View {
                 }
                 Button { model.selection = row.id; showDetails = true; searchFocused = false; listFocused = true } label: {
                     SessionRow(row: row).contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityAddTraits(model.selection == row.id ? .isSelected : [])
+                if !model.bulkMode && !row.simulated && row.state != .archived {
+                    SessionTerminalButton(row: row)
+                }
             }.modifier(SessionCardSurface(selected: model.selection == row.id))
-                .onTapGesture { model.selection = row.id; showDetails = true; searchFocused = false; listFocused = true }
+                .background {
+                    // Make row padding selectable without a parent gesture that
+                    // also fires when the separate terminal shortcut is pressed.
+                    Color.clear.contentShape(Rectangle()).onTapGesture {
+                        model.selection = row.id; showDetails = true; searchFocused = false; listFocused = true
+                    }
+                }
                 .listRowSeparator(.hidden).listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 2, leading: 14, bottom: 2, trailing: 14))
                 .id(row.id).contextMenu {
@@ -529,6 +538,27 @@ struct ContentView: View {
                 .contentShape(Rectangle())
                 .background(model.filter == title ? HuddleStyle.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).accessibilityLabel(title).accessibilityValue("\(model.count(for: title)) sessions")
+    }
+}
+
+struct SessionTerminalButton: View {
+    @EnvironmentObject var model: AppModel
+    let row: Session
+    private var busy: Bool { model.navigatingTerminal && model.terminalNavigationSessionID == row.id }
+    var body: some View {
+        Button { model.resume(row) } label: {
+            Group {
+                if busy { ProgressView().controlSize(.small) }
+                else { Image(systemName: row.state == .saved ? "play.rectangle" : "terminal") }
+            }.frame(width: 28, height: 28)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain).foregroundStyle(HuddleStyle.accent)
+        .background(HuddleStyle.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+        .disabled(model.navigatingTerminal || model.cleaning)
+        .help(busy ? model.terminalProgress : model.terminalActionTitle(for: row))
+        .accessibilityLabel(model.terminalActionTitle(for: row) + ": " + model.displayName(for: row))
+        .accessibilityValue(busy ? model.terminalProgress : "")
     }
 }
 

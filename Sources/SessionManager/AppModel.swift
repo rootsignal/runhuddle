@@ -103,6 +103,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var notificationMessage: String?
     @Published var recentAlerts: [SessionAlert] = []
     @Published var navigatingTerminal = false
+    @Published var terminalNavigationSessionID: String?
     @Published var terminalProgress = ""
     @Published var terminalSession: Session?
     @Published var terminalTargets: [TerminalTarget] = []
@@ -812,9 +813,10 @@ struct CopilotTrackingStatus: Decodable {
     func resume(_ row: Session, fromMenu: Bool = false) {
         guard !row.simulated, row.state != .archived, !navigatingTerminal else { return }
         navigatingTerminal = true
+        terminalNavigationSessionID = row.id
         terminalProgress = "Finding terminal…"
         Task { @MainActor in
-            defer { navigatingTerminal = false; terminalProgress = "" }
+            defer { navigatingTerminal = false; terminalNavigationSessionID = nil; terminalProgress = "" }
             await navigate(row, fromMenu: fromMenu)
         }
     }
