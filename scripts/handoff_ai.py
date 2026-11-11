@@ -21,7 +21,10 @@ def prompt_for(payload):
     for key, value in source.items():
         if isinstance(value, str) and len(value) > 120000:
             source[key] = value[:20000] + '\n[Middle omitted due to input limit]\n' + value[-100000:]
-    return INSTRUCTIONS + '\n\nSOURCE MATERIAL (JSON):\n' + json.dumps(source, ensure_ascii=False)
+    instructions = INSTRUCTIONS
+    if payload.get('recordKind') == 'work-summary':
+        instructions += '\nFor this request, produce a lasting work summary rather than continuation instructions. Use these sections instead: Objective; Outcome and evidence; Decisions and rationale; Approaches tried and rejected; Relevant files and commits; Verification; Unfinished work and caveats. Preserve why decisions were made when supported. Clearly separate completed work from proposals. Do not invent missing rationale. Output only the work summary.'
+    return instructions + '\n\nSOURCE MATERIAL (JSON):\n' + json.dumps(source, ensure_ascii=False)
 
 
 def command_for(provider, executable, output):

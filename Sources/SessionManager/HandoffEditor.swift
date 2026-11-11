@@ -59,12 +59,15 @@ struct HandoffEditor: View {
                     .accessibilityLabel("Editable handoff")
                 }
                 HStack {
+                    Button("Save to library") { model.preserveHandoff(row) }
                     Button("Copy") { Task { await model.copyHandoff(row) } }
                     Button("Export…") { Task { await model.export(row) } }
                     if model.handoffBackups[row.id] != nil {
                         Button("Restore previous text") { model.restoreHandoff(row) }
                     }
                 }.disabled(model.draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if let notice = model.workNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+                if let error = model.workError { Text(error).font(.caption).foregroundStyle(.orange) }
                 Button("Start fresh with this handoff…", action: startFresh)
                     .buttonStyle(.borderedProminent).tint(HuddleStyle.action)
                     .disabled(row.simulated || model.draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generating)
@@ -77,6 +80,7 @@ struct HandoffEditor: View {
                 }.font(.caption)
             }
         }.onAppear {
+            model.workNotice = nil; model.workError = nil
             if !model.handoffProviders.contains(model.handoffAIProvider), let first = model.handoffProviders.first {
                 model.handoffAIProvider = model.handoffProviders.contains(row.provider) ? row.provider : first
             }

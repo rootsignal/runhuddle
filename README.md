@@ -26,6 +26,7 @@ Already installed? Choose **Check for Updates…** in RunHuddle. [Installation h
 - Switch to a session’s terminal from the menu bar or with **Control–Option–Space**. Customize the shortcut in Settings.
 - Find sessions by project, title, or recorded conversation history.
 - Resume saved conversations and generate AI handoffs when you’re ready for a fresh session.
+- Keep searchable work summaries and handoffs even after deleting the original session.
 - Pin important sessions and clean up old ones with bulk actions.
 
 ## Stay in your terminal

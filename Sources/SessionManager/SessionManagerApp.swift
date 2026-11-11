@@ -79,6 +79,13 @@ struct ContentView: View {
                     filterButton("Now", symbol: "sparkle", color: .accentColor)
                     filterButton("Pinned", symbol: "pin", color: .secondary)
                     filterButton("All sessions", symbol: "rectangle.stack", color: .primary)
+                    Button { model.workError = nil; model.showSavedWork = true } label: {
+                        HStack {
+                            Label("Saved work", systemImage: "books.vertical")
+                            Spacer()
+                            Text("\(model.savedWork.count)").font(.caption).foregroundStyle(.secondary)
+                        }.font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading).padding(9).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                     Divider().padding(.vertical, 8)
                     ForEach([SessionState.needsInput, .working, .idle, .disconnected], id: \.self) { state in
                         filterButton(state.title, symbol: state.symbol, color: state.color)
@@ -322,6 +329,8 @@ struct ContentView: View {
             model.openMainWindow = { openWindow(id: "main") }
             model.openSettingsWindow = { openSettings() }
         }
+        .sheet(isPresented: $model.showSavedWork) { SavedWorkLibrary() }
+        .sheet(item: $model.workSource) { row in WorkSummaryComposer(source: row, title: model.displayName(for: row)) }
         .sheet(item: $model.bulkReview) { BulkCleanupView(review: $0) }
         .sheet(isPresented: $model.showSetup) { AgentSetupView() }
         .sheet(item: $model.renameSession) { row in
@@ -447,6 +456,7 @@ struct ContentView: View {
                 .listRowInsets(EdgeInsets(top: 2, leading: 14, bottom: 2, trailing: 14))
                 .id(row.id).contextMenu {
                 Button(model.pinned.contains(row.id) ? "Unpin session" : "Pin session") { model.togglePin(row) }
+                Button("Save work summary…") { model.workError = nil; model.workSource = row }.disabled(row.simulated)
                 Button("Rename…") { model.beginRename(row) }
                 if model.displayNames[row.id] != nil {
                     Button("Reset to original name") { model.saveDisplayName("", for: row) }
@@ -674,6 +684,7 @@ struct SessionDetail: View {
     }
     private var cleanupMenu: some View {
         Menu {
+            Button("Save work summary…") { model.workError = nil; model.workSource = row }
             Button("Rename…") { model.beginRename(row) }
             Button(model.notificationPreferences.mutedProjects.contains(row.cwd) ? "Unmute project alerts" : "Mute project alerts") { model.muteProject(row) }.disabled(row.cwd.isEmpty)
             Divider()

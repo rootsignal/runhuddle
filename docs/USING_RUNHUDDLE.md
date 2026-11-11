@@ -92,3 +92,15 @@ This is shared repository state, not changes attributed to the selected agent. I
 Columns resize automatically with the window. On narrow windows, opening session details replaces the list; use the close button in the details header to return. Hide or show the navigation sidebar with its toolbar button. Column dividers are automatically sized rather than draggable.
 
 The compact repository summary stays above the Overview/Handoff content so branch and changed-file count remain visible while reading activity. Expand the worktree row for the full path, snapshot time, and shared-state explanation. Latest responses show three preview lines; expand “Read full message” to see the recorded text.
+
+## Saved work library
+
+**Saved work** in the sidebar stores independent work summaries and handoff snapshots. These records survive deleting the original session and remain available when its agent is offline. They are local records in RunHuddle’s database, not a backup of the complete conversation.
+
+- Choose **Save work summary…** from a session’s actions or right-click menu. Write your own record, or select a signed-in AI CLI and choose **Generate summary**. Review and edit the result, then choose **Save to library**. Generating uses the chosen account’s allowance and may take a minute or two. It does not perform project work or interrupt the original session.
+- In Handoff, **Save to library** preserves the current generated/edited handoff as an independent snapshot. Later handoff updates do not replace that record. Saving again creates another snapshot.
+- In Saved work, search titles, projects, source agents, dates, and content. Library search is separate from the main session search. Edits save automatically. Source metadata records the agent/session ID, project path, snapshot time, and AI generator when applicable.
+- Copy or export a record as Markdown to use in a future session. No content is automatically injected into an agent.
+- Deleting session history offers **Save summary first…** and reports existing independent records. This cancels that deletion review so you can save a record; return to deletion afterward. Existing library records are never removed by session cleanup. **Delete record…** in the library removes only that selected saved record after confirmation.
+
+AI summaries use available recorded source material, which may be partial. Review claimed results, verification, and rationale. No automatic summaries, cloud sync, or cross-session synthesis is enabled. Removing RunHuddle’s Application Support data also removes its library; export important records or include that directory in your backups.

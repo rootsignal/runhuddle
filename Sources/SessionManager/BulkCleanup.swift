@@ -45,7 +45,7 @@ struct BulkCleanupView: View {
             Text(review.title).font(.title2.bold())
             Text("\(review.count) sessions eligible · \(review.skipped.count) selections skipped")
             Text(review.operation == "delete"
-                 ? "Codex histories are permanently deleted. Claude and Copilot history files are moved to the Mac’s Trash. Local notes, handoffs, and search entries are removed. Repository files are not targeted. Export handoffs you want to keep first."
+                 ? "Codex histories are permanently deleted. Claude and Copilot history files are moved to the Mac’s Trash. Local notes, handoffs, and search entries are removed. Repository files are not targeted. Independent Saved work records are kept. Save any summaries or handoffs you want to keep first."
                  : review.operation == "restore" ? "Restores archived sessions to the main list."
                  : "Codex uses its native archive. Claude and Copilot are hidden only in RunHuddle; their agent history stays intact. Running sessions are skipped.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -54,6 +54,18 @@ struct BulkCleanupView: View {
                     ForEach(review.entries) { entry in
                         VStack(alignment: .leading, spacing: 4) {
                             Text("\(entry.session.provider) · \(entry.name)").bold()
+                            if review.operation == "delete" {
+                                let count = model.savedWork.filter { $0.sourceID == entry.session.id }.count
+                                Text(count == 0 ? "No independent saved record" : "\(count) independent saved record(s) will be kept")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Button("Save summary first…") {
+                                    model.bulkReview = nil
+                                    Task { @MainActor in
+                                        try? await Task.sleep(for: .milliseconds(250))
+                                        model.workError = nil; model.workSource = entry.session
+                                    }
+                                }.disabled(model.cleaning)
+                            }
                             if let native = entry.native {
                                 ForEach(native.affected) { row in Text(row.title).font(.caption) }
                             }

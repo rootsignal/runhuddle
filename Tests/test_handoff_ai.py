@@ -9,6 +9,14 @@ import handoff_ai
 import codex_bridge
 
 class HandoffAITests(unittest.TestCase):
+    def test_work_summary_prompt_keeps_evidence_rules(self):
+        prompt = handoff_ai.prompt_for({'recordKind': 'work-summary', 'history': 'Recorded evidence'})
+        self.assertIn('lasting work summary', prompt)
+        self.assertIn('Approaches tried and rejected', prompt)
+        self.assertIn('A request or plan is NOT completed work', prompt)
+        self.assertIn('Do not include secrets', prompt)
+        self.assertNotIn('lasting work summary', handoff_ai.prompt_for({'history': 'History'}))
+
     def test_commands_use_isolated_text_generation_not_resume(self):
         for provider in ('Codex', 'Claude', 'Copilot'):
             command = handoff_ai.command_for(provider, '/bin/agent', Path('/tmp/output'))

@@ -87,6 +87,12 @@ struct CopilotTrackingStatus: Decodable {
     @Published var renameText = ""
     @Published var renameError: String?
     @Published var drafts: [String: String] = [:]
+    @Published var savedWork: [SavedWork] = []
+    private var savedWorkLoaded = false
+    @Published var showSavedWork = false
+    @Published var workSource: Session?
+    @Published var workError: String?
+    @Published var workNotice: String?
     @Published var handoffs: [String: GeneratedHandoff] = [:]
     @Published var handoffCandidates: [String: GeneratedHandoff] = [:]
     @Published var handoffBackups: [String: String] = [:]
@@ -159,6 +165,8 @@ struct CopilotTrackingStatus: Decodable {
             drafts = try store?.load([String: String].self, key: "drafts") ?? [:]
             contexts = try store?.load([String: HandoffContext].self, key: "handoffContexts") ?? [:]
             handoffs = try store?.load([String: GeneratedHandoff].self, key: "generatedHandoffs") ?? [:]
+            savedWork = try store?.load([SavedWork].self, key: "savedWorkLibrary") ?? []
+            savedWorkLoaded = true
             handoffBackups = try store?.load([String: String].self, key: "handoffBackups") ?? [:]
             selection = try store?.load(String.self, key: "selection")
         } catch { self.error = "Local storage: \(error.localizedDescription)" }
@@ -738,6 +746,63 @@ struct CopilotTrackingStatus: Decodable {
     }
     func handoffIsStale(_ row: Session) -> Bool {
         handoffs[row.id]?.isStale(sessionUpdated: row.updated, fingerprint: handoffFingerprint(row)) ?? false
+    }
+    @discardableResult func saveWork(_ record: SavedWork) -> Bool {
+        do {
+            guard savedWorkLoaded, let store else { throw NSError(domain: "SavedWork", code: 1, userInfo: [NSLocalizedDescriptionKey: "Local storage is unavailable."]) }
+            var next = savedWork.filter { $0.id != record.id }
+            next.append(record)
+            try store.save(next, key: "savedWorkLibrary")
+            savedWork = next.sorted { $0.updatedAt > $1.updatedAt }
+            workError = nil
+            return true
+        } catch { workError = "Could not save work: " + error.localizedDescription; return false }
+    }
+    func deleteWork(_ record: SavedWork) {
+        do {
+            guard savedWorkLoaded, let store else { throw NSError(domain: "SavedWork", code: 1) }
+            let next = savedWork.filter { $0.id != record.id }
+            try store.save(next, key: "savedWorkLibrary")
+            savedWork = next; workError = nil
+        } catch { workError = "Could not delete saved record: " + error.localizedDescription }
+    }
+    func preserveHandoff(_ row: Session) {
+        guard let generated = handoffs[row.id], !draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        var record = SavedWork(session: row, title: displayName(for: row), text: draft(for: row), kind: "Handoff", sourceUpdated: generated.sessionUpdated)
+        record.generatedBy = generated.provider; record.generatedAt = generated.generatedAt
+        if saveWork(record) { workNotice = "Handoff saved independently in Saved work." }
+    }
+    func exportWork(_ record: SavedWork) {
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "saved-work.md"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try record.markdown.write(to: url, atomically: true, encoding: .utf8) }
+        catch { workError = "Could not export: " + error.localizedDescription }
+    }
+    func generateWorkSummary(_ row: Session) async throws -> SavedWork {
+        let provider = handoffAIProvider
+        let generator = Session(provider: provider, sessionID: "", title: "", cwd: "", state: .saved)
+        guard !row.simulated, let executable = executable(for: generator) else {
+            throw NSError(domain: "SavedWork", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose an installed, signed-in AI CLI."])
+        }
+        let sourceData = try await Bridge.run(["handoff-context", row.sessionID], provider: row.provider)
+        struct Source: Decodable { let text: String }
+        let source = try JSONDecoder().decode(Source.self, from: sourceData)
+        let payload: [String: String] = ["provider": provider, "executable": executable, "recordKind": "work-summary",
+            "sourceProvider": row.provider, "sessionID": row.sessionID, "sessionState": row.state.title,
+            "title": displayName(for: row), "project": row.cwd, "purpose": briefs[row.id]?.purpose ?? "",
+            "nextStep": briefs[row.id]?.nextStep ?? "", "history": "Original recorded objective: " + row.preview + "\n\n" + source.text]
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("runhuddle-work-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let input = folder.appendingPathComponent("input.json")
+        try JSONEncoder().encode(payload).write(to: input)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
+        let data = try await Bridge.run([input.path], provider: "HandoffAI")
+        struct Response: Decodable { let text: String; let provider: String }
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        var record = SavedWork(session: row, title: displayName(for: row), text: response.text)
+        record.generatedBy = response.provider; record.generatedAt = Date()
+        return record
     }
     func generateHandoff(_ row: Session) async {
         guard !row.simulated, !handoffGenerating.contains(row.id) else { return }
