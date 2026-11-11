@@ -256,20 +256,32 @@ struct ContentView: View {
                             }.padding(.horizontal, 16).padding(.vertical, 8)
                         }
                         if model.bulkMode {
-                            HStack {
-                                Button("Done") { model.bulkMode = false; model.bulkSelection.removeAll() }
-                                Text("\(model.bulkSelection.count) selected").font(.caption).monospacedDigit()
-                                Menu("Selection") {
-                                    Button("Select all results") { model.bulkSelection.formUnion(model.visible.filter { !$0.simulated }.map(\.id)) }
-                                    Button("Clear selection") { model.bulkSelection.removeAll() }
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Button("Done") { model.bulkMode = false; model.bulkSelection.removeAll() }
+                                    Text("\(model.bulkSelection.count) selected").font(.caption).monospacedDigit()
+                                    Spacer()
+                                    Menu("Selection") {
+                                        Button("Select all results") { model.bulkSelection.formUnion(model.visible.filter { !$0.simulated }.map(\.id)) }
+                                        Button("Clear selection") { model.bulkSelection.removeAll() }
+                                    }
                                 }
-                                Menu("Actions") {
+                                HStack {
                                     Button("Archive…") { bulk("archive") }
                                     Button("Restore…") { bulk("restore") }
-                                    Button("Remove archived histories…", role: .destructive) { bulk("delete") }
+                                    Button("Delete archived…", role: .destructive) { bulk("delete") }
+                                        .help("Review removal of archived histories. Active sessions are skipped.")
                                 }.disabled(model.bulkSelection.isEmpty)
-                                Spacer()
                             }.padding(12).disabled(model.cleaning)
+                        } else {
+                            HStack {
+                                Spacer()
+                                Button { model.bulkMode = true } label: {
+                                    Label("Bulk actions", systemImage: "checklist")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }.buttonStyle(.plain).disabled(model.cleaning)
+                                    .help("Select sessions to archive, restore, or delete")
+                            }.padding(.horizontal, 16).frame(height: 28)
                         }
                         ScrollViewReader { proxy in
                         List {
@@ -360,15 +372,7 @@ struct ContentView: View {
                     .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(searchFocused ? HuddleStyle.accent : .clear))
                     .help("Search sessions (⌘F)")
             }
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button(model.bulkMode ? "Finish selecting" : "Select sessions…") {
-                        model.bulkMode.toggle()
-                        if !model.bulkMode { model.bulkSelection.removeAll() }
-                    }.disabled(model.cleaning)
-                } label: { Image(systemName: "ellipsis") }
-                    .help("Session list actions").accessibilityLabel("Session list actions")
-            }
+
         }
         .focusedSceneValue(\.searchSessions, { searchFocused = true })
         .tint(HuddleStyle.accent)
