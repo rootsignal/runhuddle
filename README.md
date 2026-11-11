@@ -2,6 +2,8 @@
 
 **Your coding agents, together.** A native macOS app by [Rootsignal](https://rootsignal.io) for finding, monitoring, and returning to AI coding sessions across local projects.
 
+![RunHuddle’s Now view in dark mode, showing active sessions, context usage, and the selected session’s latest activity.](docs/images/runhuddle-now.png)
+
 RunHuddle is an early preview. The app now bundles its runtime and dependencies; installed users do not need Python, Swift, or a source checkout. Release installers are Developer ID signed and notarized by Apple. This is a direct download, not a Mac App Store release.
 
 ## What it does
