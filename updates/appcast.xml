@@ -6,30 +6,23 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.6.0</title>
-            <pubDate>Tue, 10 Nov 2026 18:08:18 -0600</pubDate>
-            <sparkle:version>13</sparkle:version>
-            <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
+            <title>0.6.1</title>
+            <pubDate>Tue, 10 Nov 2026 18:11:57 -0600</pubDate>
+            <sparkle:version>14</sparkle:version>
+            <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[RunHuddle 0.6.0 adds AI-generated handoffs.
+            <description sparkle:format="markdown"><![CDATA[RunHuddle 0.6.1 clarifies the handoff experience.
 
-- Generate an explicit AI handoff with your selected installed Codex, Claude, or Copilot CLI account. Generation uses your provider’s allowance and runs separately from the source session.
-- A larger chronological history sample replaces the old latest-message template as the AI source. The prompt separates requests, agent claims, recorded evidence, unfinished work, and next steps, and marks unknown or omitted information.
-- Recorded activity stays separate from the handoff. Routine activity checks never spend AI credits or rewrite your handoff.
-- See when and with which provider the handoff was generated, and whether new activity or notes have arrived since.
-- Your edits are saved. An updated AI draft is presented for review when you have edited the existing text; the previous text is retained for restoration.
-- Copy/export and fresh-session continuation use the edited handoff, source identity, and your maintained notes, rather than appending raw transcript excerpts.
-
-Also includes the 0.5.2–0.5.3 sidebar hit-area, quiet refresh, and event-driven tracking improvements if those releases were not previously installed.
-
-Validation: Swift/Python regressions, a real Codex generation fixture verifying pending approval is not reported as publication, standalone packaging, and updater tests. Copilot CLI invocation reached its service but this Mac’s account was denied by policy; Claude/Copilot generation requires a signed-in account with access and has not been fully live-validated here.
+- Sessions without an explicitly generated AI handoff now show an empty state. Legacy templates are neither displayed as handoffs nor passed to the first AI generation. Any saved legacy text is retained separately as a backup when a generated handoff replaces it.
+- Generation shows a readable stage message and explains that it can take a minute or two, especially for longer sessions. You can keep browsing while it runs.
+- Existing AI handoffs and your edits remain intact.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.6.0/RunHuddle-0.6.0-arm64.dmg" length="42698111" type="application/octet-stream" sparkle:edSignature="BSJzVIbO2Sc3Zm3CUxzKwn79GiVzU38CBa60W0wNgFOtha1KJetrKSEkV/3Z4sWr97e/adV2sD5jKbQrc55tAQ=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.6.1/RunHuddle-0.6.1-arm64.dmg" length="42715609" type="application/octet-stream" sparkle:edSignature="JoMGiC354icMDpghMAm6AhIlLClpKqhr7vk+sSBLu+waOUWAQMSNxCmtGXcyRHukhPAAHeUYT/d+23+AsAZUDw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: tTw94KYqeb8RoBDigy1XH1tfgAqOVK5jvLH6qt6KEklrDxwNkugvnKa9sFEN3n4Jq389eLfPVct3nmznGx0eAA==
-length: 2759
+edSignature: lDpT3xdBG3ZQzAfZOdpKRCd++947R4DJuflqJ6xh4kRWcXEf/Et8GdwpLOF2L1qHVKaDHEN6lXg/DiiSwEXxCw==
+length: 1731
 -->
