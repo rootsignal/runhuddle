@@ -6,21 +6,19 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.8.1</title>
-            <pubDate>Tue, 10 Nov 2026 19:07:13 -0600</pubDate>
-            <sparkle:version>23</sparkle:version>
-            <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
+            <title>0.8.2</title>
+            <pubDate>Tue, 10 Nov 2026 19:14:17 -0600</pubDate>
+            <sparkle:version>24</sparkle:version>
+            <sparkle:shortVersionString>0.8.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[The Now status summary is now a compact, fixed-height strip that remains visible when session details open or close. Selecting a session no longer removes the summary or shifts the list upward.
-
-Search has moved to a smaller field in the window toolbar; ⌘F, Escape, clear search, and Back to Now remain available. Select sessions is in the toolbar’s ellipsis menu, with bulk controls shown only during selection.
+            <description sparkle:format="markdown"><![CDATA[A small Bulk actions button above the session list replaces the single-item toolbar menu. It reveals session checkboxes and Archive, Restore, and Delete archived controls. Done exits selection. Cleanup still uses the existing review and active-session safeguards.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.8.1/RunHuddle-0.8.1-arm64.dmg" length="42722920" type="application/octet-stream" sparkle:edSignature="o3Zok8KTz4EvQpVqu8Yqh4XwSG2f+wzWAwaNhC4BocM8Hj5ve0hFILorAjf9lF0SUvnnZQI83faLRwewuNW4Cw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.8.2/RunHuddle-0.8.2-arm64.dmg" length="42948773" type="application/octet-stream" sparkle:edSignature="+Ng/QfeDQtDH1xw5vfOZnSDKNY+mKtCcmHN8QIRZuAlhYm5mXTyHC54QdFoc0EuMz0SkhVPTwLKplAGYH26qCw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 2njO2ctVd/4FF9SX2e4H41Pq4X16T4+dInd82zy5KUD+ert4/JNczEK2mJcgZNC+9A+rpqE9jXU5SHMBMwNYBw==
-length: 1620
+edSignature: AYJUPFdEVh9d4k1rvmM7QhdXaUlgHNL0lqeLCbLdEw8DSCPfCeaZ2f5QlvLSmXhEOoAJ2dJpjd4CFUQBBI8mAg==
+length: 1467
 -->
