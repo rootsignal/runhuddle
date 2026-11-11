@@ -119,6 +119,6 @@ Use **Filters** beside search to choose a tool or project. Active filters appear
 
 **Now** groups confirmed live sessions by Needs input, Working, and Idle. **Pinned** contains your pinned, unarchived sessions. **All sessions** includes both live and previous sessions, excluding archived records. **Archived** is a separate view.
 
-**Previous session** means recorded history is available without confirmed live activity. **Activity unconfirmed** means RunHuddle previously saw a live session but cannot currently confirm its activity: the terminal may have closed, the agent may have stopped, or tracking may be unavailable. Check its details or locate the terminal; it is not proof the agent is still working.
+**Previous session** means recorded history is available without confirmed live activity. This also includes sessions whose previous live connection can no longer be confirmed. Details explain when the terminal may have closed, the agent may have stopped, or tracking may be unavailable. These appear in All sessions, not Now; uncertain activity is not a separate category.
 
 The separate **Library → Saved work** count represents saved summary/handoff records. Its own search and tool/project filters are independent of session filters.

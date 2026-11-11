@@ -13,6 +13,12 @@ final class SessionSearchScopeTests: XCTestCase {
             }
         }
     }
+    func testUnconfirmedSessionsArePresentedAsPreviousAndExcludedFromNow() {
+        let row = Session(provider: "Claude", sessionID: "x", title: "Test", cwd: "/project", state: .disconnected)
+        XCTAssertEqual(row.state.title, SessionState.saved.title)
+        XCTAssertFalse(SessionPresentation.includes(row, filter: "Now"))
+        XCTAssertTrue(SessionPresentation.includes(row, filter: "All sessions"))
+    }
     func testCurrentViewKeepsAllFilters() {
         let row = Session(provider: "Claude", sessionID: "x", title: "Test", cwd: "/project", state: .archived)
         XCTAssertTrue(SessionSearchScope.currentView.includes(row, searching: true, filter: "Archived", provider: "Claude", project: "/project", pinned: []))
