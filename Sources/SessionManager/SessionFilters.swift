@@ -1,4 +1,5 @@
 import SwiftUI
+import SessionCore
 
 struct SessionFilterMenu: View {
     @EnvironmentObject var model: AppModel
@@ -25,7 +26,7 @@ struct SessionFilterMenu: View {
                         VStack(spacing: 2) {
                             projectRow("All projects", title: "All projects")
                             ForEach(model.projectPaths.filter { projectQuery.isEmpty || $0.localizedCaseInsensitiveContains(projectQuery) }, id: \.self) { path in
-                                projectRow(path, title: URL(fileURLWithPath: path).lastPathComponent)
+                                projectRow(path, title: ProjectFilter.title(path))
                             }
                         }
                     }.frame(height: 220)
@@ -39,7 +40,7 @@ struct SessionFilterMenu: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).lineLimit(1)
-                    if path != "All projects" {
+                    if path != "All projects" && path != ProjectFilter.temporary {
                         Text(path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
@@ -62,7 +63,7 @@ struct SessionFilterChips: View {
                         chip(model.provider, symbol: "terminal", help: "Remove tool filter") { model.provider = "All tools" }
                     }
                     if model.projectFilter != "All projects" {
-                        chip(URL(fileURLWithPath: model.projectFilter).lastPathComponent, symbol: "folder", help: "Remove project filter: " + model.projectFilter) { model.projectFilter = "All projects" }
+                        chip(ProjectFilter.title(model.projectFilter), symbol: "folder", help: "Remove project filter: " + model.projectFilter) { model.projectFilter = "All projects" }
                     }
                     Button("Clear filters") { model.provider = "All tools"; model.projectFilter = "All projects" }
                         .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)

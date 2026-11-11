@@ -186,7 +186,7 @@ struct ContentView: View {
                                 Text(model.historySearchStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 Spacer(minLength: 0)
                             }.padding(.horizontal, 16).padding(.top, 8)
-                            Text(model.searchScope == .everywhere ? "All session states · includes archived sessions · selected filters apply" : "\(model.filter) · \(model.provider) · \(model.projectFilter == "All projects" ? "All projects" : URL(fileURLWithPath: model.projectFilter).lastPathComponent)")
+                            Text(model.searchScope == .everywhere ? "All session states · includes archived sessions · selected filters apply" : "\(model.filter) · \(model.provider) · \(model.projectFilter == "All projects" ? "All projects" : ProjectFilter.title(model.projectFilter))")
                                 .font(.caption2).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 8)
                         }

@@ -73,7 +73,7 @@ struct SavedWorkLibrary: View {
     @ViewState private var selection: UUID?
     @ViewState private var tool = "All tools"
     @ViewState private var project = "All projects"
-    private var records: [SavedWork] { model.savedWork.filter { $0.matches(query) && (tool == "All tools" || $0.sourceProvider == tool) && (project == "All projects" || $0.project == project) }.sorted { $0.createdAt > $1.createdAt } }
+    private var records: [SavedWork] { model.savedWork.filter { $0.matches(query) && (tool == "All tools" || $0.sourceProvider == tool) && ProjectFilter.matches($0.project, selection: project) }.sorted { $0.createdAt > $1.createdAt } }
     private var selectedRecord: SavedWork? { model.savedWork.first { $0.id == selection } ?? records.first }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -92,7 +92,7 @@ struct SavedWorkLibrary: View {
                 }
                 Picker("Project", selection: $project) {
                     Text("All projects").tag("All projects")
-                    ForEach(Array(Set(model.savedWork.map(\.project))).sorted(), id: \.self) { Text($0.replacingOccurrences(of: NSHomeDirectory(), with: "~")).tag($0) }
+                    ForEach(ProjectFilter.options(model.savedWork.map(\.project)), id: \.self) { Text($0.replacingOccurrences(of: NSHomeDirectory(), with: "~")).tag($0) }
                 }
                 if tool != "All tools" || project != "All projects" {
                     Button("Clear filters") { tool = "All tools"; project = "All projects" }

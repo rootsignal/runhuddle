@@ -122,3 +122,5 @@ Use **Filters** beside search to choose a tool or project. Active filters appear
 **Previous session** means recorded history is available without confirmed live activity. This also includes sessions whose previous live connection can no longer be confirmed. Details explain when the terminal may have closed, the agent may have stopped, or tracking may be unavailable. These appear in All sessions, not Now; uncertain activity is not a separate category.
 
 The separate **Library → Saved work** count represents saved summary/handoff records. Its own search and tool/project filters are independent of session filters.
+
+Project filters group system temporary directories (including macOS `/var/folders` and `/tmp`) and missing working directories under **Temporary / other**. This is a display grouping, not deletion: the sessions and their original paths remain available, including archived history. A regular project is not grouped merely because its name begins with `tmp`.

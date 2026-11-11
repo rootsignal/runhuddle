@@ -283,7 +283,7 @@ struct CopilotTrackingStatus: Decodable {
         sessions.filter {
             (!$0.simulated || showDemo) && matchesSearch($0)
             && (provider == "All tools" || $0.provider == provider)
-            && (projectFilter == "All projects" || $0.cwd == projectFilter)
+            && ProjectFilter.matches($0.cwd, selection: projectFilter)
         }
     }
     var visible: [Session] {
@@ -300,7 +300,7 @@ struct CopilotTrackingStatus: Decodable {
     func count(for filter: String) -> Int {
         matchingSessions.filter { SessionPresentation.includes($0, filter: filter, pinned: pinned) }.count
     }
-    var projectPaths: [String] { Set(sessions.filter { !$0.simulated && !$0.cwd.isEmpty }.map(\.cwd)).sorted() }
+    var projectPaths: [String] { ProjectFilter.options(sessions.filter { !$0.simulated }.map(\.cwd)) }
     func togglePin(_ row: Session) {
         var next = pinned
         if !next.insert(row.id).inserted { next.remove(row.id) }
