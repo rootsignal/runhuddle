@@ -2,6 +2,13 @@ import XCTest
 @testable import SessionCore
 
 final class GeneratedHandoffTests: XCTestCase {
+    func testLegacyDraftIsHiddenUntilAnAIHandoffExists() {
+        XCTAssertEqual(GeneratedHandoff.visibleText(draft: "Old assembled template", generated: nil), "")
+        let summary = GeneratedHandoff(text: "AI summary", provider: "Codex", sessionUpdated: 10, sourceFingerprint: "source")
+        XCTAssertEqual(GeneratedHandoff.visibleText(draft: nil, generated: summary), "AI summary")
+        XCTAssertEqual(GeneratedHandoff.visibleText(draft: "My edits", generated: summary), "My edits")
+        XCTAssertEqual(GeneratedHandoff.visibleText(draft: "", generated: summary), "")
+    }
     func testStalenessDependsOnActivityAndNotesNotFetchTime() {
         let fingerprint = GeneratedHandoff.fingerprint(context: "history", purpose: "goal", nextStep: "ship")
         let summary = GeneratedHandoff(text: "AI brief", provider: "Codex", sessionUpdated: 10, sourceFingerprint: fingerprint)

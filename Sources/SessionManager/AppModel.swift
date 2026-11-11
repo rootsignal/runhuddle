@@ -89,6 +89,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var handoffCandidates: [String: GeneratedHandoff] = [:]
     @Published var handoffBackups: [String: String] = [:]
     @Published var handoffGenerating: Set<String> = []
+    @Published var handoffProgress: [String: String] = [:]
     @Published var handoffErrors: [String: String] = [:]
     @Published var handoffAIProvider: String = UserDefaults.standard.string(forKey: "handoffAIProvider") ?? "Codex" {
         didSet { UserDefaults.standard.set(handoffAIProvider, forKey: "handoffAIProvider") }
@@ -655,7 +656,7 @@ struct CopilotTrackingStatus: Decodable {
         try store?.save(drafts, key: "drafts")
     }
 
-    func draft(for row: Session) -> String { drafts[row.id] ?? handoffs[row.id]?.text ?? "" }
+    func draft(for row: Session) -> String { GeneratedHandoff.visibleText(draft: drafts[row.id], generated: handoffs[row.id]) }
     var handoffProviders: [String] {
         ["Codex", "Claude", "Copilot"].filter { provider in
             executable(for: Session(provider: provider, sessionID: "", title: "", cwd: "", state: .saved)) != nil
@@ -675,7 +676,8 @@ struct CopilotTrackingStatus: Decodable {
             handoffErrors[row.id] = "Install and sign into the selected AI CLI, or choose another provider."; return
         }
         handoffGenerating.insert(row.id); handoffErrors.removeValue(forKey: row.id)
-        defer { handoffGenerating.remove(row.id) }
+        handoffProgress[row.id] = "Reading recorded history…"
+        defer { handoffGenerating.remove(row.id); handoffProgress.removeValue(forKey: row.id) }
         do {
             await appendHistory(row)
             if let failure = historyErrors[row.id] { throw NSError(domain: "Handoff", code: 1, userInfo: [NSLocalizedDescriptionKey: failure]) }
@@ -695,6 +697,7 @@ struct CopilotTrackingStatus: Decodable {
             let input = folder.appendingPathComponent("input.json")
             try JSONEncoder().encode(payload).write(to: input)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
+            handoffProgress[row.id] = "Generating with \(provider)…"
             let result = try await Bridge.run([input.path], provider: "HandoffAI")
             struct Response: Decodable { let text: String; let provider: String }
             let response = try JSONDecoder().decode(Response.self, from: result)
@@ -709,7 +712,8 @@ struct CopilotTrackingStatus: Decodable {
     }
     func acceptHandoff(_ row: Session) {
         guard let candidate = handoffCandidates[row.id] else { return }
-        let previous = draft(for: row)
+        // Preserve legacy saved text as a backup, never as the current handoff or AI input.
+        let previous = drafts[row.id] ?? draft(for: row)
         var updated = handoffs; updated[row.id] = candidate
         var backups = handoffBackups
         if !previous.isEmpty { backups[row.id] = previous }

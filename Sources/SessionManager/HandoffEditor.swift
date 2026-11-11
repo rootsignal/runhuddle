@@ -23,6 +23,14 @@ struct HandoffEditor: View {
                 }
                 Text("Sends recorded history and your notes to the selected AI using its signed-in CLI account. Uses your plan’s allowance. Your active session is not interrupted.")
                     .font(.caption).foregroundStyle(.secondary)
+                if generating {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(model.handoffProgress[row.id] ?? "Preparing handoff…").font(.headline)
+                        Text("AI generation can take a minute or two, especially for longer sessions. You can keep browsing RunHuddle; the handoff will be ready here when it finishes.")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                }
                 if let failure = model.handoffErrors[row.id] { Text(failure).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
                 if let generated = model.handoffs[row.id] {
                     Text("Generated with \(generated.provider) · \(generated.generatedAt.formatted(date: .abbreviated, time: .shortened))")
@@ -32,10 +40,8 @@ struct HandoffEditor: View {
                         Label("New activity or notes since this handoff", systemImage: "clock.arrow.circlepath")
                             .font(.caption).foregroundStyle(.orange)
                     }
-                } else if model.draft(for: row).isEmpty {
-                    Text("No handoff generated yet. Recorded activity is source material, not an AI summary.").foregroundStyle(.secondary)
-                } else {
-                    Text("Existing notes · not an AI-generated handoff").font(.caption).foregroundStyle(.secondary)
+                } else if !generating {
+                    Text("No handoff yet. Click Generate handoff to create an AI summary.").foregroundStyle(.secondary)
                 }
                 if let candidate = model.handoffCandidates[row.id] {
                     VStack(alignment: .leading, spacing: 10) {
@@ -47,9 +53,11 @@ struct HandoffEditor: View {
                         }
                     }.padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                 }
+                if model.handoffs[row.id] != nil {
                 TextEditor(text: Binding(get: { model.draft(for: row) }, set: { model.setDraft($0, for: row.id) }))
                     .font(.system(size: 13)).frame(minHeight: 250).border(.quaternary)
                     .accessibilityLabel("Editable handoff")
+                }
                 HStack {
                     Button("Copy") { Task { await model.copyHandoff(row) } }
                     Button("Export…") { Task { await model.export(row) } }
