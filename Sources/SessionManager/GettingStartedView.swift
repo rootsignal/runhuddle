@@ -19,6 +19,7 @@ struct GettingStartedView: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openSettings) private var openSettings
     @AppStorage("showGettingStartedAtStartup") private var showAtStartup = true
+    @ViewState private var showConnections = false
     @ViewState private var step = 0
     private let titles = ["Connect your agents", "Know when you’re needed", "Jump between sessions", "Keep useful work"]
     private let symbols = ["link", "bell.badge", "keyboard", "books.vertical"]
@@ -51,7 +52,7 @@ struct GettingStartedView: View {
                         Text("Existing Claude or Copilot sessions may need to restart or resume after tracking hooks are installed. Saved history alone does not confirm a session is open.")
                             .foregroundStyle(.secondary)
                         Button("Check agent connections…") {
-                            openWindow(id: "main"); dismissWindow(id: "getting-started"); model.showSetup = true
+                            showConnections = true
                         }
                     case 1:
                         Label("Working — the agent reports work in progress.", systemImage: "bolt")
@@ -88,6 +89,7 @@ struct GettingStartedView: View {
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }
         }.padding(24).frame(width: 570, height: 550).background(HuddleStyle.canvas).tint(HuddleStyle.accent)
+            .sheet(isPresented: $showConnections) { AgentSetupView() }
             .task { await model.refreshNotificationStatus() }
     }
 }

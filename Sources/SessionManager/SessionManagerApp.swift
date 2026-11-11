@@ -36,7 +36,7 @@ import SessionCore
             RunHuddleHelpCommands()
         }
         Window("Getting started", id: "getting-started") {
-            GettingStartedView().environmentObject(model)
+            GettingStartedView().environmentObject(model).environmentObject(updater)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }.windowResizability(.contentSize)
         Settings {
@@ -140,13 +140,21 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 12) {
                 Button { model.showSetup = true } label: {
-                    Label(model.connectionSummary, systemImage: model.connectionNeedsAttention ? "exclamationmark.circle" : "circle.dotted.circle")
-                        .font(.caption).foregroundStyle(model.connectionNeedsAttention ? Color.orange : .secondary)
-                }.buttonStyle(.plain)
-                Button(model.notifications ? "Notification settings…" : "Enable notifications") {
+                    HStack {
+                        Label("Connections…", systemImage: "link")
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").font(.caption2)
+                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }.buttonStyle(.bordered).controlSize(.small).font(.caption)
+                Label(model.connectionSummary, systemImage: model.connectionNeedsAttention ? "exclamationmark.circle" : "checkmark.circle")
+                    .font(.caption2).foregroundStyle(model.connectionNeedsAttention ? Color.orange : .secondary)
+                Button {
                     if model.notifications || model.notificationBlocked { model.settingsTab = "notifications"; openSettings() }
                     else { Task { await model.enableNotifications() } }
-                }.font(.caption).buttonStyle(.plain)
+                } label: {
+                    Label(model.notifications || model.notificationBlocked ? "Notification settings…" : "Enable notifications", systemImage: "bell")
+                        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }.font(.caption).buttonStyle(.bordered).controlSize(.small)
                 Text("RunHuddle \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Development")")
                     .font(.caption2).foregroundStyle(.secondary)
                     .help(Bundle.main.bundlePath)
