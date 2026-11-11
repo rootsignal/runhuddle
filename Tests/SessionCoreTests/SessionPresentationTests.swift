@@ -20,6 +20,10 @@ final class SessionPresentationTests: XCTestCase {
         XCTAssertEqual(SessionPresentation.excerpt("One two three four", limit: 10), "One two…")
         XCTAssertEqual(SessionPresentation.excerpt(""), "")
     }
+    func testPreviewRemovesMarkdownFormattingButKeepsMeaning() {
+        XCTAssertEqual(SessionPresentation.excerpt("Released **RunHuddle**. Visit [the release](https://example.com)."), "Released RunHuddle. Visit the release.")
+        XCTAssertEqual(SessionPresentation.excerpt("Run `swift test` before publishing."), "Run swift test before publishing.")
+    }
     func testDetachedStatusDoesNotClaimWorkHasStopped() {
         var row = Session(provider: "Claude", sessionID: "x", title: "Test", cwd: "/tmp", state: .disconnected)
         row.reason = "Process has no controlling terminal"

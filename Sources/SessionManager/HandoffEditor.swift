@@ -66,7 +66,7 @@ struct HandoffEditor: View {
                     }
                 }.disabled(model.draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button("Start fresh with this handoff…", action: startFresh)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).tint(HuddleStyle.action)
                     .disabled(row.simulated || model.draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || generating)
                 DisclosureGroup("Recorded activity · source excerpts") {
                     if let context = model.contexts[row.id] {

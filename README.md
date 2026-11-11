@@ -179,3 +179,7 @@ Open a session’s **Handoff** tab, choose an installed AI CLI, then click **Gen
 **Update handoff** creates a new brief from current recorded history. If you edited the previous handoff, review the proposed draft before replacing it; **Restore previous text** recovers the previous version. A notice identifies new activity or notes since generation. Generated summaries can still be incomplete or mistaken—review them before starting a fresh session. Recorded activity excerpts remain separate and are not an AI summary.
 
 Codex uses ephemeral non-interactive generation in a read-only sandbox; Claude uses print mode with tools disabled and session persistence off; Copilot uses piped input with an empty tool allowlist and removes its uniquely identified temporary helper history afterward. Login, account-policy, timeout, and provider errors leave the existing handoff intact.
+
+### Finding sessions
+
+Press **⌘F** to focus search. The search field finds session titles, projects, and recorded messages. Use **×** or **Escape** to clear it, or **Back to Now** to return to active work. Choosing a sidebar view also clears the search; tool and project filters remain selected. Session cards use a subtle outline for selection and text-and-icon status badges in both light and dark appearances.

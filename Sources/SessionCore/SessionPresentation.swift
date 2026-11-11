@@ -11,7 +11,8 @@ public enum SessionPresentation {
     }
 
     public static func excerpt(_ text: String, limit: Int = 180) -> String {
-        let compact = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        let plain = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))).map { String($0.characters) } ?? text
+        let compact = plain.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         guard compact.count > limit else { return compact }
         let prefix = String(compact.prefix(limit))
         let end = prefix.lastIndex(of: " ") ?? prefix.endIndex
