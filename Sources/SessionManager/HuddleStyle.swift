@@ -122,7 +122,7 @@ extension SessionState {
         case .working: HuddleStyle.adaptive(NSColor(red: 0.06, green: 0.37, blue: 0.65, alpha: 1), NSColor(red: 0.32, green: 0.73, blue: 1, alpha: 1))
         case .idle: HuddleStyle.adaptive(NSColor(red: 0.10, green: 0.46, blue: 0.23, alpha: 1), .systemGreen)
         case .saved, .archived: .secondary
-        case .disconnected: .red
+        case .disconnected: .secondary
         }
     }
     var symbol: String {
@@ -131,7 +131,7 @@ extension SessionState {
         case .working: "bolt.fill"
         case .idle: "checkmark.circle"
         case .saved: "archivebox"
-        case .disconnected: "wifi.slash"
+        case .disconnected: "archivebox"
         case .archived: "archivebox.fill"
         }
     }
