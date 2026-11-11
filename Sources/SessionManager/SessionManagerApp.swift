@@ -33,7 +33,12 @@ import SessionCore
         .commands {
             CommandGroup(after: .appInfo) { UpdateButton().environmentObject(updater) }
             SearchSessionCommands()
+            RunHuddleHelpCommands()
         }
+        Window("Getting started", id: "getting-started") {
+            GettingStartedView().environmentObject(model)
+                .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+        }.windowResizability(.contentSize)
         Settings {
             TabView(selection: $model.settingsTab) {
                 AppearanceSettings().environmentObject(switcher.hotKey).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
@@ -49,6 +54,8 @@ struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) var openWindow
     @Environment(\.openSettings) private var openSettings
+    @AppStorage("showGettingStartedAtStartup") private var showGuideAtStartup = true
+    @ViewState private var didCheckStartupGuide = false
     @ViewState private var showDetails = false
     @ViewState private var sidebarVisible = true
     @ViewState private var showHistoryFilters = false
@@ -326,6 +333,10 @@ struct ContentView: View {
         }
         .onChange(of: model.query) { _, _ in model.scheduleHistorySearch() }
         .onAppear {
+            if !didCheckStartupGuide {
+                didCheckStartupGuide = true
+                if showGuideAtStartup { openWindow(id: "getting-started") }
+            }
             model.openMainWindow = { openWindow(id: "main") }
             model.openSettingsWindow = { openSettings() }
         }

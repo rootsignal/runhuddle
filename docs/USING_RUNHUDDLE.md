@@ -104,3 +104,11 @@ The compact repository summary stays above the Overview/Handoff content so branc
 - Deleting session history offers **Save summary first…** and reports existing independent records. This cancels that deletion review so you can save a record; return to deletion afterward. Existing library records are never removed by session cleanup. **Delete record…** in the library removes only that selected saved record after confirmation.
 
 AI summaries use available recorded source material, which may be partial. Review claimed results, verification, and rationale. No automatic summaries, cloud sync, or cross-session synthesis is enabled. Removing RunHuddle’s Application Support data also removes its library; export important records or include that directory in your backups.
+
+## Getting help
+
+The in-app **Getting started** guide introduces agent connections, session states, notifications, terminal switching, keyboard shortcuts, and saving useful work. It opens at startup by default; uncheck **Show this guide at startup** to stop automatic opening. Skipping or closing the guide does not change that preference.
+
+Reopen it any time through **Help → Getting started…** or **Settings → General → Open getting started guide…**. General settings also contains the startup checkbox. The guide only requests notification permission when you click **Enable notifications**; use Next or Skip guide to continue without enabling alerts.
+
+The **Help** menu links to this user guide, troubleshooting, and GitHub issues. Those detailed guides open in your browser and require an internet connection; the introductory guide is built into the app.

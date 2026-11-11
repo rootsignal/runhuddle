@@ -27,6 +27,8 @@ struct AppearancePicker: View {
 }
 
 struct AppearanceSettings: View {
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage("showGettingStartedAtStartup") private var showGuideAtStartup = true
     @EnvironmentObject var hotKey: SwitcherHotKey
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -45,6 +47,10 @@ struct AppearanceSettings: View {
             Text("Click the shortcut to record a new combination. Include Command, Control, or Option. Press Escape to cancel.")
                 .font(.caption).foregroundStyle(.secondary)
             if let error = hotKey.error { Text(error).font(.caption).foregroundStyle(.orange) }
+            Divider()
+            Text("Help and guidance").font(.headline)
+            Toggle("Show getting started guide at startup", isOn: $showGuideAtStartup)
+            Button("Open getting started guide…") { openWindow(id: "getting-started") }
         }
         .padding(24)
         .frame(width: 380)
