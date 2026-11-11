@@ -6,25 +6,27 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.13.3</title>
-            <pubDate>Wed, 11 Nov 2026 08:00:48 -0600</pubDate>
-            <sparkle:version>39</sparkle:version>
-            <sparkle:shortVersionString>0.13.3</sparkle:shortVersionString>
+            <title>0.14.0</title>
+            <pubDate>Wed, 11 Nov 2026 08:16:05 -0600</pubDate>
+            <sparkle:version>40</sparkle:version>
+            <sparkle:shortVersionString>0.14.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.13.3
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.14.0
 
-- Moved Tool and Project filters beside search, with removable active-filter chips and Clear filters.
-- Everywhere search includes saved and archived states while respecting explicit tool and project selections. Current view additionally restricts results to the selected sidebar view.
-- Moved tracking setup notices beside Connections, keeping sidebar navigation focused on views.
+- Simplified session navigation to Now, Pinned, All sessions, and Archived. Saved work lives in its own Library section with independent tool/project filters.
+- Search defaults to the current view, matching filter behavior. Search all sessions explicitly includes archived sessions while keeping tool/project selections.
+- Replaced nested filter menus with a popover containing direct tool choices and a searchable project list.
+- Grouped inactive history and unconfirmed live connections under Previous session, with uncertainty explained only in details.
+- Filtered empty states explain missing matches and offer Clear filters or View matching history.
 
-Validation: native build, search scope regression tests, full release suite, standalone packaging and updater checks.
+Validation: full release suite, native build, standalone packaging and updater checks. Live UI interaction is not automatically tested.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.13.3/RunHuddle-0.13.3-arm64.dmg" length="44240369" type="application/octet-stream" sparkle:edSignature="y+uP5prQkND6NtMb/gCB14UB3nU9wbu7D77kDcvCQX5oToMekPtKp8dL7fDdXd/QqRLmp+zp9P3hiQxwIcJVDA=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.14.0/RunHuddle-0.14.0-arm64.dmg" length="41996664" type="application/octet-stream" sparkle:edSignature="fMPa//TfMebFlOcV96cPaUHyDmCjgjILldWpluVDzc0J8nQibuxAkjyiX9YQTuVDMIuCPsMSrFLgc9ELH0tVCQ=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: ZdDLjnZ1zJBeQymyj180nMSChthzHxWX+3Kn8S7Nh2sVP+Ap2h0lJkPnlkxXYf+qT1QqhrYgJAttJym8TCItCQ==
-length: 1728
+edSignature: YbWHTeRDtOoqWn2oOUSNtGRr72Z8vWwkaP6lMy4bBykztxgaWMOKppoWNpnM/GWaYJMYI1M7DBv8Oy5HydfHAA==
+length: 2019
 -->
