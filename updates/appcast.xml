@@ -6,19 +6,29 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.8.4</title>
-            <pubDate>Tue, 10 Nov 2026 19:27:31 -0600</pubDate>
-            <sparkle:version>26</sparkle:version>
-            <sparkle:shortVersionString>0.8.4</sparkle:shortVersionString>
+            <title>0.9.0</title>
+            <pubDate>Tue, 10 Nov 2026 19:45:26 -0600</pubDate>
+            <sparkle:version>27</sparkle:version>
+            <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[Session rows now include a subtle terminal shortcut. Live sessions locate their existing terminal; saved sessions use the existing resume flow. Clicking the rest of the row opens details. Progress appears on the session being opened, and repeated navigation is disabled until it finishes. Archived, simulated, and bulk-selection rows do not show the shortcut.
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.9.0 preview
+
+A quick session switcher in the menu bar keeps your terminals within reach.
+
+- Click the owl or press Control–Option–Space to find active Codex, Claude Code, and Copilot sessions.
+- Sessions are grouped by Needs you, Working, and Idle. Click a row to switch to its terminal; ambiguous matches still ask you to choose.
+- Search, arrow keys, Return, and Escape work within the popover without changing the main window’s filters.
+- Change, disable, or reset the global shortcut in RunHuddle → Settings → Session switcher. Your preference persists between launches.
+- Open the full window for saved sessions, history, cleanup, and handoffs. Connections, appearance, updates, and Quit remain in the popover’s gear menu.
+
+Validation: Swift build and 36 core tests; release pipeline validates Python integrations, standalone packaging, signing, and updater configuration. Interactive keyboard and multi-monitor behavior still need hands-on validation.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.8.4/RunHuddle-0.8.4-arm64.dmg" length="42447742" type="application/octet-stream" sparkle:edSignature="7DUh3YVjbSGxexkWaR64U8d99QCSRrey/gmxxLU6vTGfj+LcE6F3ZjIhRdXdJYdG3Wm9HPxEezMdg4DPRwemDw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.9.0/RunHuddle-0.9.0-arm64.dmg" length="43183507" type="application/octet-stream" sparkle:edSignature="GATWdl20vX6I7wYqgpKh/cl/h2fX+9LJLBB1GtnEPceWTe3PK2QrbwkXpBNpbJFCjPpVyTphlU8YL77zYrT8Bw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: n98a9rtfaC+q3UrgVxyuxxei44TCyz87ZetYzvqg6ZgbIWcT3pU8G2SwhZrjzfMhrdJ0OxROq1X/5E+QvQG1BA==
-length: 1563
+edSignature: THarLXzitZl2x9Rtg8g56SVDqW7+UYwUTKFIv8EqyxETtstGANuAlPH+3btTDF2VqS1ml0zf3EEcWt6SnxdOAQ==
+length: 2187
 -->
