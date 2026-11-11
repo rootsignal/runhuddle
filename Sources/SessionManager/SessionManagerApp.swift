@@ -122,12 +122,19 @@ struct ContentView: View {
     }
     var body: some View {
         NavigationSplitView {
-            ScrollView {
+            // Keep the header outside the scroll view: sidebar scroll content can
+            // extend beneath the unified title bar and its window controls.
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(nsImage: RunHuddleIcon.image(size: 22, appTile: true))
+                    Text("WORKSPACE")
+                        .font(.system(size: 10, weight: .semibold)).tracking(1)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 10)
+                ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack(spacing: 10) {
-                    Image(nsImage: RunHuddleIcon.image(size: 34, appTile: true))
-                    Text("RunHuddle").font(.system(size: 18, weight: .semibold, design: .rounded))
-                }.padding(.vertical, 8)
                 VStack(spacing: 6) {
                     filterButton("Now", symbol: "sparkle", color: .accentColor)
                     filterButton("Pinned", symbol: "pin", color: .secondary)
@@ -168,6 +175,7 @@ struct ContentView: View {
                 Spacer()
             }.padding(18)
             }.scrollIndicators(.hidden)
+            }
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 12) {
                 Button { model.showSetup = true } label: {
