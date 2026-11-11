@@ -14,7 +14,7 @@ Requires macOS 14 or newer. The current package is for Apple Silicon; Intel buil
 
 1. Download the installer above, then open the `.dmg`.
 2. Drag **RunHuddle** to **Applications** and open it there.
-3. RunHuddle checks for local agents automatically. Copilot tracking is enabled automatically when its CLI or a session is detected. A one-time notice explains that already-open Copilot sessions need one restart/resume; new sessions connect automatically.
+3. RunHuddle checks for local agents automatically. Copilot tracking is enabled automatically when its CLI or a session is detected. A one-time notice explains that already-open Copilot sessions need one restart/resume; new sessions report activity automatically. Reply setup is separate; see below.
 
 Your agent CLIs and accounts are installed separately. No Python installation, shell changes, or source checkout are needed to run the app. View connection status anytime from **Connections…** in the menu bar. Install the app at its permanent location before enabling hooks; after moving the app, reconnect in Connections.
 
@@ -28,6 +28,24 @@ Apple notarization tickets are attached to release installers. No Gatekeeper wor
 4. Optionally enable **Open at Login** from the menu. macOS may require confirmation in Login Items settings.
 
 Source builds are ad-hoc signed for local development; release downloads use Developer ID signing and Apple notarization.
+
+## Reply from RunHuddle
+
+Use **New session** beside search to choose an installed agent and project. Install and sign in to each agent separately on each Mac. Tracking a session does not necessarily make it available for replies.
+
+| Agent | Starting with replies | Existing session |
+| --- | --- | --- |
+| Codex | Start or open a live Codex session. Activity checks the queue connection. | Select the running session; follow-ups queue while it works. |
+| Claude Code | Start from RunHuddle with replies enabled. Accept the development-channel prompt in Claude’s terminal if shown. | Choose **Connect Claude replies…**, exit the old Claude process, then resume the same conversation through setup. |
+| GitHub Copilot | Start from RunHuddle. The reply extension is installed and experimental extension support is enabled automatically for that launch. | Choose **Reconnect with replies…**. After confirmation, RunHuddle closes only the verified idle process and resumes the same conversation ID. |
+
+The composer becomes available after a live connection is confirmed. **Installed** only means extension files are present. Copilot extensions and Claude channels are experimental and may be restricted by the installed agent version or organization policy. Copilot live delivery remains under verification in this preview.
+
+**Questions and tool approvals stay in the terminal.** Use Go to terminal or Review in terminal to answer them. A follow-up is not an approval. Your agent’s model and permission settings still apply.
+
+Return sends a follow-up; Shift-Return inserts a new line. A queue receipt confirms acceptance, not completion. If delivery is uncertain, check the terminal before retrying. Local image paths must exist on the Mac running the session; RunHuddle does not sync images or conversations between Macs.
+
+Reopen the walkthrough from **Help → Getting started**. **Help → Set up agent replies** opens this reference directly.
 
 ## Update and uninstall
 

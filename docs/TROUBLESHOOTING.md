@@ -39,3 +39,12 @@ If `python3` reports “No version is set,” your version manager must select a
 ## Report an issue
 
 [Open a GitHub issue](https://github.com/rootsignal/runhuddle/issues) with your RunHuddle version (shown at the bottom of the sidebar), macOS and agent versions, steps to reproduce, and relevant errors. Remove private conversation content and credentials from screenshots and logs before sharing.
+
+
+## Conversation visible but replies unavailable
+
+Tracking and replies are separate connections. For Claude, start with replies enabled from RunHuddle and accept its development-channel prompt in the terminal. For Copilot, use New session or Reconnect with replies; RunHuddle supplies the required experimental launch flag. An installed extension does not prove that a session loaded it.
+
+If Copilot still does not connect, `/extensions manage` in its terminal shows whether `runhuddle-replies` loaded. For sessions launched outside RunHuddle, `/experimental on` enables extension support. These commands are troubleshooting fallbacks, not required for the normal RunHuddle launch flow. Organization restrictions must be resolved with the administrator; RunHuddle does not bypass them.
+
+Wait for a busy Copilot session to finish and resolve any approval before reconnecting. If the process cannot be verified, exit that session in its terminal first, then reconnect. Do not repeatedly resend an unconfirmed message: check the terminal for delivery first.
