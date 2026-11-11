@@ -235,7 +235,7 @@ struct ContentView: View {
                     }
                         .help("Refresh live sessions").disabled(model.manualRefreshing || model.cleaning)
                 }.padding(.horizontal, 24).padding(.vertical, 20)
-                if isNow && !model.bulkMode && !showDetails {
+                if isNow {
                     NowAttentionPanel(
                         sessions: model.visible,
                         title: { model.displayName(for: $0) },
@@ -243,48 +243,22 @@ struct ContentView: View {
                         inspect: { row in model.selection = row.id; showDetails = true },
                         resume: { row in model.resume(row) },
                         showAll: { model.filter = "Needs input" }
-                    ).padding(.horizontal, 24).padding(.bottom, 16)
+                    ).padding(.horizontal, 24).padding(.bottom, 10)
                 }
                 HSplitView {
                     VStack(spacing: 0) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("SEARCH SESSIONS").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
-                            HStack(spacing: 10) {
-                                Image(systemName: "magnifyingglass").font(.system(size: 16, weight: .medium)).foregroundStyle(HuddleStyle.accent)
-                                TextField("Search projects, titles, or messages", text: $model.query)
-                                    .textFieldStyle(.plain).font(.system(size: 14))
-                                    .focused($searchFocused)
-                                    .onExitCommand { model.query = ""; searchFocused = false }
-                                if !model.query.isEmpty {
-                                    Button { model.query = ""; searchFocused = true } label: { Image(systemName: "xmark.circle.fill") }
-                                        .buttonStyle(.plain).foregroundStyle(.secondary)
-                                        .help("Clear search (Escape)").accessibilityLabel("Clear search")
-                                } else {
-                                    Button { searchFocused = true } label: {
-                                        Text("⌘F").font(.system(size: 11, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 3)
-                                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
-                                    }.buttonStyle(.plain).help("Search sessions (⌘F)")
-                                }
-                            }.padding(.horizontal, 13).frame(height: 44)
-                                .background(HuddleStyle.raised, in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(searchFocused ? HuddleStyle.accent : Color.primary.opacity(0.20), lineWidth: searchFocused ? 2 : 1))
-                            if !model.query.isEmpty {
-                                HStack(alignment: .top, spacing: 8) {
-                                    Button("Back to Now") { model.query = ""; model.filter = "Now"; searchFocused = false }
-                                    if model.searchingHistory { ProgressView().controlSize(.small) }
-                                    Text(model.historySearchStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                    Spacer(minLength: 0)
-                                }
-                            }
-                        }.padding(.horizontal, 16).padding(.bottom, 4)
-                        HStack {
-                            Button(model.bulkMode ? "Done selecting" : "Select sessions") {
-                                model.bulkMode.toggle()
-                                if !model.bulkMode { model.bulkSelection.removeAll() }
-                            }
-                            if model.bulkMode {
-                                Text("\(model.bulkSelection.count)").font(.caption).monospacedDigit().help("Selected sessions, including selections in other filters")
+                        if !model.query.isEmpty {
+                            HStack(spacing: 8) {
+                                Button("Back to Now") { model.query = ""; model.filter = "Now"; searchFocused = false }
+                                if model.searchingHistory { ProgressView().controlSize(.small) }
+                                Text(model.historySearchStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                Spacer(minLength: 0)
+                            }.padding(.horizontal, 16).padding(.vertical, 8)
+                        }
+                        if model.bulkMode {
+                            HStack {
+                                Button("Done") { model.bulkMode = false; model.bulkSelection.removeAll() }
+                                Text("\(model.bulkSelection.count) selected").font(.caption).monospacedDigit()
                                 Menu("Selection") {
                                     Button("Select all results") { model.bulkSelection.formUnion(model.visible.filter { !$0.simulated }.map(\.id)) }
                                     Button("Clear selection") { model.bulkSelection.removeAll() }
@@ -294,9 +268,9 @@ struct ContentView: View {
                                     Button("Restore…") { bulk("restore") }
                                     Button("Remove archived histories…", role: .destructive) { bulk("delete") }
                                 }.disabled(model.bulkSelection.isEmpty)
-                            }
-                            Spacer()
-                        }.padding(12).disabled(model.cleaning)
+                                Spacer()
+                            }.padding(12).disabled(model.cleaning)
+                        }
                         ScrollViewReader { proxy in
                         List {
                             if model.filter == "Now" && model.query.isEmpty {
@@ -366,6 +340,34 @@ struct ContentView: View {
                             .help(model.lastRefresh.map { "Last checked: " + $0.formatted(date: .omitted, time: .standard) } ?? "Waiting for the first activity check")
                     }
                 }.font(.caption).foregroundStyle(.secondary).padding(12)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search sessions", text: $model.query)
+                        .textFieldStyle(.plain).focused($searchFocused)
+                        .onExitCommand { model.query = ""; searchFocused = false }
+                        .accessibilityLabel("Search sessions, projects, and messages")
+                    if !model.query.isEmpty {
+                        Button { model.query = ""; searchFocused = true } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain).foregroundStyle(.secondary)
+                            .help("Clear search (Escape)").accessibilityLabel("Clear search")
+                    }
+                }.padding(.horizontal, 8).frame(width: 210, height: 28)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(searchFocused ? HuddleStyle.accent : .clear))
+                    .help("Search sessions (⌘F)")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button(model.bulkMode ? "Finish selecting" : "Select sessions…") {
+                        model.bulkMode.toggle()
+                        if !model.bulkMode { model.bulkSelection.removeAll() }
+                    }.disabled(model.cleaning)
+                } label: { Image(systemName: "ellipsis") }
+                    .help("Session list actions").accessibilityLabel("Session list actions")
             }
         }
         .focusedSceneValue(\.searchSessions, { searchFocused = true })
