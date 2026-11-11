@@ -8,6 +8,10 @@ public enum SessionSwitcher {
             ($0.matches(query) || (names[$0.id] ?? "").localizedCaseInsensitiveContains(query))
         }.sorted {
             if $0.state.rank != $1.state.rank { return $0.state.rank < $1.state.rank }
+            if $0.state == .needsInput {
+                let left = $0.attention?.since ?? $0.updated, right = $1.attention?.since ?? $1.updated
+                if left != right { return left < right }
+            }
             if $0.updated != $1.updated { return $0.updated > $1.updated }
             return $0.id < $1.id
         }

@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 from copilot_bridge import events, process_info
+from attention_request import request as attention_request
 
 HOME = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
 STATE = Path(os.environ.get('SESSION_TRACKER_CLAUDE_STATE', Path.home() / 'Library/Application Support/Agent Session Manager/claude.sqlite'))
@@ -96,17 +97,25 @@ def record(event, payload, identity=None, stamp=None):
         if compact:
             state = data.get('state', 'disconnected')
         pending = data.get('pending', {})
+        details = data.get('pendingDetails', {})
         key = payload.get('tool_use_id') or payload.get('elicitation_id') or 'prompt'
         if state == 'needsInput' and event != 'StopFailure':
             pending[key] = event
+            details[key] = attention_request(event, payload, details.get(key, {}).get('since', stamp))
         elif event in ('PostToolUse', 'PostToolUseFailure', 'ElicitationResult'):
             pending.pop(key, None)
             pending.pop('prompt', None)
+            details.pop(key, None); details.pop('prompt', None)
         elif not compact and event in ('SessionStart', 'UserPromptSubmit', 'Stop', 'StopFailure', 'SessionEnd'):
-            pending = {}
+            pending = {}; details = {}
         if pending and state in ('working', 'idle'):
             state = 'needsInput'
         data['pending'] = pending
+        data['pendingDetails'] = details
+        if state == 'needsInput':
+            data['attention'] = next(iter(details.values()), None) or (data.get('attention') if compact else None) or attention_request(event, payload, stamp)
+        else:
+            data.pop('attention', None)
         data.update(state=state, updated=stamp, reason='Claude: ' + event, identity=identity)
         for key in ('cwd', 'transcript_path'):
             if isinstance(payload.get(key), str):
@@ -117,7 +126,7 @@ def record(event, payload, identity=None, stamp=None):
         db.execute('INSERT OR REPLACE INTO states VALUES (?,?,?)', (sid, stamp, json.dumps(data)))
     # Signal only after commit. Snapshots never touch this file, preventing refresh loops.
     try:
-        if any(previous.get(key) != data.get(key) for key in ('state', 'cwd', 'preview', 'identity')):
+        if any(previous.get(key) != data.get(key) for key in ('state', 'cwd', 'preview', 'identity', 'attention')):
             Path(str(STATE) + '.signal').touch(mode=0o600)
     except OSError:
         pass  # The durable hook record remains available to reconciliation.
@@ -286,12 +295,20 @@ def snapshot():
             state, reason = 'saved', 'Not listed by Claude as a running session.'
         else:
             state, reason = 'disconnected', 'History found; live status unknown. This Claude version may need tracking hooks loaded in the session.'
+        # Never attach a request from an earlier process or an already-resolved
+        # wait to a newer live-list observation.
+        if sid in listing:
+            hook = hooks.get(sid, {})
+            prior = observed.get(sid, {})
+            compatible = hook.get('state') == 'needsInput' and hook.get('identity') == data.get('identity')
+            resolved_after_hook = prior.get('state') != 'needsInput' and prior.get('updated', 0) > hook.get('updated', 0)
+            data['attention'] = hook.get('attention') if compatible and not resolved_after_hook else None
         identity = data.get('identity')
         cwd = data.get('cwd', '')
         rows.append(dict(provider='Claude', sessionID=sid, title=data.get('title', 'Claude session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=reason, updated=data.get('updated', 0),
-                         simulated=False, agentPID=(identity or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(identity or {}).get('tty') if state not in ('saved', 'disconnected') else None))
+                         attention=data.get('attention') if state == 'needsInput' else None, simulated=False, agentPID=(identity or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(identity or {}).get('tty') if state not in ('saved', 'disconnected') else None))
     return rows
 
 

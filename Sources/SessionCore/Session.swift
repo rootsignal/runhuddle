@@ -30,6 +30,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public var contextUsage: ContextUsage?
     public var terminalTTY: String?
     public var agentPID: Int32?
+    public var attention: AttentionRequest?
     public var simulated: Bool
     public init(provider: String, sessionID: String, title: String, cwd: String,
                 project: String = "", branch: String = "", preview: String = "",

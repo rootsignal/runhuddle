@@ -13,7 +13,8 @@ struct NowAttentionPanel: View {
 
     private var waiting: [Session] {
         sessions.filter { $0.state == .needsInput }.sorted {
-            $0.updated == $1.updated ? $0.id < $1.id : $0.updated < $1.updated
+            let left = $0.attention?.since ?? $0.updated, right = $1.attention?.since ?? $1.updated
+            return left == right ? $0.id < $1.id : left < right
         }
     }
     var body: some View {
@@ -24,8 +25,17 @@ struct NowAttentionPanel: View {
                         .font(.system(size: 12, weight: .semibold))
                 }.buttonStyle(.plain).foregroundStyle(SessionState.needsInput.color)
                     .help("Show sessions needing input")
-                Text(title(row)).font(.callout).lineLimit(1).truncationMode(.tail)
-                    .foregroundStyle(.secondary).help(title(row))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title(row)).font(.callout).lineLimit(1).truncationMode(.tail)
+                    HStack(spacing: 4) {
+                        Text(row.attention?.title ?? "Input requested")
+                        if let since = row.attention?.since {
+                            Text("· observed")
+                            Text(Date(timeIntervalSince1970: since), style: .relative)
+                            Text("ago")
+                        }
+                    }.font(.caption2).lineLimit(1)
+                }.foregroundStyle(.secondary).help(title(row))
                 Spacer(minLength: 0)
                 Button { resume(row) } label: {
                     Text(navigating ? "Locating…" : "Go to terminal")

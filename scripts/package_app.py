@@ -23,7 +23,7 @@ subprocess.run([str(generator), str(iconset)], check=True)
 subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(resources / "RunHuddle.icns")], check=True)
 bridge = resources / "bridge"
 bridge.mkdir()
-for name in ("codex_bridge.py", "codex_events.py", "handoff_ai.py", "copilot_bridge.py", "claude_bridge.py", "local_cleanup.py", "context_usage.py", "history_search.py"):
+for name in ("attention_request.py", "codex_bridge.py", "codex_events.py", "handoff_ai.py", "copilot_bridge.py", "claude_bridge.py", "local_cleanup.py", "context_usage.py", "history_search.py"):
     shutil.copy2(root / "scripts" / name, bridge / name)
 sparkle = root / '.build/artifacts/sparkle/Sparkle'
 frameworks = contents / 'Frameworks'
@@ -37,7 +37,7 @@ info = {
     "CFBundleExecutable": "SessionManager", "CFBundleIdentifier": "local.rickbaker.agent-sessions",
     "CFBundleName": "RunHuddle", "CFBundleDisplayName": "RunHuddle",
     "CFBundleIconFile": "RunHuddle",
-    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.9.1", "CFBundleVersion": "28",
+    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.10.0", "CFBundleVersion": "29",
     "SUFeedURL": "https://raw.githubusercontent.com/rootsignal/runhuddle/main/updates/appcast.xml",
     "SUPublicEDKey": (root / 'config/sparkle-public-key.txt').read_text().strip(),
     "SURequireSignedFeed": True,

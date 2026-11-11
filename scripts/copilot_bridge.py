@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import yaml
+from attention_request import request as attention_request
 
 HOME = Path(os.environ.get('COPILOT_HOME', Path.home() / '.copilot'))
 STATE = Path(os.environ.get('SESSION_TRACKER_COPILOT_STATE', Path.home() / 'Library/Application Support/Agent Session Manager/copilot.sqlite'))
@@ -82,6 +83,10 @@ def record(event, payload, identity=None):
             return
         data = json.loads(old[1]) if old else {}
         previous = dict(data)
+        if state == 'needsInput':
+            data['attention'] = attention_request(event, payload, data.get('attention', {}).get('since', stamp) if data.get('state') == state else stamp)
+        else:
+            data.pop('attention', None)
         data.update(state=state, updated=stamp, reason='Copilot: ' + event, identity=identity or data.get('identity'))
         if payload.get('cwd'):
             data['cwd'] = payload['cwd']
@@ -92,7 +97,7 @@ def record(event, payload, identity=None):
         db.execute('INSERT OR REPLACE INTO states VALUES (?,?,?)', (sid, stamp, json.dumps(data)))
     # Signal only after commit. Snapshots never touch this file, preventing refresh loops.
     try:
-        if any(previous.get(key) != data.get(key) for key in ('state', 'cwd', 'preview', 'identity')):
+        if any(previous.get(key) != data.get(key) for key in ('state', 'cwd', 'preview', 'identity', 'attention')):
             Path(str(STATE) + '.signal').touch(mode=0o600)
     except OSError:
         pass  # The durable hook record remains available to reconciliation.
@@ -197,7 +202,7 @@ def snapshot():
         rows.append(dict(provider='Copilot', sessionID=sid, title=data.get('title', 'Copilot session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=data.get('reason', '') if state != 'saved' else 'Saved session; live activity is not confirmed.',
-                         updated=data.get('updated', 0), simulated=False,
+                         updated=data.get('updated', 0), attention=data.get('attention') if state == 'needsInput' else None, simulated=False,
                          agentPID=(data.get('identity') or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(data.get('identity') or {}).get('tty') if state not in ('saved', 'disconnected') else None))
     return rows
 

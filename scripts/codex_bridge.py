@@ -53,7 +53,9 @@ def normalize(row, projects, archived=False):
             "cwd": cwd, "project": projects[cwd], "branch": (row.get("gitInfo") or {}).get("branch") or "",
             "preview": (row.get("preview") or "")[:8000], "state": state, "reason": reason,
             "updated": row.get("updatedAt") or 0, "simulated": False,
-            "contextUsage": read_context(row.get("path"))}
+            "contextUsage": read_context(row.get("path")),
+            "attention": {"kind": "permission" if "waitingOnApproval" in (row.get("status") or {}).get("activeFlags", []) else "question"}
+                if state == "needsInput" else None}
 
 
 class Client:

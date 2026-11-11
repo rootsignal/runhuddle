@@ -18,6 +18,31 @@
 
 Click the owl in the menu bar, or press **Control–Option–Space**, to open the session switcher above your current app. Search active sessions, use **↑ / ↓** and **Return** to switch to a terminal, or press **Escape** to dismiss it. Change or disable the global shortcut in **RunHuddle → Settings… → Session switcher** (also available from the popover’s gear menu). The full window remains available for saved sessions, history, and handoffs. Ambiguous terminal matches still ask you to choose.
 
+## Needs input
+
+Waiting sessions are ordered by when RunHuddle observed the request. Their details distinguish permission requests, questions, plan reviews, and general input when the provider exposes that information. Claude/Copilot hooks can supply bounded request excerpts; question excerpts include recorded options. Codex’s current status connection distinguishes approval from user input but does not supply the full prompt text here. Missing details are labeled rather than inferred from the last message.
+
+“Observed waiting” starts when the request is recorded or first seen by RunHuddle; it is not an exact historical wait duration for sessions discovered later. Requests clear when their waiting state resolves. Answer in the agent’s terminal—RunHuddle does not approve, select options, or send replies.
+
+## Notifications
+
+Open **RunHuddle → Settings → Notifications**, or use **Notification settings…** in the sidebar.
+
+- Enable input and completion alerts independently, and choose whether they play a sound.
+- Set quiet hours in your Mac’s local time, or snooze alerts for one hour. The menu-bar gear menu also offers snooze/resume.
+- Optionally request one reminder after 5, 10, or 15 minutes of waiting. Reminders are checked during activity refreshes, so delivery may be slightly later. The reminder record lasts for the current app run.
+- Mute a whole project from a session’s **… → Mute project alerts** menu. Unmute it there or in notification settings. Project matching uses the full folder path.
+
+Updates arriving within a three-second window are combined. A grouped alert opens Now; individual alerts retain their terminal action. Requests already resolved when the batch is delivered are dropped. Quiet hours, snooze, and muted projects suppress alerts without hiding session status. Ordinary suppressed alerts are not replayed afterward; an enabled reminder can still notify you about an unresolved request once quiet time ends. Test alerts bypass these app-level controls, but still require macOS notification permission.
+
+## Terminal targeting
+
+RunHuddle matches a verified session TTY or an unambiguous title to an existing terminal. Terminal.app, Ghostty, and iTerm2 use their scripting interfaces; iTerm2 split panes are identified individually. Multiple valid matches still require a choice. Saved or disconnected sessions do not automatically jump to a terminal based solely on an old title.
+
+A manually chosen tab/pane is remembered during the current app run while the session remains active. The choice is reused only while the terminal application process, tab/pane identity, title, and available directory/TTY information remain unchanged. Reopening the app or changing the terminal can require another choice.
+
+For **tmux**, RunHuddle discovers panes on the default local server that are attached through Terminal.app or iTerm2. It validates the pane, server, and attached client, brings the outer terminal forward, and selects the existing pane. It never creates a tmux session or sends keystrokes. Detached sessions, custom tmux sockets, SSH, and Ghostty-to-tmux routing are not supported by this automatic route. Unusual installations can still require the manual chooser.
+
 ## Finding sessions
 
 Press **⌘F** to focus search. The search field finds session titles, projects, and recorded messages. Use **×** or **Escape** to clear it, or **Back to Now** to return to active work. Choosing a sidebar view also clears the search; tool and project filters remain selected. Session cards use a subtle outline for selection and text-and-icon status badges in both light and dark appearances.

@@ -34,7 +34,10 @@ import SessionCore
             SearchSessionCommands()
         }
         Settings {
-            AppearanceSettings().environmentObject(switcher.hotKey)
+            TabView(selection: $model.settingsTab) {
+                AppearanceSettings().environmentObject(switcher.hotKey).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
+                NotificationSettingsView().environmentObject(model).tabItem { Label("Notifications", systemImage: "bell") }.tag("notifications")
+            }
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }
     }
@@ -125,7 +128,7 @@ struct ContentView: View {
                         .font(.caption).foregroundStyle(model.connectionNeedsAttention ? Color.orange : .secondary)
                 }.buttonStyle(.plain)
                 Button(model.notifications ? "Notification settings…" : "Enable notifications") {
-                    if model.notifications || model.notificationBlocked { model.openNotificationSettings() }
+                    if model.notifications || model.notificationBlocked { model.settingsTab = "notifications"; openSettings() }
                     else { Task { await model.enableNotifications() } }
                 }.font(.caption).buttonStyle(.plain)
                 Text("RunHuddle \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Development")")
@@ -368,9 +371,9 @@ struct ContentView: View {
                 List(TerminalTarget.ordered(model.terminalTargets, for: row)) { target in
                     Button { model.focusTerminal(target) } label: {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("\(target.app) · \(target.title.isEmpty ? "Untitled terminal" : target.title)")
+                            Text("\(target.app) · \(target.displayTitle.isEmpty ? "Untitled terminal" : target.displayTitle)")
                             Text(target.matchLabel(for: row)).font(.caption).foregroundStyle(.secondary)
-                            Text(target.identity).font(.caption2).foregroundStyle(.secondary)
+                            Text(target.sessionTTY.isEmpty ? target.identity : target.sessionTTY).font(.caption2).foregroundStyle(.secondary)
                         }.padding(4)
                     }.buttonStyle(.plain).disabled(model.navigatingTerminal)
                 }.frame(height: 240)
@@ -519,6 +522,7 @@ struct SessionDetail: View {
                 Label(row.project, systemImage: "folder").font(.system(size: 12, weight: .medium)).foregroundStyle(HuddleStyle.accent)
                 Text(SessionPresentation.statusSummary(row)).font(.caption).foregroundStyle(.secondary)
             }
+            if row.state == .needsInput { AttentionRequestCard(row: row) }
             if row.state == .disconnected {
                 Text("Check the agent or locate its terminal before resuming. Recorded history is still available below.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -655,6 +659,7 @@ struct SessionDetail: View {
     private var cleanupMenu: some View {
         Menu {
             Button("Rename…") { model.beginRename(row) }
+            Button(model.notificationPreferences.mutedProjects.contains(row.cwd) ? "Unmute project alerts" : "Mute project alerts") { model.muteProject(row) }.disabled(row.cwd.isEmpty)
             Divider()
             if row.state == .archived {
                 Button("Restore…") { cleanup("restore") }

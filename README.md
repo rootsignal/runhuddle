@@ -22,7 +22,7 @@ RunHuddle is an early preview, distributed directly with Developer ID signing an
 
 ## Supported agents
 
-**Codex CLI, Claude Code, and GitHub Copilot CLI**, with terminal navigation for **Terminal.app and Ghostty**. Support and validation vary by integration; see [Agent connections](docs/AGENT_CONNECTIONS.md) for compatibility details.
+**Codex CLI, Claude Code, and GitHub Copilot CLI**, with terminal navigation for **Terminal.app, Ghostty, and iTerm2**, plus attached tmux panes. Support and validation vary by integration; see [Agent connections](docs/AGENT_CONNECTIONS.md) for compatibility details.
 
 ## Documentation
 

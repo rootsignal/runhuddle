@@ -98,6 +98,13 @@ struct CopilotTrackingStatus: Decodable {
     @Published var contexts: [String: HandoffContext] = [:]
     @Published var historyErrors: [String: String] = [:]
     private var historyTasks: [String: Task<Void, Never>] = [:]
+    @Published var settingsTab = "general"
+    @Published var notificationPreferences = (UserDefaults.standard.data(forKey: "notificationPreferences").flatMap { try? JSONDecoder().decode(NotificationPreferences.self, from: $0) }) ?? NotificationPreferences() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(notificationPreferences), forKey: "notificationPreferences") }
+    }
+    private var pendingAlerts: [String: SessionAlert] = [:]
+    private var notificationTask: Task<Void, Never>?
+    private var reminded: [String: Double] = [:]
     @Published var notifications = false
     @Published var notificationBlocked = false
     @Published var notificationMessage: String?
@@ -107,6 +114,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var terminalProgress = ""
     @Published var terminalSession: Session?
     @Published var terminalTargets: [TerminalTarget] = []
+    private var terminalChoices: [String: TerminalTarget] = [:]
     @Published var terminalMessage = ""
     @Published var bulkMode = false
     @Published var bulkSelection: Set<String> = []
@@ -154,6 +162,11 @@ struct CopilotTrackingStatus: Decodable {
         } catch { self.error = "Local storage: \(error.localizedDescription)" }
         attentionDelegate.onSelect = { [weak self] id, goToTerminal in
             guard let self else { return }
+            if id == "activity-batch" {
+                self.filter = "Now"; self.query = ""; self.provider = "All tools"; self.projectFilter = "All projects"
+                self.openMainWindow?(); NSApp.activate(ignoringOtherApps: true)
+                return
+            }
             self.showSession(id)
             guard goToTerminal, id != "notification-test" else { return }
             Task { @MainActor in
@@ -192,6 +205,7 @@ struct CopilotTrackingStatus: Decodable {
         processWatcher = AgentProcessWatcher { [weak self] provider in self?.processExited(provider) }
         terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
+                self?.notificationTask?.cancel()
                 self?.processWatcher?.stop(); self?.exitRefreshTask?.cancel()
                 self?.codexObserver?.stop(); self?.hookWatcher?.stop()
                 self?.eventRefreshTask?.cancel(); self?.timer?.cancel()
@@ -266,6 +280,10 @@ struct CopilotTrackingStatus: Decodable {
         let effectiveFilter = filter == "Now" && !query.isEmpty ? "All sessions" : filter
         return matchingSessions.filter { SessionPresentation.includes($0, filter: effectiveFilter, pinned: pinned) }.sorted {
             if $0.state.rank != $1.state.rank { return $0.state.rank < $1.state.rank }
+            if $0.state == .needsInput, $1.state == .needsInput {
+                let left = $0.attention?.since ?? $0.updated, right = $1.attention?.since ?? $1.updated
+                if left != right { return left < right }
+            }
             if pinned.contains($0.id) != pinned.contains($1.id) { return pinned.contains($0.id) }
             return $0.updated == $1.updated ? $0.id < $1.id : $0.updated > $1.updated
         }
@@ -289,6 +307,7 @@ struct CopilotTrackingStatus: Decodable {
         connectionNeedsAttention ? "Connections need attention" : connectedProviders.isEmpty ? "Checking connections…" : "Connections ready"
     }
     func activitySummary(for row: Session) -> String {
+        if row.state == .needsInput { return row.attention?.detail.map { SessionPresentation.excerpt($0) } ?? row.attention?.title ?? "Input requested in terminal" }
         let latest = contexts[row.id]?.latestResponse ?? ""
         let purpose = briefs[row.id]?.purpose ?? ""
         let source = !purpose.isEmpty ? purpose : !latest.isEmpty ? latest : row.preview
@@ -328,12 +347,15 @@ struct CopilotTrackingStatus: Decodable {
         for tool in ["Codex", "Copilot", "Claude"] where providers.contains(tool) {
             do {
                 let data = try await Bridge.run(["snapshot"], provider: tool)
-                let rows = try JSONDecoder().decode([Session].self, from: data)
+                var rows = try JSONDecoder().decode([Session].self, from: data)
+                for index in rows.indices {
+                    rows[index].attention = AttentionRequest.reconcile(rows[index], previous: sessions.first { $0.id == rows[index].id }, now: Date().timeIntervalSince1970)
+                }
                 if connectedProviders.contains(tool) {
                     for alert in SessionAlert.transitions(from: sessions, to: rows) {
                         recentAlerts.removeAll { $0.id == alert.id }
                         recentAlerts.insert(alert, at: 0)
-                        if notifications { notify(alert.session, title: alert.title) }
+                        queueNotification(alert)
                         if alert.kind == .finished {
                             Task { await self.appendHistory(alert.session) }
                         }
@@ -372,11 +394,13 @@ struct CopilotTrackingStatus: Decodable {
         let nextSessions = fetched + sessions.filter(\.simulated)
         let sessionsChanged = sessions != nextSessions
         if sessionsChanged { sessions = nextSessions }
+        terminalChoices = terminalChoices.filter { id, _ in sessions.contains { $0.id == id && [.working, .idle, .needsInput].contains($0.state) } }
         connection = ["Codex", "Copilot", "Claude"].map { tool in
             if let error = providerErrors[tool] { return "\(tool) unavailable: \(error)" }
             if connectedProviders.contains(tool) { return "\(tool) connected · \(fetched.filter { $0.provider == tool }.count) sessions" }
             return "\(tool) not connected"
         }.joined(separator: " · ")
+        checkInputReminders()
         await updateProcessWatches()
         await ensureCopilotTracking()
         await repairClaudeTracking()
@@ -866,7 +890,10 @@ struct CopilotTrackingStatus: Decodable {
     }
     private func navigate(_ row: Session, fromMenu: Bool) async {
         await discoverTerminals()
-        if let match = TerminalTarget.uniqueMatch(for: row, sessions: sessions, targets: terminalTargets) {
+        let remembered = terminalChoices[row.id].flatMap { previous in terminalTargets.first { $0.stillMatchesChoice(previous) } }
+        let automatic = TerminalTarget.uniqueMatch(for: row, sessions: sessions, targets: terminalTargets)
+        let preferred = automatic?.matchRank(for: row) == 0 ? automatic : remembered ?? automatic
+        if let match = preferred {
             do { terminalProgress = "Opening terminal…"; try await TerminalNavigator.focus(match); onTerminalOpened?(); return }
             catch { terminalMessage = error.localizedDescription }
         }
@@ -899,7 +926,11 @@ struct CopilotTrackingStatus: Decodable {
         terminalProgress = "Opening terminal…"
         Task { @MainActor in
             defer { navigatingTerminal = false; terminalProgress = "" }
-            do { try await TerminalNavigator.focus(target); terminalSession = nil }
+            do {
+                try await TerminalNavigator.focus(target)
+                if let row = terminalSession, [.working, .idle, .needsInput].contains(row.state) { terminalChoices[row.id] = target }
+                terminalSession = nil; onTerminalOpened?()
+            }
             catch {
                 let message = error.localizedDescription
                 await discoverTerminals()
@@ -987,13 +1018,63 @@ struct CopilotTrackingStatus: Decodable {
         let row = Session(provider: "Tracker", sessionID: "notification-test", title: "Desktop alerts are working", cwd: "", state: .idle)
         notify(row, title: "RunHuddle · test alert")
     }
+    func muteProject(_ row: Session) {
+        if !notificationPreferences.mutedProjects.insert(row.cwd).inserted { notificationPreferences.mutedProjects.remove(row.cwd) }
+    }
+    private func queueNotification(_ alert: SessionAlert) {
+        guard notifications, notificationPreferences.allows(alert.session, kind: alert.kind) else { return }
+        pendingAlerts[alert.session.id] = alert
+        guard notificationTask == nil else { return }
+        notificationTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            while let self, self.refreshing {
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            }
+            self?.flushNotifications()
+            self?.notificationTask = nil
+        }
+    }
+    private func checkInputReminders() {
+        reminded = reminded.filter { id, since in sessions.contains { $0.id == id && $0.state == .needsInput && $0.attention?.since == since } }
+        guard notifications, notificationPreferences.reminderMinutes > 0 else { return }
+        for row in sessions where row.state == .needsInput {
+            guard let since = row.attention?.since, reminded[row.id] != since,
+                  Date().timeIntervalSince1970 - since >= Double(notificationPreferences.reminderMinutes * 60),
+                  notificationPreferences.allows(row, kind: .input) else { continue }
+            queueNotification(SessionAlert(session: row, kind: .input))
+        }
+    }
+    private func flushNotifications() {
+        let alerts = NotificationBatch.current(Array(pendingAlerts.values), sessions: sessions, preferences: notificationPreferences)
+        pendingAlerts.removeAll()
+        guard notifications, !alerts.isEmpty else { return }
+        // Record reminders only when submitting a still-current notification.
+        for alert in alerts where alert.kind == .input && notificationPreferences.reminderMinutes > 0 {
+            if let since = alert.session.attention?.since,
+               Date().timeIntervalSince1970 - since >= Double(max(1, notificationPreferences.reminderMinutes) * 60) {
+                reminded[alert.session.id] = since
+            }
+        }
+        if alerts.count == 1 { notify(alerts[0].session, title: alerts[0].title); return }
+        let content = UNMutableNotificationContent()
+        let waiting = alerts.filter { $0.kind == .input }.count
+        content.title = "RunHuddle · \(alerts.count) session updates"
+        content.body = "\(waiting) need input · \(alerts.count - waiting) ready for review\n" + alerts.prefix(3).map { displayName(for: $0.session) }.joined(separator: ", ")
+        if notificationPreferences.sound { content.sound = .default }
+        content.threadIdentifier = "runhuddle-activity"
+        deliver(UNNotificationRequest(identifier: "activity-batch", content: content, trigger: nil))
+    }
     private func notify(_ row: Session, title: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = "\(row.project): \(displayName(for: row))"
-        content.sound = .default
+        if row.state == .needsInput { content.body += "\n" + (row.attention?.title ?? "Input requested") }
+        if notificationPreferences.sound { content.sound = .default }
+        content.threadIdentifier = row.cwd.isEmpty ? "runhuddle-activity" : row.cwd
         if row.sessionID != "notification-test" { content.categoryIdentifier = "sessionActivity" }
-        let request = UNNotificationRequest(identifier: row.sessionID == "notification-test" ? row.sessionID : row.id, content: content, trigger: nil)
+        deliver(UNNotificationRequest(identifier: row.sessionID == "notification-test" ? row.sessionID : row.id, content: content, trigger: nil))
+    }
+    private func deliver(_ request: UNNotificationRequest) {
         UNUserNotificationCenter.current().add(request) { [weak self] error in
             guard error != nil else { return }
             Task { @MainActor in
@@ -1003,4 +1084,5 @@ struct CopilotTrackingStatus: Decodable {
             }
         }
     }
+
 }

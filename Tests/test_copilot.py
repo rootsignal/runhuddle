@@ -99,6 +99,16 @@ class CopilotTests(unittest.TestCase):
         self.send('notification', 2000, notification_type='elicitation_dialog')
         self.assertEqual(self.row()['state'], 'idle')
 
+    def test_request_detail_is_cleared_after_input_and_exit(self):
+        self.send('notification', 1000, notification_type='permission_prompt', message='Run npm test?')
+        self.assertEqual(self.row()['attention']['detail'], 'Run npm test?')
+        self.send('userPromptSubmitted', 2000)
+        self.assertIsNone(self.row()['attention'])
+        self.send('notification', 3000, notification_type='elicitation_dialog', message='Which environment?')
+        self.assertEqual(self.row()['attention']['kind'], 'question')
+        with patch.object(bridge, 'live', return_value=False):
+            self.assertIsNone(bridge.snapshot()[0]['attention'])
+
     def test_closed_or_rebooted_process_is_saved(self):
         self.send('userPromptSubmitted')
         with patch.object(bridge, 'live', return_value=False):

@@ -16,7 +16,7 @@ Keep one installed copy of RunHuddle at its permanent location and open **Connec
 
 ## Go to terminal opens a chooser
 
-RunHuddle asks you to choose when it cannot identify one existing tab or pane confidently. Allow macOS Automation access when prompted. If multiple tabs match, select the correct one. Opening another terminal is a separate explicit action. See [terminal support](AGENT_CONNECTIONS.md#supported-integrations).
+RunHuddle asks you to choose when it cannot identify one existing tab or pane confidently. Allow macOS Automation access when prompted. If multiple tabs match, select the correct one. RunHuddle remembers a verified unchanged choice for the current app run. For tmux, only the default local server attached through Terminal.app or iTerm2 is supported. Opening another terminal is a separate explicit action. See [terminal support](AGENT_CONNECTIONS.md#supported-integrations).
 
 ## Notifications do not appear
 

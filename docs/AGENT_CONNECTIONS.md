@@ -11,6 +11,8 @@
 | Claude Code | Local history discovery, live activity hooks, history search, handoffs, and resume. CLI 2.1.322 startup/exit hooks verified; authenticated work/approval testing remains pending. |
 | Terminal.app | Existing-tab discovery and focus verified locally. |
 | Ghostty | Scripting integration implemented; live validation remains pending. |
+| iTerm2 | Existing tabs and split-pane targeting implemented using its scripting interface and TTY identity; live UI validation remains pending. |
+| tmux | Default local server, with attached Terminal.app/iTerm2 clients. Parser/matching tests and isolated-server pane selection verified; end-to-end UI validation remains pending. |
 
 RunHuddle observes local agents. It does not supply model access or bypass provider authentication. Activity excerpts and search are local. Generating an AI handoff is optional and explicitly sends recorded context to your selected provider; see [AI handoffs](USING_RUNHUDDLE.md#ai-handoffs).
 

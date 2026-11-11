@@ -32,12 +32,21 @@ import SessionCore
     }
     static func discover() async -> (targets: [TerminalTarget], errors: [String]) {
         var targets: [TerminalTarget] = [], errors: [String] = []
-        for (app, bundleID) in [("Terminal", "com.apple.Terminal"), ("Ghostty", "com.mitchellh.ghostty")] {
-            guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { continue }
+        for (app, bundleID) in [("Terminal", "com.apple.Terminal"), ("Ghostty", "com.mitchellh.ghostty"), ("iTerm2", "com.googlecode.iterm2")] {
+            guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { continue }
             let items = app == "Terminal" ? "w.tabs()" : "w.terminals()"
             let fields = app == "Terminal" ? "[String(w.id()), t.tty(), t.customTitle(), '']" : "[String(w.id()), String(t.id()), t.name(), t.workingDirectory()]"
 
-            let source = """
+            let source = app == "iTerm2" ? """
+            var app = Application(\(literal(bundleID)));
+            var rows = [];
+            if (app.running()) {
+                for (var w of app.windows()) for (var tab of w.tabs()) for (var t of tab.sessions()) {
+                    rows.push([String(w.id()), String(t.uniqueID()), t.name(), '', t.tty()]);
+                }
+            }
+            JSON.stringify(rows);
+            """ : """
             var app = Application(\(literal(bundleID)));
             var rows = [];
             if (app.running()) {
@@ -51,8 +60,8 @@ import SessionCore
             """
             do {
                 let rows = try JSONDecoder().decode([[String]].self, from: await run(source))
-                for row in rows where row.count == 4 {
-                    targets.append(TerminalTarget(app: app, window: row[0], identity: row[1], title: row[2], cwd: row[3]))
+                for row in rows where row.count >= 4 {
+                    targets.append(TerminalTarget(app: app, window: row[0], identity: row[1], title: row[2], cwd: row[3], tty: row.count > 4 ? row[4] : "", applicationPID: running.processIdentifier))
                 }
             } catch {
                 let detail = error.localizedDescription
@@ -61,9 +70,36 @@ import SessionCore
                     : "\(app): \(detail)")
             }
         }
+        targets += await TmuxNavigator.discover(targets)
         return (targets, errors)
     }
     static func focus(_ target: TerminalTarget) async throws {
+        if target.tmux != nil { try await TmuxNavigator.focus(target); return }
+        let bundles = ["Terminal": "com.apple.Terminal", "Ghostty": "com.mitchellh.ghostty", "iTerm2": "com.googlecode.iterm2"]
+        guard let bundle = bundles[target.app], let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first,
+              target.applicationPID == nil || target.applicationPID == app.processIdentifier else {
+            throw failure("This terminal application restarted or closed. Refresh and choose it again.")
+        }
+        if target.app == "iTerm2" {
+            let source = """
+            var app = Application("com.googlecode.iterm2");
+            function focusTarget() {
+                if (!app.running()) throw Error('iTerm2 is no longer running.');
+                for (var w of app.windows()) {
+                    if (String(w.id()) !== \(literal(target.window))) continue;
+                    for (var tab of w.tabs()) for (var t of tab.sessions()) {
+                        if (String(t.uniqueID()) !== \(literal(target.identity))) continue;
+                        if (t.tty() !== \(literal(target.tty)) || t.name() !== \(literal(target.title)))
+                            throw Error('This iTerm2 pane changed. Refresh and choose it again.');
+                        tab.select(); t.select(); w.select(); app.activate(); return true;
+                    }
+                }
+                throw Error('This iTerm2 pane closed. Refresh and choose it again.');
+            }
+            JSON.stringify(focusTarget());
+            """
+            _ = try await run(source); return
+        }
         let terminal = target.app == "Terminal"
         let bundleID = terminal ? "com.apple.Terminal" : "com.mitchellh.ghostty"
         // Validate the chosen tab in the same operation that focuses it. Avoid rescanning

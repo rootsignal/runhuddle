@@ -31,6 +31,15 @@ class ClaudeTests(unittest.TestCase):
         with patch.object(bridge, 'live', return_value=live):
             return bridge.snapshot()[0]
 
+    def test_pending_request_survives_parallel_tool_and_clears_when_answered(self):
+        self.send('PreToolUse', tool_name='AskUserQuestion', tool_use_id='q', tool_input={'questions': [{'question': 'Choose a database?'}]})
+        original = self.row()['attention']
+        self.assertEqual(original['kind'], 'question')
+        self.send('PostToolUse', tool_use_id='other')
+        self.assertEqual(self.row()['attention'], original)
+        self.send('PostToolUse', tool_use_id='q')
+        self.assertIsNone(self.row()['attention'])
+
     def test_lifecycle(self):
         for event, state in [('SessionStart', 'idle'), ('UserPromptSubmit', 'working'),
                              ('PermissionRequest', 'needsInput'), ('PostToolUse', 'working'),

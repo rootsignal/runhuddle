@@ -85,6 +85,9 @@ struct SessionSwitcherView: View {
                     Menu("Appearance") { AppearancePicker() }
                     Toggle("Global shortcut: \(hotKey.shortcut.label)", isOn: Binding(get: { hotKey.enabled }, set: { hotKey.setEnabled($0) }))
                     Button("Settings…") { controller.openSettings() }
+                    Button(model.notificationPreferences.snoozedUntil > Date().timeIntervalSince1970 ? "Resume alerts" : "Snooze alerts for 1 hour") {
+                        model.notificationPreferences.snoozedUntil = model.notificationPreferences.snoozedUntil > Date().timeIntervalSince1970 ? 0 : Date().addingTimeInterval(3600).timeIntervalSince1970
+                    }
                     Toggle("Open at Login", isOn: Binding(get: { loginItem.enabled }, set: { loginItem.setEnabled($0) }))
                     if loginItem.needsApproval { Button("Allow in Login Items Settings…") { loginItem.openSettings() } }
                     if let error = loginItem.error { Text(error) }
@@ -125,6 +128,10 @@ struct SwitcherSessionRow: View {
                 .font(.system(size: 9)).foregroundStyle(row.state.color).frame(width: 12)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                if row.state == .needsInput {
+                    Text(row.attention?.title ?? "Input requested").font(.system(size: 11)).foregroundStyle(.orange)
+                    if let detail = row.attention?.detail { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                }
                 Text("\(row.project) · \(row.provider)").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 5)
