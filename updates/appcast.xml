@@ -6,28 +6,31 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.9.1</title>
-            <pubDate>Tue, 10 Nov 2026 20:02:06 -0600</pubDate>
-            <sparkle:version>28</sparkle:version>
-            <sparkle:shortVersionString>0.9.1</sparkle:shortVersionString>
+            <title>0.10.0</title>
+            <pubDate>Tue, 10 Nov 2026 20:28:08 -0600</pubDate>
+            <sparkle:version>29</sparkle:version>
+            <sparkle:shortVersionString>0.10.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.9.1 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.10.0 preview
 
-Closed terminal sessions update sooner.
+More useful attention requests, quieter alerts, and better navigation to existing terminals.
 
-- macOS process-exit events now trigger agent status refreshes for recognized terminal CLIs and verified Claude/Copilot session processes.
-- Follow-up checks after 1, 4, and 10 seconds accommodate delayed disconnect detection by shared agent servers. Multiple closures are coalesced.
-- An exit never directly overrides a session’s status. Shared sessions and background work remain governed by the agent’s live snapshot.
-- Existing agent events and the 30-second fallback remain in place for unidentified processes and missed events.
+- Needs input details show the request type, observed waiting time, and bounded request excerpts when available. Waiting sessions are ordered oldest first. Missing prompt details are explicit; all answers still happen in the terminal.
+- Settings → Notifications includes independent input/completion alerts, sound, quiet hours, one-hour snooze, and optional one-time waiting reminders. Session actions can mute a project’s alerts.
+- Bursts are combined into one notification. Resolved requests are dropped before delivery; grouped alerts open Now.
+- iTerm2 discovery includes split panes and verified TTY matching. Manual terminal choices are remembered only while their identifying details remain unchanged in the current app run. Closed-history duplicates no longer block an otherwise unique live title match.
+- Attached tmux panes on the default local server can be selected through Terminal.app or iTerm2. No session creation or keystroke injection.
 
-Validation: 39 Swift tests, including a real child-process exit and watcher cancellation; Python integration tests and signed standalone packaging checks run in the release pipeline.
+Validation: 46 Swift and 77 Python tests, light/dark offscreen component review, and isolated tmux inventory/pane selection. The release pipeline additionally checks standalone packaging and signed updates. iTerm2/Ghostty and end-to-end tmux UI validation remain pending on those setups. Codex currently supplies the request category, not the full prompt text, through this status adapter.
+
+Project context is next; no MCP integration was added.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.9.1/RunHuddle-0.9.1-arm64.dmg" length="43544022" type="application/octet-stream" sparkle:edSignature="ielAeI0QxUw/Yglx76Py1UQnbuYIlePuXyap2WH9MIQ2QcAQB1jof5UlUDhJR0sg3ksL8SImmJ+JLmUFXdG5AA=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.10.0/RunHuddle-0.10.0-arm64.dmg" length="42963238" type="application/octet-stream" sparkle:edSignature="inAuxgM4yeQGNQ7u3w//vpFnub0aOOKp6I6Y/k0kn6HggVpt/0w4tFCP6XQZ/aGjJ+AZOUMmYkQYgaLy14GqDw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: +eaHaA1aim7GhyUWO7M2gKY1uSxL1yDOawcKvQRKw8U4rTrjGmVURTEH7qwVCYFI8L+KwPcNnsqaxKGSvtSuBg==
-length: 1993
+edSignature: spktJ6FOvuBbhYE2gUVCtCUIvqB0HwvjsAAXAHfDK+9DKUdusfPzMxtCKbOOIQuAnj0vt2saUpnF+8CgymwdBw==
+length: 2734
 -->
