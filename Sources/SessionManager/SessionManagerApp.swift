@@ -11,7 +11,18 @@ import SessionCore
             ContentView().environmentObject(model).environmentObject(updater)
                 .frame(minWidth: 1000, minHeight: 640)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+                .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        HStack(spacing: 8) {
+                            Image(nsImage: RunHuddleIcon.image(size: 24, appTile: true))
+                                .accessibilityHidden(true)
+                            Text("RunHuddle").font(.headline)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1320, height: 820)
         .commands {
             CommandGroup(after: .appInfo) { UpdateButton().environmentObject(updater) }
