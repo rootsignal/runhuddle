@@ -14,7 +14,7 @@ import SessionCore
                     switcher.start(model: model, loginItem: loginItem, updater: updater)
                     model.onTerminalOpened = { [weak switcher] in switcher?.terminalDidOpen() }
                 }
-                .frame(minWidth: 1000, minHeight: 640)
+                .frame(minWidth: 900, minHeight: 640)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
                 .toolbar {
                     ToolbarItem(placement: .navigation) {
@@ -28,6 +28,7 @@ import SessionCore
                 }
         }
         .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
         .defaultSize(width: 1320, height: 820)
         .commands {
             CommandGroup(after: .appInfo) { UpdateButton().environmentObject(updater) }
@@ -136,7 +137,7 @@ struct ContentView: View {
                     .help(Bundle.main.bundlePath)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(.bar)
             }
-            .navigationSplitViewColumnWidth(min: 205, ideal: 220, max: 260)
+            .navigationSplitViewColumnWidth(min: 205, ideal: 220, max: 240)
         } detail: {
             VStack(spacing: 0) {
                 HStack {
@@ -246,7 +247,7 @@ struct ContentView: View {
                             }
                         }
                         }
-                    }.frame(minWidth: 340, idealWidth: 500).background(HuddleStyle.canvas)
+                    }.frame(minWidth: 300, idealWidth: 500, maxWidth: .infinity).background(HuddleStyle.canvas)
                     if !isNow || showDetails {
                         VStack(spacing: 0) {
                             if isNow {
@@ -259,7 +260,7 @@ struct ContentView: View {
                             }
                             if let row = model.selected { SessionDetail(row: row).id(row.id) }
                             else { ContentUnavailableView("Choose a session", systemImage: "rectangle.stack", description: Text("Review its status, resume work, or prepare a handoff.")) }
-                        }.frame(minWidth: 380, idealWidth: 440, maxWidth: isNow ? 520 : .infinity, maxHeight: .infinity).background(HuddleStyle.panel)
+                        }.frame(minWidth: 340, idealWidth: 440, maxWidth: isNow ? 520 : .infinity, maxHeight: .infinity).background(HuddleStyle.panel)
                     }
                 }
                 Divider()
@@ -527,20 +528,9 @@ struct SessionDetail: View {
                 Text("Check the agent or locate its terminal before resuming. Recorded history is still available below.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            HStack {
-                Button { model.resume(row) } label: {
-                    HStack(spacing: 6) {
-                        if model.navigatingTerminal { ProgressView().controlSize(.small) }
-                        Text(model.navigatingTerminal ? model.terminalProgress : model.terminalActionTitle(for: row))
-                    }
-                }
-                    .buttonStyle(.borderedProminent).tint(HuddleStyle.action)
-                    .disabled(row.simulated || row.state == .archived || model.navigatingTerminal)
-                Button { NSWorkspace.shared.open(URL(fileURLWithPath: row.cwd)) } label: { Image(systemName: "folder") }
-                    .help("Open project folder").disabled(row.simulated || row.cwd.isEmpty)
-                Button { model.togglePin(row) } label: { Image(systemName: model.pinned.contains(row.id) ? "pin.fill" : "pin") }
-                    .help(model.pinned.contains(row.id) ? "Unpin session" : "Pin session")
-                cleanupMenu
+            ViewThatFits(in: .horizontal) {
+                HStack { terminalButton; secondaryActions }
+                VStack(alignment: .leading, spacing: 8) { terminalButton; secondaryActions }
             }
             Picker("Detail", selection: $tab) {
                 Text("Overview").tag("Overview")
@@ -656,6 +646,25 @@ struct SessionDetail: View {
         .confirmationDialog("Start a new \(row.provider) session with this handoff?", isPresented: $confirmFresh) {
             Button("Start fresh in Terminal") { Task { await model.fresh(row) } }
         } message: { Text("The edited handoff will be sent as the first prompt. Your original session stays available.") }
+    }
+    private var terminalButton: some View {
+                Button { model.resume(row) } label: {
+                    HStack(spacing: 6) {
+                        if model.navigatingTerminal { ProgressView().controlSize(.small) }
+                        Text(model.navigatingTerminal ? model.terminalProgress : model.terminalActionTitle(for: row))
+                    }
+                }
+                    .buttonStyle(.borderedProminent).tint(HuddleStyle.action)
+                    .disabled(row.simulated || row.state == .archived || model.navigatingTerminal)
+    }
+    private var secondaryActions: some View {
+        HStack {
+                Button { NSWorkspace.shared.open(URL(fileURLWithPath: row.cwd)) } label: { Image(systemName: "folder") }
+                    .help("Open project folder").disabled(row.simulated || row.cwd.isEmpty)
+                Button { model.togglePin(row) } label: { Image(systemName: model.pinned.contains(row.id) ? "pin.fill" : "pin") }
+                    .help(model.pinned.contains(row.id) ? "Unpin session" : "Pin session")
+                cleanupMenu
+        }
     }
     private var cleanupMenu: some View {
         Menu {
