@@ -47,7 +47,7 @@ struct SessionCardContent: View {
     let match: String?
     let pinned: Bool
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(HuddleStyle.accent)
                 Text(row.project).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
@@ -55,15 +55,16 @@ struct SessionCardContent: View {
                 Spacer(minLength: 8)
                 AgentBadge(provider: row.simulated ? "Claude · demo" : row.provider)
             }
-            Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary).lineLimit(1).fixedSize(horizontal: false, vertical: true)
             if let match {
                 Text(SessionPresentation.excerpt(match, limit: 240)).font(.system(size: 12))
                     .foregroundStyle(.secondary).lineLimit(3)
             } else if !summary.isEmpty {
-                Text(summary).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
+                Text(summary).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
             HStack(spacing: 8) {
-                SessionStatusBadge(state: row.state)
+                Label(row.state.title, systemImage: row.state.symbol)
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(row.state.color)
                 if let usage = row.contextUsage, let fraction = usage.fraction {
                     HStack(spacing: 5) {
                         Image(systemName: "circle.dotted").font(.system(size: 10))
@@ -83,10 +84,10 @@ struct SessionCardSurface: ViewModifier {
     let selected: Bool
     @ViewState private var hovered = false
     func body(content: Content) -> some View {
-        content.padding(14)
-            .background(selected ? HuddleStyle.accent.opacity(0.11) : hovered ? HuddleStyle.raised : HuddleStyle.panel,
+        content.padding(.horizontal, 12).padding(.vertical, 10)
+            .background(selected ? HuddleStyle.accent.opacity(0.11) : hovered ? HuddleStyle.raised : Color.clear,
                         in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? HuddleStyle.accent.opacity(0.65) : HuddleStyle.border, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? HuddleStyle.accent.opacity(0.35) : Color.clear, lineWidth: 1))
             .overlay(alignment: .leading) {
                 if selected { Capsule().fill(HuddleStyle.accent).frame(width: 3).padding(.vertical, 14) }
             }
@@ -110,8 +111,7 @@ struct RecordedMessageCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
             }.font(.caption).tint(HuddleStyle.accent)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(14)
-            .background(HuddleStyle.raised, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(HuddleStyle.border, lineWidth: 1))
+            .background(HuddleStyle.raised.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

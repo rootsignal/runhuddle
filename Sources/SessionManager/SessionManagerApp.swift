@@ -124,6 +124,9 @@ struct MenuContent: View {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) var openWindow
+    @ViewState private var showDetails = false
+    @ViewState private var showHistoryFilters = false
+    private var isNow: Bool { model.filter == "Now" && model.query.isEmpty }
     @ViewState private var confirmTerminalResume = false
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
@@ -145,14 +148,21 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 10)
                 ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(spacing: 2) {
                     filterButton("Now", symbol: "sparkle", color: .accentColor)
                     filterButton("Pinned", symbol: "pin", color: .secondary)
                     filterButton("All sessions", symbol: "rectangle.stack", color: .primary)
-                    ForEach(SessionState.allCases, id: \.self) { state in
+                    Divider().padding(.vertical, 8)
+                    ForEach([SessionState.needsInput, .working, .idle, .disconnected], id: \.self) { state in
                         filterButton(state.title, symbol: state.symbol, color: state.color)
                     }
+                    DisclosureGroup("History", isExpanded: $showHistoryFilters) {
+                        ForEach([SessionState.saved, .archived], id: \.self) { state in
+                            filterButton(state.title, symbol: state.symbol, color: state.color)
+                        }
+                    }.font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 9).padding(.top, 8)
                 }
                 Divider()
                 Text("TOOLS").font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
@@ -212,6 +222,12 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    if isNow {
+                        Button { showDetails.toggle() } label: {
+                            Image(systemName: "sidebar.right")
+                        }.help(showDetails ? "Hide session details" : "Show session details")
+                            .accessibilityLabel(showDetails ? "Hide session details" : "Show session details")
+                    }
                     if model.cleaning { ProgressView().controlSize(.small); Text(model.cleanupProgress).font(.caption).foregroundStyle(.secondary) }
                     Button { Task { await model.refresh(userInitiated: true) } } label: {
                         if model.manualRefreshing { ProgressView().controlSize(.small) }
@@ -219,6 +235,16 @@ struct ContentView: View {
                     }
                         .help("Refresh live sessions").disabled(model.manualRefreshing || model.cleaning)
                 }.padding(.horizontal, 24).padding(.vertical, 20)
+                if isNow && !model.bulkMode && !showDetails {
+                    NowAttentionPanel(
+                        sessions: model.visible,
+                        title: { model.displayName(for: $0) },
+                        navigating: model.navigatingTerminal,
+                        inspect: { row in model.selection = row.id; showDetails = true },
+                        resume: { row in model.resume(row) },
+                        showAll: { model.filter = "Needs input" }
+                    ).padding(.horizontal, 24).padding(.bottom, 16)
+                }
                 HSplitView {
                     VStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 10) {
@@ -295,6 +321,7 @@ struct ContentView: View {
                             let index = rows.firstIndex { $0.id == model.selection } ?? (direction == .down ? -1 : rows.count)
                             let next = min(max(index + (direction == .down ? 1 : -1), 0), rows.count - 1)
                             model.selection = rows[next].id
+                            showDetails = true
                             proxy.scrollTo(rows[next].id)
                         }
                         .overlay {
@@ -310,10 +337,20 @@ struct ContentView: View {
                         }
                         }
                     }.frame(minWidth: 340, idealWidth: 500).background(HuddleStyle.canvas)
-                    Group {
-                        if let row = model.selected { SessionDetail(row: row).id(row.id) }
-                        else { ContentUnavailableView("Choose a session", systemImage: "rectangle.stack", description: Text("Review its status, resume work, or prepare a handoff.")) }
-                    }.frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity).background(HuddleStyle.panel)
+                    if !isNow || showDetails {
+                        VStack(spacing: 0) {
+                            if isNow {
+                                HStack {
+                                    Text("SESSION DETAILS").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button { showDetails = false } label: { Image(systemName: "xmark") }
+                                        .buttonStyle(.plain).help("Close session details").accessibilityLabel("Close session details")
+                                }.padding(.horizontal, 24).padding(.top, 12)
+                            }
+                            if let row = model.selected { SessionDetail(row: row).id(row.id) }
+                            else { ContentUnavailableView("Choose a session", systemImage: "rectangle.stack", description: Text("Review its status, resume work, or prepare a handoff.")) }
+                        }.frame(minWidth: 380, idealWidth: 440, maxWidth: isNow ? 520 : .infinity, maxHeight: .infinity).background(HuddleStyle.panel)
+                    }
                 }
                 Divider()
                 HStack {
@@ -448,14 +485,14 @@ struct ContentView: View {
                         set: { if $0 { model.bulkSelection.insert(row.id) } else { model.bulkSelection.remove(row.id) } }
                     )).labelsHidden().toggleStyle(.checkbox).disabled(row.simulated || model.cleaning)
                 }
-                Button { model.selection = row.id; searchFocused = false; listFocused = true } label: {
+                Button { model.selection = row.id; showDetails = true; searchFocused = false; listFocused = true } label: {
                     SessionRow(row: row).contentShape(Rectangle())
                 }.buttonStyle(.plain)
                     .accessibilityAddTraits(model.selection == row.id ? .isSelected : [])
             }.modifier(SessionCardSurface(selected: model.selection == row.id))
-                .onTapGesture { model.selection = row.id; searchFocused = false; listFocused = true }
+                .onTapGesture { model.selection = row.id; showDetails = true; searchFocused = false; listFocused = true }
                 .listRowSeparator(.hidden).listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 14, bottom: 4, trailing: 14))
+                .listRowInsets(EdgeInsets(top: 2, leading: 14, bottom: 2, trailing: 14))
                 .id(row.id).contextMenu {
                 Button(model.pinned.contains(row.id) ? "Unpin session" : "Pin session") { model.togglePin(row) }
                 Button("Rename…") { model.beginRename(row) }
@@ -470,7 +507,7 @@ struct ContentView: View {
         if model.saveDisplayName(model.renameText, for: row) { model.renameSession = nil }
     }
     private func filterButton(_ title: String, symbol: String, color: Color) -> some View {
-        Button { model.query = ""; model.filter = title; searchFocused = false; listFocused = true } label: {
+        Button { model.query = ""; model.filter = title; showDetails = false; searchFocused = false; listFocused = true } label: {
             HStack {
                 Image(systemName: symbol).foregroundStyle(color).frame(width: 18)
                 Text(title).font(.system(size: 13, weight: model.filter == title ? .semibold : .medium))
@@ -478,7 +515,7 @@ struct ContentView: View {
                 Text("\(model.count(for: title))")
                     .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 5))
+
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .padding(9)
                 .contentShape(Rectangle())
@@ -544,7 +581,7 @@ struct SessionDetail: View {
             Picker("Detail", selection: $tab) {
                 Text("Overview").tag("Overview")
                 Text("Handoff").tag("Handoff")
-            }.pickerStyle(.segmented)
+            }.pickerStyle(.segmented).labelsHidden()
             if tab == "Overview" {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
@@ -571,8 +608,13 @@ struct SessionDetail: View {
                             if (context.sessionUpdated ?? 0) < row.updated {
                                 Text("New session activity since this snapshot.").font(.caption).foregroundStyle(.secondary)
                             }
-                            activityField("LATEST REQUEST", context.latestRequest ?? "No recent request available.")
-                            activityField("AGENT'S LATEST RESPONSE", context.latestResponse ?? "No recent response available.")
+                            activityField("LATEST RESPONSE", context.latestResponse ?? "No recent response available.")
+                            DisclosureGroup("Latest request") {
+                                Text(HuddleStyle.inline(context.latestRequest ?? "No recent request available."))
+                                    .font(.callout).textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                            }.font(.callout)
+
                         }
                         DisclosureGroup("Your notes") {
                             VStack(alignment: .leading, spacing: 12) {
