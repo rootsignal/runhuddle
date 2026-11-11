@@ -198,7 +198,7 @@ def snapshot():
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=data.get('reason', '') if state != 'saved' else 'Saved session; live activity is not confirmed.',
                          updated=data.get('updated', 0), simulated=False,
-                         terminalTTY=(data.get('identity') or {}).get('tty') if state not in ('saved', 'disconnected') else None))
+                         agentPID=(data.get('identity') or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(data.get('identity') or {}).get('tty') if state not in ('saved', 'disconnected') else None))
     return rows
 
 

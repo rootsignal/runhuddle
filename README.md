@@ -38,6 +38,8 @@ Requires macOS 14 or newer. The current package is for Apple Silicon; Intel buil
 
 Click the owl in the menu bar, or press **Control–Option–Space**, to open the session switcher above your current app. Search active sessions, use **↑ / ↓** and **Return** to switch to a terminal, or press **Escape** to dismiss it. Change or disable the global shortcut in **RunHuddle → Settings… → Session switcher** (also available from the popover’s gear menu). The full window remains available for saved sessions, history, and handoffs. Ambiguous terminal matches still ask you to choose.
 
+RunHuddle watches recognized terminal agent processes and verified Claude/Copilot session processes for exits. Closing a terminal triggers a provider status check and short follow-up checks while the agent detects the disconnect. Status is confirmed by the agent; background/shared sessions are not marked closed solely because a terminal process exited. Agent events and the 30-second fallback remain available when a process cannot be identified.
+
 Your agent CLIs and accounts are installed separately. No Python installation, shell changes, or source checkout are needed to run the app. View connection status anytime from **Connections…** in the menu bar. Install the app at its permanent location before enabling hooks; after moving the app, reconnect in Connections.
 
 Apple notarization tickets are attached to release installers. No Gatekeeper workaround is needed.

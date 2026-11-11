@@ -120,6 +120,9 @@ struct CopilotTrackingStatus: Decodable {
     private var timer: Task<Void, Never>?
     private var hookWatcher: HookEventWatcher?
     private var codexObserver: CodexEventObserver?
+    private var processWatcher: AgentProcessWatcher?
+    private var exitRefreshTask: Task<Void, Never>?
+    private var exitedProviders = Set<String>()
     private var eventRefreshTask: Task<Void, Never>?
     private var pendingProviders = Set<String>()
     private var refreshingProviders = Set<String>()
@@ -186,12 +189,50 @@ struct CopilotTrackingStatus: Decodable {
         hookWatcher?.start()
         codexObserver = CodexEventObserver { [weak self] in self?.queueRefresh(["Codex"]) }
         codexObserver?.start()
+        processWatcher = AgentProcessWatcher { [weak self] provider in self?.processExited(provider) }
         terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
+                self?.processWatcher?.stop(); self?.exitRefreshTask?.cancel()
                 self?.codexObserver?.stop(); self?.hookWatcher?.stop()
                 self?.eventRefreshTask?.cancel(); self?.timer?.cancel()
             }
         }
+    }
+
+    private func processExited(_ provider: String) {
+        exitedProviders.insert(provider)
+        queueRefresh([provider])
+        exitRefreshTask?.cancel()
+        // The shared agent server may take a moment to notice its client vanished.
+        // Coalesce closed tabs, then reconcile again without increasing idle polling.
+        exitRefreshTask = Task { [weak self] in
+            for delay in [1, 3, 6] {
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                guard let self else { return }
+                self.queueRefresh(self.exitedProviders)
+            }
+            self?.exitedProviders.removeAll()
+            self?.exitRefreshTask = nil
+        }
+    }
+
+    private func updateProcessWatches() async {
+        let discovered = await Task.detached { () -> [Int32: String]? in
+            let process = Process(), output = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/bin/ps")
+            process.arguments = ["-axo", "pid=,tty=,comm="]
+            process.standardOutput = output; process.standardError = FileHandle.nullDevice
+            do { try process.run() } catch { return nil }
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return AgentProcessWatcher.terminalProcesses(String(decoding: data, as: UTF8.self))
+        }.value
+        guard var processes = discovered else { return }
+        for row in sessions where !row.simulated && [.idle, .working, .needsInput].contains(row.state) {
+            if let pid = row.agentPID, pid > 1 { processes[pid] = row.provider }
+        }
+        processWatcher?.update(processes)
     }
 
     private func queueRefresh(_ providers: Set<String>) {
@@ -336,6 +377,7 @@ struct CopilotTrackingStatus: Decodable {
             if connectedProviders.contains(tool) { return "\(tool) connected · \(fetched.filter { $0.provider == tool }.count) sessions" }
             return "\(tool) not connected"
         }.joined(separator: " · ")
+        await updateProcessWatches()
         await ensureCopilotTracking()
         await repairClaudeTracking()
         lastRefresh = Date()
