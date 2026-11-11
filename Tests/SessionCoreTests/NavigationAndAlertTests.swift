@@ -2,6 +2,26 @@ import XCTest
 @testable import SessionCore
 
 final class NavigationAndAlertTests: XCTestCase {
+    func testCodexActionRequiredTitleMatchesUniquely() {
+        let session = Session(provider: "Codex", sessionID: "one", title: "Investigate AI session tracker MVP",
+                              cwd: "/work/agent-session-manager", state: .needsInput)
+        let target = TerminalTarget(app: "Terminal", window: "1", identity: "/dev/ttys001",
+                                    title: "[ . ] Action Required | Investigate AI session tracker MVP | agent-session-manager")
+        XCTAssertEqual(TerminalTarget.uniqueMatch(for: session, sessions: [session], targets: [target]), target)
+        XCTAssertEqual(target.matchRank(for: session), 1)
+        XCTAssertNil(TerminalTarget.uniqueMatch(for: session, sessions: [session], targets: [target, target]))
+        var duplicate = session; duplicate.sessionID = "two"
+        XCTAssertNil(TerminalTarget.uniqueMatch(for: session, sessions: [session, duplicate], targets: [target]))
+        var otherProvider = session; otherProvider.provider = "Claude"
+        XCTAssertFalse(target.matches(otherProvider))
+        var inactive = session; inactive.state = .saved
+        XCTAssertFalse(target.matches(inactive))
+        let wrongFolder = TerminalTarget(app: "Ghostty", window: "2", identity: "pane", title: target.title, cwd: "/elsewhere/project")
+        XCTAssertFalse(wrongFolder.matches(session))
+        let unrelated = TerminalTarget(app: "Terminal", window: "3", identity: "tty", title: "[ . ] Action Required | Different task | agent-session-manager")
+        XCTAssertFalse(unrelated.matches(session))
+    }
+
     func row(_ state: SessionState) -> Session {
         Session(provider: "Codex", sessionID: "id", title: "Implement feature", cwd: "/work/repo", state: state)
     }

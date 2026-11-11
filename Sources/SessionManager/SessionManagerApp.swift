@@ -37,11 +37,12 @@ import SessionCore
         } label: {
             HStack(spacing: 4) {
                 Image(nsImage: RunHuddleIcon.image())
-                if model.navigatingTerminal { Text("…") }
-                else if model.attentionCount > 0 { Text("\(model.attentionCount)") }
+                if let badge = RunHuddleIcon.attentionBadge(count: model.attentionCount) {
+                    Image(nsImage: badge)
+                } else if model.navigatingTerminal { Text("…") }
             }
-            .accessibilityLabel(model.navigatingTerminal ? model.terminalProgress : "RunHuddle, \(model.attentionCount) sessions need input")
-            .help(model.navigatingTerminal ? model.terminalProgress : "RunHuddle")
+            .accessibilityLabel("RunHuddle, \(model.attentionCount) sessions need input" + (model.navigatingTerminal ? ", " + model.terminalProgress : ""))
+            .help(model.navigatingTerminal ? model.terminalProgress : "RunHuddle · \(model.attentionCount) need input")
         }
     }
 }
@@ -54,6 +55,7 @@ struct MenuContent: View {
 
     var body: some View {
         Text(menu.summary)
+        Text("\(menu.needsInput.count + menu.working.count + menu.idle.count) active sessions")
         if model.navigatingTerminal { Text(model.terminalProgress) }
         if model.connectionNeedsAttention {
             Text("Some agents are unavailable — showing last known sessions")

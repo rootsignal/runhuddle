@@ -22,7 +22,15 @@ public struct TerminalTarget: Identifiable, Hashable {
         let folder = URL(fileURLWithPath: row.cwd).lastPathComponent
         guard !row.title.isEmpty, !folder.isEmpty else { return false }
         if !cwd.isEmpty && URL(fileURLWithPath: cwd).standardized.path != URL(fileURLWithPath: row.cwd).standardized.path { return false }
-        return title == row.title + " | " + folder || (!cwd.isEmpty && title == row.title)
+        var candidates = [title]
+        // Codex decorates its terminal title while waiting for input. Strip only
+        // the observed status prefix, never arbitrary text or the project suffix.
+        if row.provider == "Codex", row.state == .needsInput {
+            candidates.append(title.replacingOccurrences(
+                of: #"^\[\s*\.\s*\] Action Required \| "#,
+                with: "", options: .regularExpression))
+        }
+        return candidates.contains { $0 == row.title + " | " + folder || (!cwd.isEmpty && $0 == row.title) }
     }
     public func matchRank(for row: Session) -> Int {
         if app == "Terminal", let tty = row.terminalTTY, !tty.isEmpty,
