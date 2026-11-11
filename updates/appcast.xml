@@ -6,30 +6,21 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.11.3</title>
-            <pubDate>Tue, 10 Nov 2026 21:22:59 -0600</pubDate>
-            <sparkle:version>33</sparkle:version>
-            <sparkle:shortVersionString>0.11.3</sparkle:shortVersionString>
+            <title>0.11.4</title>
+            <pubDate>Tue, 10 Nov 2026 21:29:14 -0600</pubDate>
+            <sparkle:version>34</sparkle:version>
+            <sparkle:shortVersionString>0.11.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.3 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.4 preview
 
-Bring useful context into view without scrolling past conversation excerpts.
-
-- Compact session header and terminal actions.
-- Branch and changed-file count stay above the activity scroll area, including while viewing Handoff.
-- Worktree type and shared-state label remain visible; expand for path, check time, and explanation.
-- Needs input requests lead the Overview activity area.
-- Latest response previews are limited to three lines; full messages remain expandable.
-- Notes and technical details remain collapsed. Shorter Now heading and tighter activity metadata reduce wasted space.
-
-Includes the responsive workspace layout from 0.11.2. Verified by compilation and offscreen renders of the production layout and repository/response components at wide and narrow widths. Release validation covers the full test suite, standalone packaging, updater verification, and Apple notarization.
+Hide the Now attention banner when no sessions in the current view need input. Its padding disappears too, moving the session list upward. The banner returns when a visible session needs attention; session counts remain in the sidebar.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.3/RunHuddle-0.11.3-arm64.dmg" length="43208089" type="application/octet-stream" sparkle:edSignature="CWHks12GG1oPjWDxISaR0lZTmbKGzqfiR1HPyo/o1B4NReR0BL2DkHpwT2TCin6SIvtZ79Ev0JX5dvQIjCsxCg=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.4/RunHuddle-0.11.4-arm64.dmg" length="43208288" type="application/octet-stream" sparkle:edSignature="zGqnWBBIwkQsJRHD21fB2MEdvtMMs5qFEG32TvJa46yBkIeui60lYOmN9R9oFA6ooToG2SFYmh7veLw9HumZCA=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: ndcd4ubzMtpx+Nr4pNhlzV9+nTHdqBARM85o9ahPfM370ZZMwUx9wljBVwaBtlPYffXasC+AHkUvYeB8IVNQBA==
-length: 2129
+edSignature: 5QCFEuCx4UCcE4Z/ulaBxAi84xSb0WN0IgKtWSPIAtq9mSJs0CCnqd9po+lQo/P3NNr2RbqzbmmX1BQ/LmRyBA==
+length: 1471
 -->
