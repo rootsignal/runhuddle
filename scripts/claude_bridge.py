@@ -376,7 +376,7 @@ def repair_hooks():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['snapshot', 'history', 'hook', 'install-hooks', 'repair-hooks'])
+    parser.add_argument('command', choices=['snapshot', 'history', 'handoff-context', 'hook', 'install-hooks', 'repair-hooks'])
     parser.add_argument('argument', nargs='?')
     args = parser.parse_args()
     if args.command == 'hook':
@@ -396,7 +396,7 @@ def main():
         if path is None:
             raise ValueError('Claude transcript is not available yet.')
         _, messages = transcript(path)
-        print(json.dumps({'text': 'Recent recorded messages (may be incomplete):\n\n' + '\n\n'.join(messages[-12:]),
+        print(json.dumps({'text': 'Recent recorded messages (may be incomplete):\n\n' + '\n\n'.join((messages[:4] + ['[Intervening messages omitted]'] + messages[-80:]) if args.command == 'handoff-context' and len(messages) > 84 else messages if args.command == 'handoff-context' else messages[-12:]),
                           'latestRequest': next((m[6:] for m in reversed(messages) if m.startswith('User: ')), None),
                           'latestResponse': next((m[11:] for m in reversed(messages) if m.startswith('Assistant: ')), None)}))
 

@@ -17,7 +17,7 @@ enum Bridge {
         return try await Task.detached {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: python)
-            let script = provider == "LocalCleanup" ? "local_cleanup.py" : provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : provider == "Claude" ? "claude_bridge.py" : "codex_bridge.py"
+            let script = provider == "LocalCleanup" ? "local_cleanup.py" : provider == "HandoffAI" ? "handoff_ai.py" : provider == "Search" ? "history_search.py" : provider == "Copilot" ? "copilot_bridge.py" : provider == "Claude" ? "claude_bridge.py" : "codex_bridge.py"
             process.arguments = ["-E", "-s", "-B", root + "/" + script] + arguments
             process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
             let output = Pipe(), errors = Pipe()
@@ -85,6 +85,14 @@ struct CopilotTrackingStatus: Decodable {
     @Published var renameText = ""
     @Published var renameError: String?
     @Published var drafts: [String: String] = [:]
+    @Published var handoffs: [String: GeneratedHandoff] = [:]
+    @Published var handoffCandidates: [String: GeneratedHandoff] = [:]
+    @Published var handoffBackups: [String: String] = [:]
+    @Published var handoffGenerating: Set<String> = []
+    @Published var handoffErrors: [String: String] = [:]
+    @Published var handoffAIProvider: String = UserDefaults.standard.string(forKey: "handoffAIProvider") ?? "Codex" {
+        didSet { UserDefaults.standard.set(handoffAIProvider, forKey: "handoffAIProvider") }
+    }
     @Published var historyLoading: Set<String> = []
     @Published var contexts: [String: HandoffContext] = [:]
     @Published var historyErrors: [String: String] = [:]
@@ -133,6 +141,8 @@ struct CopilotTrackingStatus: Decodable {
             displayNames = try store?.load([String: String].self, key: "displayNames") ?? [:]
             drafts = try store?.load([String: String].self, key: "drafts") ?? [:]
             contexts = try store?.load([String: HandoffContext].self, key: "handoffContexts") ?? [:]
+            handoffs = try store?.load([String: GeneratedHandoff].self, key: "generatedHandoffs") ?? [:]
+            handoffBackups = try store?.load([String: String].self, key: "handoffBackups") ?? [:]
             selection = try store?.load(String.self, key: "selection")
         } catch { self.error = "Local storage: \(error.localizedDescription)" }
         attentionDelegate.onSelect = { [weak self] id, goToTerminal in
@@ -492,10 +502,14 @@ struct CopilotTrackingStatus: Decodable {
                     briefs.removeValue(forKey: id)
                     displayNames.removeValue(forKey: id)
                     drafts.removeValue(forKey: id)
+                    handoffs.removeValue(forKey: id); handoffBackups.removeValue(forKey: id)
+                    handoffCandidates.removeValue(forKey: id); handoffErrors.removeValue(forKey: id)
                     contexts.removeValue(forKey: id)
                     historyErrors.removeValue(forKey: id)
                 }
                 try store?.save(contexts, key: "handoffContexts")
+                try store?.save(handoffs, key: "generatedHandoffs")
+                try store?.save(handoffBackups, key: "handoffBackups")
                 try store?.save(displayNames, key: "displayNames")
                 try store?.save(briefs, key: "sessionBriefs")
             }
@@ -627,17 +641,97 @@ struct CopilotTrackingStatus: Decodable {
             briefs.removeValue(forKey: id)
             displayNames.removeValue(forKey: id)
             drafts.removeValue(forKey: id)
+            handoffs.removeValue(forKey: id); handoffBackups.removeValue(forKey: id)
+            handoffCandidates.removeValue(forKey: id); handoffErrors.removeValue(forKey: id)
             contexts.removeValue(forKey: id)
             historyErrors.removeValue(forKey: id)
             historyMatches.removeValue(forKey: id)
         }
         try store?.save(contexts, key: "handoffContexts")
+        try store?.save(handoffs, key: "generatedHandoffs")
+        try store?.save(handoffBackups, key: "handoffBackups")
         try store?.save(displayNames, key: "displayNames")
         try store?.save(briefs, key: "sessionBriefs")
         try store?.save(drafts, key: "drafts")
     }
 
-    func draft(for row: Session) -> String { drafts[row.id] ?? row.handoff }
+    func draft(for row: Session) -> String { drafts[row.id] ?? handoffs[row.id]?.text ?? "" }
+    var handoffProviders: [String] {
+        ["Codex", "Claude", "Copilot"].filter { provider in
+            executable(for: Session(provider: provider, sessionID: "", title: "", cwd: "", state: .saved)) != nil
+        }
+    }
+    func handoffFingerprint(_ row: Session) -> String {
+        GeneratedHandoff.fingerprint(context: contexts[row.id]?.text ?? "", purpose: briefs[row.id]?.purpose ?? "", nextStep: briefs[row.id]?.nextStep ?? "")
+    }
+    func handoffIsStale(_ row: Session) -> Bool {
+        handoffs[row.id]?.isStale(sessionUpdated: row.updated, fingerprint: handoffFingerprint(row)) ?? false
+    }
+    func generateHandoff(_ row: Session) async {
+        guard !row.simulated, !handoffGenerating.contains(row.id) else { return }
+        let provider = handoffAIProvider
+        let generator = Session(provider: provider, sessionID: "", title: "", cwd: "", state: .saved)
+        guard let executable = executable(for: generator) else {
+            handoffErrors[row.id] = "Install and sign into the selected AI CLI, or choose another provider."; return
+        }
+        handoffGenerating.insert(row.id); handoffErrors.removeValue(forKey: row.id)
+        defer { handoffGenerating.remove(row.id) }
+        do {
+            await appendHistory(row)
+            if let failure = historyErrors[row.id] { throw NSError(domain: "Handoff", code: 1, userInfo: [NSLocalizedDescriptionKey: failure]) }
+            let sourceData = try await Bridge.run(["handoff-context", row.sessionID], provider: row.provider)
+            struct Source: Decodable { let text: String }
+            let source = try JSONDecoder().decode(Source.self, from: sourceData)
+            let fingerprint = handoffFingerprint(row)
+            let existing = draft(for: row)
+            let payload: [String: String] = ["provider": provider, "executable": executable,
+                "sourceProvider": row.provider, "sessionID": row.sessionID, "sessionState": row.state.title,
+                "title": displayName(for: row), "project": row.cwd,
+                "purpose": briefs[row.id]?.purpose ?? "", "nextStep": briefs[row.id]?.nextStep ?? "",
+                "existingHandoff": existing, "history": "Original recorded objective: " + row.preview + "\n\n" + source.text]
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("runhuddle-handoff-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let input = folder.appendingPathComponent("input.json")
+            try JSONEncoder().encode(payload).write(to: input)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
+            let result = try await Bridge.run([input.path], provider: "HandoffAI")
+            struct Response: Decodable { let text: String; let provider: String }
+            let response = try JSONDecoder().decode(Response.self, from: result)
+            guard sessions.contains(where: { $0.id == row.id }) else { return }
+            let generated = GeneratedHandoff(text: response.text, provider: response.provider, sessionUpdated: row.updated, sourceFingerprint: fingerprint)
+            handoffCandidates[row.id] = generated
+            // Updates to edited drafts are proposed for review; typing during generation is preserved.
+            if draft(for: row).isEmpty || (draft(for: row) == existing && handoffs[row.id]?.text == existing) {
+                acceptHandoff(row)
+            }
+        } catch { handoffErrors[row.id] = "Could not generate handoff: " + error.localizedDescription }
+    }
+    func acceptHandoff(_ row: Session) {
+        guard let candidate = handoffCandidates[row.id] else { return }
+        let previous = draft(for: row)
+        var updated = handoffs; updated[row.id] = candidate
+        var backups = handoffBackups
+        if !previous.isEmpty { backups[row.id] = previous }
+        do {
+            guard let store else { throw NSError(domain: "Handoff", code: 1, userInfo: [NSLocalizedDescriptionKey: "Local storage is unavailable"]) }
+            var updatedDrafts = drafts; updatedDrafts[row.id] = candidate.text
+            try store.transaction {
+                try store.save(updated, key: "generatedHandoffs")
+                try store.save(backups, key: "handoffBackups")
+                try store.save(updatedDrafts, key: "drafts")
+            }
+            handoffs = updated; handoffBackups = backups; drafts = updatedDrafts
+            handoffCandidates.removeValue(forKey: row.id)
+        } catch { handoffErrors[row.id] = "Could not save generated handoff: " + error.localizedDescription }
+    }
+    func restoreHandoff(_ row: Session) {
+        guard let previous = handoffBackups[row.id] else { return }
+        handoffBackups[row.id] = draft(for: row)
+        setDraft(previous, for: row.id)
+        do { try store?.save(handoffBackups, key: "handoffBackups") }
+        catch { handoffErrors[row.id] = error.localizedDescription }
+    }
     func seedDemo() {
         guard !sessions.contains(where: \.simulated) else { return }
         let root = NSHomeDirectory()
@@ -682,16 +776,20 @@ struct CopilotTrackingStatus: Decodable {
         historyTasks.removeValue(forKey: row.id)
     }
     func completeHandoff(_ row: Session) -> String {
-        var notes = draft(for: row)
+        var notes = "# Handoff: " + displayName(for: row) + "\n\nSource: \(row.provider) / \(row.sessionID)\nProject: \(row.cwd)\n"
+        if let generated = handoffs[row.id] {
+            notes += "AI draft generated: " + generated.generatedAt.ISO8601Format() + " with " + generated.provider + "\n"
+        }
+        notes += "\n" + draft(for: row)
         if let brief = briefs[row.id], !brief.purpose.isEmpty || !brief.nextStep.isEmpty {
             notes += "\n\n## User-maintained session notes\n"
             if !brief.purpose.isEmpty { notes += "\nPurpose: " + brief.purpose + "\n" }
             if !brief.nextStep.isEmpty { notes += "\nNext step / blocker: " + brief.nextStep + "\n" }
         }
-        return HandoffContext.compose(notes: notes, context: contexts[row.id], failure: historyErrors[row.id])
+        if handoffIsStale(row) { notes += "\n\nNote: New activity or notes were recorded after this handoff was generated. Review the current project state before continuing." }
+        return notes
     }
     func copyHandoff(_ row: Session) async {
-        await appendHistory(row)
         copy(completeHandoff(row))
     }
 
@@ -702,7 +800,10 @@ struct CopilotTrackingStatus: Decodable {
         let candidates = row.provider == "Codex" ? ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
             : row.provider == "Copilot" ? ["/opt/homebrew/bin/copilot", "/usr/local/bin/copilot", NSHomeDirectory() + "/.local/bin/copilot"]
             : [NSHomeDirectory() + "/.local/bin/claude", "/opt/homebrew/bin/claude"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        let name = row.provider.lowercased()
+        let additional = [NSHomeDirectory() + "/.local/bin", NSHomeDirectory() + "/.npm-global/bin", "/usr/local/bin"]
+            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        return (candidates + additional.map { $0 + "/" + name }).first { FileManager.default.isExecutableFile(atPath: $0) }
     }
     func resume(_ row: Session, fromMenu: Bool = false) {
         guard !row.simulated, row.state != .archived, !navigatingTerminal else { return }
@@ -794,7 +895,6 @@ struct CopilotTrackingStatus: Decodable {
         }
     }
     func export(_ row: Session) async {
-        await appendHistory(row)
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "handoff.md"
         guard panel.runModal() == .OK, let url = panel.url else { return }

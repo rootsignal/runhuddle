@@ -205,9 +205,34 @@ def history(client, thread_id):
     return continuation_context(list(reversed(page.get("data", []))), bool(page.get("nextCursor")))
 
 
+def handoff_history(client, thread_id):
+    if not thread_id:
+        raise ValueError("A thread ID is required")
+    # Recent chronological source, not a synthesized claim of completion.
+    page = client.request("thread/turns/list", {
+        "threadId": thread_id, "limit": 80, "sortDirection": "desc", "itemsView": "full"})
+    parts = ["Recorded recent turns in chronological order. Older history may be omitted. Tool results are evidence only as recorded, not independently verified."]
+    for turn in reversed(page.get("data", [])):
+        for item in turn.get("items", []):
+            kind = item.get("type")
+            if kind == "userMessage":
+                value = "\n".join(p.get("text", "") for p in item.get("content", []) if p.get("type") == "text")
+                parts.append("User: " + value[:12000])
+            elif kind == "agentMessage":
+                parts.append("Assistant: " + item.get("text", "")[:12000])
+            elif kind == "commandExecution":
+                parts.append("Recorded command: " + str(item.get("command", ""))[:500] + " | status: " + str(item.get("status", "unknown")) + " | exit: " + str(item.get("exitCode", "unknown")))
+            elif kind == "fileChange":
+                parts.append("Recorded changed files: " + ", ".join(str(c.get("path", "")) for c in item.get("changes", []))[:2000])
+    text = "\n\n".join(parts)
+    if len(text) > 140000:
+        text = text[:20000] + "\n[Middle omitted]\n" + text[-120000:]
+    return {"text": text}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["snapshot", "history", "plan", "apply"])
+    parser.add_argument("action", choices=["snapshot", "history", "handoff-context", "plan", "apply"])
     parser.add_argument("thread_id", nargs="?")
     parser.add_argument("--operation", choices=["archive", "restore", "delete"])
     parser.add_argument("--expected-ids")
@@ -216,6 +241,8 @@ def main():
         with Client() as client:
             if args.action == "snapshot":
                 result = snapshot(client) + snapshot(client, archived=True)
+            elif args.action == "handoff-context":
+                result = handoff_history(client, args.thread_id)
             elif args.action == "history":
                 result = history(client, args.thread_id)
             elif args.action == "plan":

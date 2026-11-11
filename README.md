@@ -171,3 +171,11 @@ Copyright © 2026 Rootsignal. All rights reserved. No open-source license has be
 ### Live activity updates
 
 RunHuddle listens for Codex app-server status changes over a passive connection. Claude and Copilot hooks wake the app through local file notifications after saving meaningful activity changes. Events refresh only the affected provider and are combined during bursts. A quiet check every 30 seconds reconciles missed events and process exits; manual Refresh is always available. Monitoring never starts or resumes an agent session.
+
+### AI handoffs
+
+Open a session’s **Handoff** tab, choose an installed AI CLI, then click **Generate handoff**. Generation sends a bounded sample of recorded history and your notes to that provider using its existing CLI sign-in and plan allowance. It runs separately from your active session. There is no automatic AI generation on refresh.
+
+**Update handoff** creates a new brief from current recorded history. If you edited the previous handoff, review the proposed draft before replacing it; **Restore previous text** recovers the previous version. A notice identifies new activity or notes since generation. Generated summaries can still be incomplete or mistaken—review them before starting a fresh session. Recorded activity excerpts remain separate and are not an AI summary.
+
+Codex uses ephemeral non-interactive generation in a read-only sandbox; Claude uses print mode with tools disabled and session persistence off; Copilot uses piped input with an empty tool allowlist and removes its uniquely identified temporary helper history afterward. Login, account-policy, timeout, and provider errors leave the existing handoff intact.

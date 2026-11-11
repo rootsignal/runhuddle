@@ -16,6 +16,11 @@ public final class Store {
     private func execute(_ sql: String) throws {
         guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else { throw failure() }
     }
+    public func transaction(_ changes: () throws -> Void) throws {
+        try execute("BEGIN IMMEDIATE")
+        do { try changes(); try execute("COMMIT") }
+        catch { try? execute("ROLLBACK"); throw error }
+    }
     public func save<T: Encodable>(_ value: T, key: String) throws {
         let data = try JSONEncoder().encode(value)
         var statement: OpaquePointer?

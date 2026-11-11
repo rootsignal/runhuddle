@@ -594,34 +594,7 @@ struct SessionDetail: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                Text("Your notes · saved automatically. Recorded context updates separately below.")
-                    .font(.caption).foregroundStyle(.secondary)
-                TextEditor(text: Binding(get: { model.draft(for: row) }, set: { model.setDraft($0, for: row.id) }))
-                    .font(.system(size: 12, design: .monospaced)).border(.quaternary)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Recorded context").font(.headline)
-                    if let failure = model.historyErrors[row.id] {
-                        Text((model.contexts[row.id] == nil ? "Context unavailable. " : "Using cached context. ") + failure)
-                            .font(.caption).foregroundStyle(.orange).lineLimit(3)
-                    }
-                    if let context = model.contexts[row.id] {
-                        Text("Updated \(context.updated, style: .relative) ago").font(.caption).foregroundStyle(.secondary)
-                        ScrollView { Text(context.text).font(.system(size: 12, design: .monospaced))
-                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                            .frame(maxHeight: 160)
-                    } else {
-                        Text(row.simulated ? "Simulated session; no recorded context." : "Recorded context has not been loaded.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                HStack {
-                    Button(model.historyLoading.contains(row.id) ? "Loading…" : "Refresh recorded context") { Task { await model.appendHistory(row) } }
-                        .disabled(row.simulated || model.historyLoading.contains(row.id))
-                    Button("Copy") { Task { await model.copyHandoff(row) } }
-                    Button("Export…") { Task { await model.export(row) } }
-                }
-                Button("Start fresh with this handoff…") { confirmFresh = true }
-                    .disabled(row.simulated).buttonStyle(.borderedProminent)
+                HandoffEditor(row: row) { confirmFresh = true }
             }
             Spacer(minLength: 0)
         }.padding(24)
