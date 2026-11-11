@@ -45,7 +45,7 @@ For **tmux**, RunHuddle discovers panes on the default local server that are att
 
 ## Finding sessions
 
-Press **⌘F** to focus search. The search field finds session titles, projects, and recorded messages. Search defaults to **Everywhere**, including archived sessions across all agents and projects regardless of your sidebar filters. Archived matches retain their status label. Choose **Current view** beside the results to apply the selected view, agent, and project filters. Use **×**, **Escape**, or **Done** to clear the query and return to the selected view. Each new search starts with Everywhere. Choosing a sidebar view also clears the search; tool and project filters remain selected. Session cards use a subtle outline for selection and text-and-icon status badges in both light and dark appearances.
+Press **⌘F** to focus search. The search field finds session titles, projects, and recorded messages. Search defaults to **Everywhere**, including archived sessions regardless of your selected sidebar view. Tool and project filters still apply. Archived matches retain their status label. Choose **Current view** beside the results to also apply the selected sidebar view. Use **×**, **Escape**, or **Done** to clear the query and return to the selected view. Each new search starts with Everywhere. Choosing a sidebar view also clears the search; tool and project filters remain selected. Session cards use a subtle outline for selection and text-and-icon status badges in both light and dark appearances.
 
 ## Live activity updates
 
@@ -112,3 +112,5 @@ The in-app **Getting started** guide introduces agent connections, session state
 Reopen it any time through **Help → Getting started…** or **Settings → General → Open getting started guide…**. General settings also contains the startup checkbox. The guide only requests notification permission when you click **Enable notifications**; use Next or Skip guide to continue without enabling alerts.
 
 The **Help** menu links to this user guide, troubleshooting, and GitHub issues. Those detailed guides open in your browser and require an internet connection; the introductory guide is built into the app.
+
+Use **Filters** beside search to choose a tool or project. Active filters appear as removable chips above the session list. Click a chip’s × to remove it, or **Clear filters** to reset both. With no chips selected, all tools and projects are included. Tracking setup notices live beside Connections in the sidebar footer.

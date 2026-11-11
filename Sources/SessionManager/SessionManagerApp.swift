@@ -105,25 +105,6 @@ struct ContentView: View {
                         .padding(.horizontal, 9).padding(.top, 8)
                 }
                 Divider()
-                Text("TOOLS").font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
-                Picker("Provider", selection: $model.provider) {
-                    Text("All tools").tag("All tools")
-                    Text("Codex").tag("Codex")
-                    Text("Claude").tag("Claude")
-                    Text("Copilot").tag("Copilot")
-                }.labelsHidden()
-                Text("PROJECT").font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
-                Picker("Project", selection: $model.projectFilter) {
-                    Text("All projects").tag("All projects")
-                    ForEach(model.projectPaths, id: \.self) { path in
-                        Text(path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).tag(path).help(path)
-                    }
-                }.labelsHidden().help(model.projectFilter)
-                if model.claudeRepairNotice != nil || model.copilotConnectionNotice != nil {
-                    Button { model.showSetup = true } label: {
-                        Label("Tracking setup updated", systemImage: "info.circle")
-                    }.font(.caption)
-                }
                 #if DEBUG
                 DisclosureGroup("Demo sessions") {
                     Toggle("Show Claude demo", isOn: $model.showDemo)
@@ -146,6 +127,11 @@ struct ContentView: View {
                         Image(systemName: "chevron.right").font(.caption2)
                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.bordered).controlSize(.small).font(.caption)
+                if model.claudeRepairNotice != nil || model.copilotConnectionNotice != nil {
+                    Button { model.showSetup = true } label: {
+                        Label("Tracking setup updated", systemImage: "info.circle")
+                    }.font(.caption)
+                }
                 Label(model.connectionSummary, systemImage: model.connectionNeedsAttention ? "exclamationmark.circle" : "checkmark.circle")
                     .font(.caption2).foregroundStyle(model.connectionNeedsAttention ? Color.orange : .secondary)
                 Button {
@@ -183,6 +169,7 @@ struct ContentView: View {
                     }
                         .help("Refresh live sessions").disabled(model.manualRefreshing || model.cleaning)
                 }.padding(.horizontal, 20).padding(.vertical, 12)
+                SessionFilterChips()
                 if isNow && model.visible.contains(where: { $0.state == .needsInput }) {
                     NowAttentionPanel(
                         sessions: model.visible,
@@ -200,12 +187,12 @@ struct ContentView: View {
                                 Button("Done") { model.query = ""; searchFocused = false }
                                 Picker("Search scope", selection: $model.searchScope) {
                                     ForEach(SessionSearchScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                                }.labelsHidden().fixedSize().help("Everywhere includes archived sessions and ignores agent, project, and view filters")
+                                }.labelsHidden().fixedSize().help("Everywhere includes archived sessions; tool and project filters still apply")
                                 if model.searchingHistory { ProgressView().controlSize(.small) }
                                 Text(model.historySearchStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 Spacer(minLength: 0)
                             }.padding(.horizontal, 16).padding(.top, 8)
-                            Text(model.searchScope == .everywhere ? "All agents and projects · includes archived sessions" : "\(model.filter) · \(model.provider) · \(model.projectFilter == "All projects" ? "All projects" : URL(fileURLWithPath: model.projectFilter).lastPathComponent)")
+                            Text(model.searchScope == .everywhere ? "All session states · includes archived sessions · selected filters apply" : "\(model.filter) · \(model.provider) · \(model.projectFilter == "All projects" ? "All projects" : URL(fileURLWithPath: model.projectFilter).lastPathComponent)")
                                 .font(.caption2).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 8)
                         }
@@ -328,6 +315,7 @@ struct ContentView: View {
                     .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(searchFocused ? HuddleStyle.accent : .clear))
                     .help("Search sessions (⌘F)")
             }
+            ToolbarItem(placement: .primaryAction) { SessionFilterMenu() }
 
         }
         .focusedSceneValue(\.searchSessions, { searchFocused = true })

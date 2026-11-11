@@ -2,11 +2,14 @@ import XCTest
 @testable import SessionCore
 
 final class SessionSearchScopeTests: XCTestCase {
-    func testEverywhereIncludesAllStatesAndProvidersDespiteFilters() {
+    func testEverywhereIncludesAllStatesButRespectsExplicitFilters() {
         for provider in ["Codex", "Claude", "Copilot"] {
             for state in SessionState.allCases {
                 let row = Session(provider: provider, sessionID: "x", title: "Test", cwd: "/other", state: state)
-                XCTAssertTrue(SessionSearchScope.everywhere.includes(row, searching: true, filter: "Pinned", provider: "Different", project: "/selected", pinned: []))
+                XCTAssertTrue(SessionSearchScope.everywhere.includes(row, searching: true, filter: "Pinned", provider: "All tools", project: "All projects", pinned: []))
+                XCTAssertFalse(SessionSearchScope.everywhere.includes(row, searching: true, filter: "Now", provider: "Different", project: "All projects", pinned: []))
+                XCTAssertFalse(SessionSearchScope.everywhere.includes(row, searching: true, filter: "Now", provider: "All tools", project: "/selected", pinned: []))
+                XCTAssertTrue(SessionSearchScope.everywhere.includes(row, searching: true, filter: "Now", provider: provider, project: "/other", pinned: []))
             }
         }
     }

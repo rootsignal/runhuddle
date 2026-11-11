@@ -282,8 +282,8 @@ struct CopilotTrackingStatus: Decodable {
     private var matchingSessions: [Session] {
         sessions.filter {
             (!$0.simulated || showDemo) && matchesSearch($0)
-            && ((isSearching && searchScope == .everywhere) || ((provider == "All tools" || $0.provider == provider)
-            && (projectFilter == "All projects" || $0.cwd == projectFilter)))
+            && (provider == "All tools" || $0.provider == provider)
+            && (projectFilter == "All projects" || $0.cwd == projectFilter)
         }
     }
     var visible: [Session] {
