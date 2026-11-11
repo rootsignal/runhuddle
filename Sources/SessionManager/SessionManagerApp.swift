@@ -14,7 +14,7 @@ import SessionCore
                     switcher.start(model: model, loginItem: loginItem, updater: updater)
                     model.onTerminalOpened = { [weak switcher] in switcher?.terminalDidOpen() }
                 }
-                .frame(minWidth: 900, minHeight: 640)
+                .frame(minWidth: 760, minHeight: 640)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
                 .toolbar {
                     ToolbarItem(placement: .navigation) {
@@ -50,6 +50,7 @@ struct ContentView: View {
     @Environment(\.openWindow) var openWindow
     @Environment(\.openSettings) private var openSettings
     @ViewState private var showDetails = false
+    @ViewState private var sidebarVisible = true
     @ViewState private var showHistoryFilters = false
     private var isNow: Bool { model.filter == "Now" && model.query.isEmpty }
     @ViewState private var confirmTerminalResume = false
@@ -60,7 +61,7 @@ struct ContentView: View {
         Task { await model.prepareBulkCleanup(operation, rows: rows) }
     }
     var body: some View {
-        NavigationSplitView {
+        WorkspaceLayout(sidebarVisible: sidebarVisible) {
             // Keep the header outside the scroll view: sidebar scroll content can
             // extend beneath the unified title bar and its window controls.
             VStack(spacing: 0) {
@@ -137,7 +138,7 @@ struct ContentView: View {
                     .help(Bundle.main.bundlePath)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(.bar)
             }
-            .navigationSplitViewColumnWidth(min: 205, ideal: 220, max: 240)
+
         } detail: {
             VStack(spacing: 0) {
                 HStack {
@@ -147,7 +148,7 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if isNow {
+                    if model.selected != nil {
                         Button { showDetails.toggle() } label: {
                             Image(systemName: "sidebar.right")
                         }.help(showDetails ? "Hide session details" : "Show session details")
@@ -170,7 +171,7 @@ struct ContentView: View {
                         showAll: { model.filter = "Needs input" }
                     ).padding(.horizontal, 24).padding(.bottom, 10)
                 }
-                HSplitView {
+                SessionColumns(showDetails: showDetails) {
                     VStack(spacing: 0) {
                         if !model.query.isEmpty {
                             HStack(spacing: 8) {
@@ -247,21 +248,18 @@ struct ContentView: View {
                             }
                         }
                         }
-                    }.frame(minWidth: 300, idealWidth: 500, maxWidth: .infinity).background(HuddleStyle.canvas)
-                    if !isNow || showDetails {
+                    }.background(HuddleStyle.canvas)
+                } detail: {
                         VStack(spacing: 0) {
-                            if isNow {
-                                HStack {
+                            HStack {
                                     Text("SESSION DETAILS").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                                     Spacer()
                                     Button { showDetails = false } label: { Image(systemName: "xmark") }
                                         .buttonStyle(.plain).help("Close session details").accessibilityLabel("Close session details")
-                                }.padding(.horizontal, 24).padding(.top, 12)
-                            }
+                            }.padding(.horizontal, 24).padding(.top, 12)
                             if let row = model.selected { SessionDetail(row: row).id(row.id) }
                             else { ContentUnavailableView("Choose a session", systemImage: "rectangle.stack", description: Text("Review its status, resume work, or prepare a handoff.")) }
-                        }.frame(minWidth: 340, idealWidth: 440, maxWidth: isNow ? 520 : .infinity, maxHeight: .infinity).background(HuddleStyle.panel)
-                    }
+                        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(HuddleStyle.panel)
                 }
                 Divider()
                 HStack {
@@ -280,6 +278,11 @@ struct ContentView: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button { sidebarVisible.toggle() } label: { Image(systemName: "sidebar.left") }
+                    .help(sidebarVisible ? "Hide sidebar" : "Show sidebar")
+                    .accessibilityLabel(sidebarVisible ? "Hide sidebar" : "Show sidebar")
+            }
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)

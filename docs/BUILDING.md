@@ -46,3 +46,5 @@ See [source-build troubleshooting](TROUBLESHOOTING.md#source-build-errors).
 ## Releasing
 
 See [Building and publishing releases](RELEASING.md) for Developer ID signing, notarization, local release scripts, CI, and signed updates. Historical implementation and validation details live in [development notes](DEVELOPMENT.md).
+
+To review narrow-window behavior, run `bash scripts/render-workspace-resize.sh`. The offscreen fixture resizes the same production layout containers from wide to narrow and back, with representative fictional session content. PNGs are written to `/tmp/runhuddle-resize-previews` (or a directory passed as the first argument).

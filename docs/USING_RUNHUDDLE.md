@@ -86,3 +86,7 @@ See [development and integration notes](DEVELOPMENT.md) for implementation detai
 The Overview shows the current Git branch (or detached HEAD), main/linked worktree, worktree path, and changed-file count. Counts include staged, unstaged, and untracked files; a rename counts once. Ignored files are excluded. Submodule changes appear as a changed submodule entry, not a recursive file count.
 
 This is shared repository state, not changes attributed to the selected agent. It is read locally when the section opens; use its refresh button for a new snapshot. There is no background repository polling or GitHub request. Missing or inaccessible repositories show an unavailable message. PR and CI status are not included yet.
+
+## Window layout
+
+Columns resize automatically with the window. On narrow windows, opening session details replaces the list; use the close button in the details header to return. Hide or show the navigation sidebar with its toolbar button. Column dividers are automatically sized rather than draggable.
