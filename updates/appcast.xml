@@ -6,24 +6,25 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.13.2</title>
-            <pubDate>Wed, 11 Nov 2026 07:54:42 -0600</pubDate>
-            <sparkle:version>38</sparkle:version>
-            <sparkle:shortVersionString>0.13.2</sparkle:shortVersionString>
+            <title>0.13.3</title>
+            <pubDate>Wed, 11 Nov 2026 08:00:48 -0600</pubDate>
+            <sparkle:version>39</sparkle:version>
+            <sparkle:shortVersionString>0.13.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.13.2
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.13.3
 
-- Checking agent connections from Getting started now opens a sheet over the guide. Closing Connections returns to the same guide step.
-- Sidebar Connections and notification actions now use visible button styling and icons. Connection status and the version number remain informational text.
+- Moved Tool and Project filters beside search, with removable active-filter chips and Clear filters.
+- Everywhere search includes saved and archived states while respecting explicit tool and project selections. Current view additionally restricts results to the selected sidebar view.
+- Moved tracking setup notices beside Connections, keeping sidebar navigation focused on views.
 
-Validation: native build, full release tests, standalone packaging and updater checks. Live window interaction is not automatically tested.
+Validation: native build, search scope regression tests, full release suite, standalone packaging and updater checks.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.13.2/RunHuddle-0.13.2-arm64.dmg" length="45035234" type="application/octet-stream" sparkle:edSignature="oPHiJ6iJbCzUodIz1QT2tNvfIuxF7nPSlY4oV4nm5n+fGZFvzc/WpUXzxnHJGENXaJozDPbs64Cfas0bM180Cg=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.13.3/RunHuddle-0.13.3-arm64.dmg" length="44240369" type="application/octet-stream" sparkle:edSignature="y+uP5prQkND6NtMb/gCB14UB3nU9wbu7D77kDcvCQX5oToMekPtKp8dL7fDdXd/QqRLmp+zp9P3hiQxwIcJVDA=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: wcFWpHsvBIjlSRO3PYaX1Q/TPRHyWtkvrpOyygZZb1yjppcFw+moGWxLtU/hgti91w2H+RxHr8UeS5au1lh/CA==
-length: 1661
+edSignature: ZdDLjnZ1zJBeQymyj180nMSChthzHxWX+3Kn8S7Nh2sVP+Ap2h0lJkPnlkxXYf+qT1QqhrYgJAttJym8TCItCQ==
+length: 1728
 -->
