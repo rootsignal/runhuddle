@@ -212,8 +212,17 @@ struct ContentView: View {
                 }.padding(24)
                 HSplitView {
                     VStack(spacing: 0) {
-                        TextField("Search sessions, projects, or conversation history", text: $model.query)
-                            .textFieldStyle(.roundedBorder).padding(.horizontal, 16).padding(.bottom, 12)
+                        HStack(spacing: 8) {
+                            TextField("Search sessions, projects, or conversation history", text: $model.query)
+                                .textFieldStyle(.roundedBorder)
+                                .onExitCommand { model.query = "" }
+                            if !model.query.isEmpty {
+                                Button { model.query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                                    .help("Clear search (Escape)").accessibilityLabel("Clear search")
+                                Button("Back to Now") { model.query = ""; model.filter = "Now" }
+                            }
+                        }.padding(.horizontal, 16).padding(.bottom, 12)
                         if !model.query.isEmpty {
                             HStack(spacing: 6) {
                                 if model.searchingHistory { ProgressView().controlSize(.small) }
@@ -410,7 +419,7 @@ struct ContentView: View {
         if model.saveDisplayName(model.renameText, for: row) { model.renameSession = nil }
     }
     private func filterButton(_ title: String, symbol: String, color: Color) -> some View {
-        Button { model.filter = title } label: {
+        Button { model.query = ""; model.filter = title } label: {
             HStack {
                 Image(systemName: symbol).foregroundStyle(color).frame(width: 18)
                 Text(title)
