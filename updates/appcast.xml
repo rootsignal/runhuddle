@@ -6,27 +6,36 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.15.3</title>
-            <pubDate>Wed, 11 Nov 2026 09:15:39 -0600</pubDate>
-            <sparkle:version>45</sparkle:version>
-            <sparkle:shortVersionString>0.15.3</sparkle:shortVersionString>
+            <title>0.19.3</title>
+            <pubDate>Wed, 11 Nov 2026 12:02:52 -0600</pubDate>
+            <sparkle:version>62</sparkle:version>
+            <sparkle:shortVersionString>0.19.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.15.3
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.19.3 preview
 
-- Archived now shows transcript disk usage for the displayed sessions, alongside session and project counts.
-- Session details show primary transcript file size, allocated disk space, and measurement age for Codex, Claude Code, and Copilot.
-- Shared transcript files are counted once; unavailable files are reported explicitly. Measurements use file metadata without reading conversation contents.
+This preview brings the local conversation workspace and agent reply connections to the downloadable release.
 
-Storage figures exclude project files, attachments, agent indexes, and saved-work records. APFS blocks may be shared, so allocated space is not necessarily reclaimable space.
+- Read recent conversation messages and send follow-ups from Activity, with an expandable conversation view, saved drafts, image-path previews, a working indicator, and a Latest shortcut.
+- Slow upward scrolling pauses auto-follow immediately. Return sends; Shift-Return adds a line.
+- Codex replies queue into the connected session. Claude replies use a connected launch through RunHuddle and may require terminal consent.
+- Starting Copilot from RunHuddle installs its reply extension and enables experimental extension support for that launch. Reconnect with replies resumes the same conversation after gracefully closing a verified idle Copilot process.
+- New session supports detected Codex, Claude Code, and Copilot installations.
+- The first-run guide and Help menu explain reply setup, reconnecting, and terminal approvals for each agent.
+- Activity, Handoff, and Details tabs, larger disclosure targets, improved metadata, context rings, state icons, and clearer saved-work layouts.
+- Improved terminal matching for sessions waiting on input.
 
-Validation: Swift and Python tests, native build, standalone packaging, and updater checks.
+## Preview limitations
+
+Questions and approvals remain in the agent’s terminal. Copilot replies use experimental SDK extensions; automated checks pass, but live end-to-end reply delivery has not yet been confirmed on the current Copilot setup. Claude channels can be restricted by organization policy. Local image references must exist on the Mac running the session; they are not synced between Macs.
+
+The download is for Apple Silicon Macs running macOS 14 or newer. RunHuddle includes its Python runtime; install and sign in to the coding agents separately.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.15.3/RunHuddle-0.15.3-arm64.dmg" length="43691128" type="application/octet-stream" sparkle:edSignature="E4pYNC7Ys249TmUa7mWsVJaEMCPooIxmjlwtCzY0XsM0oMgK9M3oT/OQuQFNuTMGJvqFt5H5IfteBm3D2Rd3BA=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.19.3/RunHuddle-0.19.3-arm64.dmg" length="43779103" type="application/octet-stream" sparkle:edSignature="DSUMF/qX7hS1jX7S+Wegr48J8o65DZPQgvMYnYlmINj4Ox4vooFECXcEjjo9zvSloHxHglsCZeGJPV1BnOwiAQ=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: jKmleTdjCgHUv7wR/UBafz894Upcwry4pkTrXSWIbnO94vVHA5gjv+NmzeBRux9QKvWNoQGd18DMS60LyY+aCw==
-length: 1894
+edSignature: p2fzT+dOOaCAvG4nHMMgviR/Saa7Tw4Pgrf6/l6U/MX2/kEb22BS7sc02PKA0qVKUcEmgYCa+lMADLjc4UkTDw==
+length: 2962
 -->
