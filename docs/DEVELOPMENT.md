@@ -1,6 +1,8 @@
 # RunHuddle development notes
 
-Historical implementation notes and validation snapshots. For current installation steps and supported features, see [the README](../README.md).
+[Documentation](README.md) · [RunHuddle](../README.md)
+
+Historical implementation notes and validation snapshots. For current installation steps and supported features, see [Getting started](GETTING_STARTED.md) and [Agent connections](AGENT_CONNECTIONS.md).
 
 Native macOS session tracker with live Codex discovery and simulated Claude Code sessions. The first local development app is implemented; Claude live integration remains pending paid access and validation.
 

@@ -1,5 +1,7 @@
 # Release automation
 
+[Documentation](README.md) · [RunHuddle](../README.md)
+
 **Checks** runs Swift and Python tests, builds the standalone app, and verifies relocation, dependencies, hooks, and its signature on pushes to main and pull requests. It has no signing secrets.
 
 **Release** is manually triggered from main through GitHub Actions. It runs tests, imports a temporary signing identity, builds, verifies, submits the app and DMG to Apple, staples both tickets, and creates a **draft** GitHub release with the DMG and SHA-256 checksum. Review the draft before publishing. It never releases an unaccepted submission.
