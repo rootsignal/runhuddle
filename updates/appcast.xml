@@ -6,26 +6,24 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.13.1</title>
-            <pubDate>Wed, 11 Nov 2026 07:19:57 -0600</pubDate>
-            <sparkle:version>37</sparkle:version>
-            <sparkle:shortVersionString>0.13.1</sparkle:shortVersionString>
+            <title>0.13.2</title>
+            <pubDate>Wed, 11 Nov 2026 07:54:42 -0600</pubDate>
+            <sparkle:version>38</sparkle:version>
+            <sparkle:shortVersionString>0.13.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.13.1
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.13.2
 
-- Added a reusable four-step Getting started guide covering agent connections, notifications, terminal switching, shortcuts, handoffs, and Saved work.
-- Added a startup checkbox, with permanent access from Help and General settings even when automatic opening is disabled.
-- Added Help menu links to the user guide, troubleshooting, and GitHub issues.
-- Notification permission remains opt-in through the guide’s Enable notifications button.
+- Checking agent connections from Getting started now opens a sheet over the guide. Closing Connections returns to the same guide step.
+- Sidebar Connections and notification actions now use visible button styling and icons. Connection status and the version number remain informational text.
 
-Validation: native build and release test suite; offscreen guide checks in light and dark appearance. Live macOS permission prompts are not exercised automatically.
+Validation: native build, full release tests, standalone packaging and updater checks. Live window interaction is not automatically tested.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.13.1/RunHuddle-0.13.1-arm64.dmg" length="44148980" type="application/octet-stream" sparkle:edSignature="GYtSPz6Klg8K9pJ6TpTE5VZ0w4NDDSVPci3y5UBxhJbW/efOI2yTjkvUhBBHhAyDE7CVpHjpG9ZxOAlUMV4oCw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.13.2/RunHuddle-0.13.2-arm64.dmg" length="45035234" type="application/octet-stream" sparkle:edSignature="oPHiJ6iJbCzUodIz1QT2tNvfIuxF7nPSlY4oV4nm5n+fGZFvzc/WpUXzxnHJGENXaJozDPbs64Cfas0bM180Cg=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: VmB1hykttds8SWbeG+lBaYmwsZ1rlmxsULuppy9IjR64vFQqoXgEsvwmfxnu3llnkJKmkfESrRTrVEqgDfqFBw==
-length: 1837
+edSignature: wcFWpHsvBIjlSRO3PYaX1Q/TPRHyWtkvrpOyygZZb1yjppcFw+moGWxLtU/hgti91w2H+RxHr8UeS5au1lh/CA==
+length: 1661
 -->
