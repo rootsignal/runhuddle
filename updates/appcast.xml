@@ -6,27 +6,30 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.5.1</title>
-            <pubDate>Tue, 10 Nov 2026 15:09:30 -0600</pubDate>
-            <sparkle:version>10</sparkle:version>
-            <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
+            <title>0.6.0</title>
+            <pubDate>Tue, 10 Nov 2026 18:08:18 -0600</pubDate>
+            <sparkle:version>13</sparkle:version>
+            <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[RunHuddle 0.5.1 makes terminal navigation and session cleanup easier to follow.
+            <description sparkle:format="markdown"><![CDATA[RunHuddle 0.6.0 adds AI-generated handoffs.
 
-- Terminal’s chooser now includes tabs running through shells or wrappers, with live terminal matches ranked first and title matches clearly labeled.
-- Opening Terminal shows progress without blocking the app. Automation permission errors include a shortcut to settings.
-- Detached sessions explain that their current activity is unconfirmed.
-- Bulk cleanup reports review and processing progress. Selection controls fit narrower lists, and cleanup results can be dismissed.
-- Connections scrolls on smaller screens while keeping its action buttons visible.
+- Generate an explicit AI handoff with your selected installed Codex, Claude, or Copilot CLI account. Generation uses your provider’s allowance and runs separately from the source session.
+- A larger chronological history sample replaces the old latest-message template as the AI source. The prompt separates requests, agent claims, recorded evidence, unfinished work, and next steps, and marks unknown or omitted information.
+- Recorded activity stays separate from the handoff. Routine activity checks never spend AI credits or rewrite your handoff.
+- See when and with which provider the handoff was generated, and whether new activity or notes have arrived since.
+- Your edits are saved. An updated AI draft is presented for review when you have edited the existing text; the previous text is retained for restoration.
+- Copy/export and fresh-session continuation use the edited handoff, source identity, and your maintained notes, rather than appending raw transcript excerpts.
 
-Validation: Swift and Python regression suites, standalone bundle verification, and signed updater installation test. Physical multi-monitor and Ghostty interaction testing remains pending.
+Also includes the 0.5.2–0.5.3 sidebar hit-area, quiet refresh, and event-driven tracking improvements if those releases were not previously installed.
+
+Validation: Swift/Python regressions, a real Codex generation fixture verifying pending approval is not reported as publication, standalone packaging, and updater tests. Copilot CLI invocation reached its service but this Mac’s account was denied by policy; Claude/Copilot generation requires a signed-in account with access and has not been fully live-validated here.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.5.1/RunHuddle-0.5.1-arm64.dmg" length="43754348" type="application/octet-stream" sparkle:edSignature="a/DJAm6Z5/a+nMZqSMlpVSWlPuVVMIJLmsvZA0uzhLfChIi0/9z4VnUJvjaxtystzl33p37oxj9hCKNshIVtBQ=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.6.0/RunHuddle-0.6.0-arm64.dmg" length="42698111" type="application/octet-stream" sparkle:edSignature="BSJzVIbO2Sc3Zm3CUxzKwn79GiVzU38CBa60W0wNgFOtha1KJetrKSEkV/3Z4sWr97e/adV2sD5jKbQrc55tAQ=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: IZV2TuqH/F50OtLnOW55OJTFlLBCuUrKnwe749WSUfiJj5kQKzLPVFXf06FwUbzkjxZeKdGO4HSvPy5c3pK3Dg==
-length: 2035
+edSignature: tTw94KYqeb8RoBDigy1XH1tfgAqOVK5jvLH6qt6KEklrDxwNkugvnKa9sFEN3n4Jq389eLfPVct3nmznGx0eAA==
+length: 2759
 -->
