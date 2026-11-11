@@ -6,30 +6,27 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.11.0</title>
-            <pubDate>Tue, 10 Nov 2026 21:08:55 -0600</pubDate>
-            <sparkle:version>30</sparkle:version>
-            <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
+            <title>0.11.1</title>
+            <pubDate>Tue, 10 Nov 2026 21:12:01 -0600</pubDate>
+            <sparkle:version>31</sparkle:version>
+            <sparkle:shortVersionString>0.11.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.0 preview
+            <description sparkle:format="markdown"><![CDATA[# RunHuddle 0.11.1 preview
 
-Session details now include a compact repository context section:
+Fix window resizing so the content stays within the available width.
 
-- Current branch or detached HEAD, main/linked worktree, and worktree path.
-- Changed-file count including staged, unstaged, and untracked files.
-- Explicit shared-state labeling: repository changes are not attributed to one agent.
-- Local, read-only inspection when opened, with manual refresh and a snapshot timestamp. No background Git polling.
+- Tie the native window minimum to the content minimum, preventing the window from shrinking underneath its layout.
+- Reduce the minimum width to 900 points and let the session list and details columns shrink further.
+- Wrap terminal actions onto a second row when the details column is narrow.
 
-Missing or inaccessible repositories are handled quietly. PR and CI integration will follow separately.
-
-Validation includes real temporary Git repositories, unborn and detached branches, linked worktrees, rename/newline filename parsing, and missing folders, plus light/dark component rendering. Full release checks cover Swift/Python tests, standalone packaging, and the updater.
+Includes the repository context section introduced in 0.11.0. Validated by compilation and the release test suite; interactive multi-monitor resizing still needs confirmation on the affected setup.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.0/RunHuddle-0.11.0-arm64.dmg" length="43563744" type="application/octet-stream" sparkle:edSignature="B+c7avttJzCRotGH43rvmHgsm8PE3sKT2YyTvRtIHZ1IGi2vYpIp4Tgumfbvu8mxCXSFRU1jG8cOFUHJcctzDA=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.11.1/RunHuddle-0.11.1-arm64.dmg" length="42841688" type="application/octet-stream" sparkle:edSignature="vHkTKtjQmJSgl/NF6yycAn26yaxP7AVCYg5m7Z2V0xCY2CNItvOIU7b0I638Ar3eoeq0DNzC+Qy0MZyEOASBAw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: LK+yJmg0x/RWs9pLUu2LZpJhUWgE61tlQIsNcUe0pTXn2ddRP/adq1i5HRq0RWLncYew5lao9VzzZQI5ji63Ag==
-length: 2033
+edSignature: Hw2LfmpSssBj9F5YB6Kb6E9uLfyQwmSgbM9QfQA9CWk+NlaXUPOwyJ9hUSuryJ5bOdA6lL3YWzv3RwIVLPhkCw==
+length: 1799
 -->
