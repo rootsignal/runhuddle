@@ -1,16 +1,26 @@
 # RunHuddle documentation
 
-[RunHuddle](../README.md)
+The current user documentation lives on the [RunHuddle website](https://runhuddle.rootsignal.io/docs/). These guides cover the 0.36.1 workspace; check release notes when using an older build.
 
-Start with [Getting started](GETTING_STARTED.md) to install the app. No source checkout or developer tools are required for the release download.
+- [Getting started](https://runhuddle.rootsignal.io/docs/getting-started/) — Install RunHuddle, connect an agent and start your first session.
+- [Workspace and sessions](https://runhuddle.rootsignal.io/docs/workspace/) — Navigate sessions, search history and use embedded or plain shell terminals.
+- [Agent connections](https://runhuddle.rootsignal.io/docs/agent-connections/) — Connect Codex, Claude Code and GitHub Copilot CLI.
+- [Project notes](https://runhuddle.rootsignal.io/docs/project-notes/) — Capture knowledge and reuse it in future sessions.
+- [Handoffs and continuation](https://runhuddle.rootsignal.io/docs/handoffs/) — Resume a conversation or start fresh with reviewed context.
+- [Project tools and reviews](https://runhuddle.rootsignal.io/docs/project-tools/) — Inspect changes, open editors, run reviewed commands and request another agent’s review.
+- [Inbox and notifications](https://runhuddle.rootsignal.io/docs/notifications/) — Find waiting work and configure alerts without losing session state.
+- [Appearance and terminal settings](https://runhuddle.rootsignal.io/docs/appearance/) — Configure themes, fonts, colors, cursor, scrollback and keyboard behavior.
+- [Session lifecycle and cleanup](https://runhuddle.rootsignal.io/docs/session-lifecycle/) — Keep terminals running, end sessions, archive history and understand deletion.
+- [Privacy and data](https://runhuddle.rootsignal.io/docs/privacy/) — Understand local storage, provider requests and what deletion affects.
+- [Updates and uninstalling](https://runhuddle.rootsignal.io/docs/updates/) — Get current releases, update in place and remove the app cleanly.
+- [Troubleshooting](https://runhuddle.rootsignal.io/docs/troubleshooting/) — Resolve missing agents, stale states, terminal issues and missing alerts.
 
-| Guide | What you’ll find |
-| --- | --- |
-| [Getting started](GETTING_STARTED.md) | Installation, first launch, updates, and uninstalling |
-| [Agent connections](AGENT_CONNECTIONS.md) | Codex, Claude Code, Copilot CLI, terminal support, and compatibility limits |
-| [Using RunHuddle](USING_RUNHUDDLE.md) | Session switcher, search, live status, handoffs, cleanup, and privacy |
-| [Troubleshooting](TROUBLESHOOTING.md) | Stale sessions, hooks, terminal navigation, notifications, and build errors |
-| [Building and testing](BUILDING.md) | Source installation, local builds, and tests |
-| [Building and publishing releases](RELEASING.md) | Signing, notarization, local release workflow, CI, and updates |
+## Developer documentation
 
-[Release notes](releases/) · [Historical development notes](DEVELOPMENT.md) · [Report an issue](https://github.com/rootsignal/runhuddle/issues)
+- [Building and testing](BUILDING.md)
+- [Building and publishing releases](RELEASING.md)
+- [Theme licenses](theme-licenses/)
+- [Release notes](releases/)
+- [Historical development notes](DEVELOPMENT.md) — historical implementation notes, not current user instructions.
+
+User-guide source is maintained in the RootSignal website repository under `content/runhuddle/docs/`. Update that source and its feature audit when changing user-visible behavior. Keep these pointers instead of duplicating the guides here.

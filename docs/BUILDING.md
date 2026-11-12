@@ -37,14 +37,16 @@ open dist/RunHuddle.app
 
 ## Documentation screenshots
 
-Run `bash scripts/render-switcher-screenshot.sh` to regenerate the README’s session-switcher image. It renders the production SwiftUI view offscreen with fictional sessions and a staged terminal background. The fixture uses inert dependencies: it does not read your sessions, launch agents, or register a shortcut. No app installation is needed.
+Current product examples live on the [RunHuddle website](https://runhuddle.rootsignal.io). Use current app captures with fictional project/session content and inspect every image for private data before publication. Label edited examples.
+
+The historical `scripts/render-switcher-screenshot.sh` and `scripts/render-workspace-resize.sh` fixtures are not a source of current product screenshots. Revalidate their initializer signatures and layout against the current app before using them; the old workspace fixture no longer compiles unchanged.
 
 ## Troubleshooting builds
 
-See [source-build troubleshooting](TROUBLESHOOTING.md#source-build-errors).
+Use a current checkout and a supported Swift/Python toolchain. If your Python version manager reports “No version is set,” select Python 3.12+ before running the installer. Older SwiftUI macro or build-system errors may require updating the checkout and rebuilding. Runtime downloads use system curl with TLS verification; do not disable certificate verification to work around certificate errors.
+
+For runtime problems, see [Troubleshooting](https://runhuddle.rootsignal.io/docs/troubleshooting/).
 
 ## Releasing
 
 See [Building and publishing releases](RELEASING.md) for Developer ID signing, notarization, local release scripts, CI, and signed updates. Historical implementation and validation details live in [development notes](DEVELOPMENT.md).
-
-To review narrow-window behavior, run `bash scripts/render-workspace-resize.sh`. The offscreen fixture resizes the same production layout containers from wide to narrow and back, with representative fictional session content. PNGs are written to `/tmp/runhuddle-resize-previews` (or a directory passed as the first argument).

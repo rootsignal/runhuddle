@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Point installation docs at the release advertised by the verified update feed."""
+"""Validate the release feed while keeping public download links version-independent."""
 import re
 import sys
 from pathlib import Path
@@ -17,7 +17,6 @@ def update(feed: Path):
     version = item.findtext('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString')
     if not version or not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ValueError('Invalid release version')
-    release = f'https://github.com/rootsignal/runhuddle/releases/tag/v{version}'
     expected = f'https://github.com/rootsignal/runhuddle/releases/download/v{version}/RunHuddle-{version}-arm64.dmg'
     enclosure = item.find('enclosure')
     if enclosure is None or enclosure.get('url') != expected:
@@ -28,7 +27,7 @@ def update(feed: Path):
         content = path.read_text()
         if content.count(START) != 1 or content.count(END) != 1:
             raise ValueError(f'Missing or duplicate download markers: {relative}')
-        block = f'{START}\n**[Download RunHuddle {version} for Apple Silicon]({expected})**\n\n[Release notes]({release}) · [All releases](https://github.com/rootsignal/runhuddle/releases)\n{END}'
+        block = f'{START}\n**[Download RunHuddle — available releases](https://github.com/rootsignal/runhuddle/releases)**\n{END}'
         updated = re.sub(re.escape(START) + r'.*?' + re.escape(END), lambda _: block, content, flags=re.S)
         changes.append((path, updated))
     for path, content in changes:
