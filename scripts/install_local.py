@@ -81,6 +81,11 @@ def main():
             if backup.exists():
                 backup.rename(app)
             raise
+    # Refresh Launch Services after replacing the bundle, including its icon.
+    # Notification Center and other system surfaces resolve icons through this registration.
+    register = Path('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister')
+    if register.exists():
+        subprocess.run([str(register), '-f', str(app)], check=True)
     if args.copilot_hooks:
         run(app / 'Contents/Resources/python/bin/python3', '-E', '-s', '-B',
             app / 'Contents/Resources/bridge/copilot_bridge.py', 'install-hooks')

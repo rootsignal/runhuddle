@@ -6,7 +6,7 @@ struct HandoffEditor: View {
     let row: Session
     @ViewState private var isolated = false
     @ViewState private var createdWorkspace: String?
-    @ViewState private var allowShared = false
+    @ViewState private var allowShared = true
     @ViewState private var branch = "runhuddle/work-" + String(UUID().uuidString.prefix(8)).lowercased()
     @ViewState private var snapshot = ""
     @ViewState private var questions = ""
@@ -38,7 +38,7 @@ struct HandoffEditor: View {
             Picker("New session agent", selection: $destination) {
                 ForEach(agents, id: \.self) { Text($0).tag($0) }
             }.disabled(launching)
-            WorkspaceLaunchOptions(directory: row.cwd, isolated: $isolated, allowShared: $allowShared, branch: $branch, destination: workspacePath)
+            WorkspaceLaunchOptions(directory: row.cwd, sourceSessionID: row.id, isolated: $isolated, allowShared: $allowShared, branch: $branch, destination: workspacePath)
             Text(row.cwd).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             if working {
                 Label("The original agent is still working or waiting for input.", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
@@ -97,9 +97,9 @@ struct HandoffEditor: View {
                     .font(.system(size: 13)).frame(minHeight: 250).border(.quaternary)
                     .accessibilityLabel("Editable handoff")
                 }
-                Text("Unresolved questions").font(.headline)
+                Text("Unresolved questions (optional)").font(.headline)
                 TextField("Questions for the receiving agent", text: $questions, axis: .vertical).textFieldStyle(.roundedBorder)
-                Text("Next steps").font(.headline)
+                Text("Next steps (optional)").font(.headline)
                 TextField("What should happen next?", text: $nextSteps, axis: .vertical).textFieldStyle(.roundedBorder)
                 if !projectNote.isEmpty {
                     Text("Project note").font(.headline)
@@ -131,6 +131,10 @@ struct HandoffEditor: View {
                 }.font(.caption)
             }
             }
+            if working && !allowWorking {
+                Text("Confirm ‘Start another session alongside it’ to continue while the original agent is working or waiting for input.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let failure { Text(failure).font(.callout).foregroundStyle(.orange) }
             HStack {
                 Button("Cancel") { dismiss() }.disabled(launching)
@@ -152,7 +156,7 @@ struct HandoffEditor: View {
                         if failure == nil { dismiss() }
                     }
                 }.buttonStyle(.borderedProminent).tint(HuddleStyle.action)
-                    .disabled(launching || generating || snapshotLoading || (!isolated && model.hasOpenSession(in: row.cwd) && !allowShared) || !agents.contains(destination) || (working && !allowWorking) || model.handoffCandidates[row.id] != nil || model.draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(launching || generating || snapshotLoading || !agents.contains(destination) || (working && !allowWorking) || model.handoffCandidates[row.id] != nil || model.draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }.padding(24).frame(width: 660, height: 680).interactiveDismissDisabled(launching)
         .onChange(of: branch) { _, _ in createdWorkspace = nil }

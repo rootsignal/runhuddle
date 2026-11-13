@@ -1,9 +1,9 @@
 import AppKit
 
-/// One compact huddle silhouette shared by the app tile and macOS template menu-bar icon.
+/// Stacked terminal panes shared by the app tile and macOS template menu-bar icon.
 enum RunHuddleIcon {
     /// A non-template badge preserves its amber fill in the macOS menu bar.
-    /// The huddle mark remains a separate template image so it follows system appearance.
+    /// The terminal mark remains a separate template image so it follows system appearance.
     static func attentionBadge(count: Int) -> NSImage? {
         guard count > 0 else { return nil }
         let label = count > 99 ? "99+" : String(count)
@@ -43,36 +43,26 @@ enum RunHuddleIcon {
             transform.translateX(by: (width - 24 * scale) / 2, yBy: (size - 24 * scale) / 2)
             transform.scale(by: scale)
             transform.concat()
-            // A3: three rounded blocks gather around a shared, open center.
-            // Draw the same vector geometry at every Dock and menu-bar size.
-            func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x, y: y) }
-            let mark = NSBezierPath()
-            mark.move(to: point(8.6, 21.3))
-            mark.line(to: point(15.4, 21.3))
-            mark.curve(to: point(17.2, 20), controlPoint1: point(16.2, 21.3), controlPoint2: point(16.8, 20.9))
-            mark.line(to: point(18.3, 17.6))
-            mark.curve(to: point(16.5, 15.3), controlPoint1: point(19, 16.1), controlPoint2: point(18.2, 15.3))
-            mark.line(to: point(7.5, 15.3))
-            mark.curve(to: point(5.7, 17.6), controlPoint1: point(5.8, 15.3), controlPoint2: point(5, 16.1))
-            mark.line(to: point(6.8, 20))
-            mark.curve(to: point(8.6, 21.3), controlPoint1: point(7.2, 20.9), controlPoint2: point(7.8, 21.3))
-            mark.close()
-            for mirrored in [false, true] {
-                func side(_ x: CGFloat, _ y: CGFloat) -> NSPoint { point(mirrored ? 24 - x : x, y) }
-                mark.move(to: side(5, 14.6))
-                mark.curve(to: side(6.3, 14.1), controlPoint1: side(5.4, 14.6), controlPoint2: side(5.9, 14.4))
-                mark.line(to: side(9.8, 11.4))
-                mark.curve(to: side(11.1, 9.2), controlPoint1: side(10.7, 10.7), controlPoint2: side(11.1, 10.1))
-                mark.line(to: side(11.1, 5.5))
-                mark.curve(to: side(9.5, 3.6), controlPoint1: side(11.1, 4.2), controlPoint2: side(10.6, 3.6))
-                mark.line(to: side(6, 3.6))
-                mark.curve(to: side(2.5, 7.2), controlPoint1: side(3.8, 3.6), controlPoint2: side(2.5, 4.9))
-                mark.line(to: side(2.5, 10.5))
-                mark.curve(to: side(5, 14.6), controlPoint1: side(2.5, 12.9), controlPoint2: side(3.7, 14.6))
-                mark.close()
+            // Three offset terminal panes; partial rear outlines stay clear at menu-bar sizes.
+            func stroke(_ points: [(CGFloat, CGFloat)], color: NSColor, width: CGFloat = 1.6) {
+                let path = NSBezierPath()
+                path.move(to: NSPoint(x: points[0].0, y: points[0].1))
+                for point in points.dropFirst() { path.line(to: NSPoint(x: point.0, y: point.1)) }
+                path.lineWidth = width
+                path.lineJoinStyle = .round
+                path.lineCapStyle = .round
+                color.setStroke(); path.stroke()
             }
-            (appTile ? NSColor(srgbRed: 0.14, green: 0.78, blue: 0.90, alpha: 1) : .black).setFill()
-            mark.fill()
+            let cyan = appTile ? NSColor(srgbRed: 0.14, green: 0.78, blue: 0.90, alpha: 1) : .black
+            let middle = appTile ? NSColor(srgbRed: 0.08, green: 0.62, blue: 0.83, alpha: 1) : .black
+            let back = appTile ? NSColor(srgbRed: 0.03, green: 0.43, blue: 0.68, alpha: 1) : .black
+            stroke([(5, 10), (2.5, 10), (2.5, 21), (16.5, 21), (16.5, 17.5)], color: back)
+            stroke([(8, 6.5), (5.5, 6.5), (5.5, 17.5), (19.5, 17.5), (19.5, 14)], color: middle)
+            let front = NSBezierPath(roundedRect: NSRect(x: 8.5, y: 3, width: 14, height: 11), xRadius: 0.8, yRadius: 0.8)
+            front.lineWidth = 1.6
+            cyan.setStroke(); front.stroke()
+            stroke([(11.5, 10.5), (14, 8.5), (11.5, 6.5)], color: cyan)
+            stroke([(16, 6.5), (19, 6.5)], color: cyan)
             return true
         }
         image.isTemplate = !appTile
