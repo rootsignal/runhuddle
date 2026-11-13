@@ -1,0 +1,17 @@
+RunHuddle
+Copyright (c) 2026 RootSignal LLC
+SPDX-License-Identifier: GPL-3.0-only
+
+RunHuddle is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License version 3 as published by the
+Free Software Foundation.
+
+RunHuddle is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See LICENSE (LICENSE.txt in the app)
+for the full terms.
+
+Source and build instructions: https://github.com/rootsignal/runhuddle
+Use the source revision identified by the release for a matching build.
+Third-party components retain their own licenses and copyright notices.
+See ThirdPartyNotices in the app and docs/LICENSING.md in the repository.

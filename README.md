@@ -35,8 +35,16 @@ The [documentation](https://runhuddle.rootsignal.io/docs/) identifies its review
 
 ## License
 
-RunHuddle is open source under the [MIT License](LICENSE).
+RunHuddle is open source under the [GNU General Public License version 3](LICENSE)
+(SPDX: `GPL-3.0-only`).
 Copyright © 2026 RootSignal LLC.
+
+You may use, modify, and redistribute RunHuddle, including commercially, under
+GPLv3. Distributed modified versions must remain under GPLv3 with corresponding
+source available to recipients. RunHuddle comes with no warranty.
+
+See [licensing details](docs/LICENSING.md) for the license transition and
+redistribution requirements. Previously granted MIT permissions are not revoked.
 
 Third-party dependencies and theme palettes retain their respective licenses.
 Their notices are included in the app’s `Contents/Resources/ThirdPartyNotices`

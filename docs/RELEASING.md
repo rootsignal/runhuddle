@@ -75,6 +75,13 @@ The publish script also updates the direct Apple Silicon installer and release-n
 
 ## Website download publication
 
+For releases made after the GPLv3 transition, follow [licensing details](LICENSING.md).
+Before publishing a binary, provide its exact corresponding source, including
+build scripts and required linked non-system dependency source, through the same
+release page at no additional charge. Link that source clearly beside the download.
+Verify the packaged `LICENSE.txt`, `NOTICE.txt`, and third-party notices. Preserve
+previously published artifacts and their original licensing history.
+
 After publishing the signed feed, `publish-release.sh` dispatches `action.yml` in
 `RootSignalLabs/rootsignal-site` with the expected version. The website verifies the
 public DMG's size and SHA-256 against GitHub and the checksum asset, and checks that
