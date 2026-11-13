@@ -33,4 +33,11 @@ The [documentation](https://runhuddle.rootsignal.io/docs/) identifies its review
 
 [Build and test](docs/BUILDING.md) · [Publish releases](docs/RELEASING.md) · [Release history](docs/releases/)
 
-Copyright © 2026 RootSignal. All rights reserved. No open-source license has been selected for this repository.
+## License
+
+RunHuddle is open source under the [MIT License](LICENSE).
+Copyright © 2026 RootSignal LLC.
+
+Third-party dependencies and theme palettes retain their respective licenses.
+Their notices are included in the app’s `Contents/Resources/ThirdPartyNotices`
+directory; theme notices are also available in [docs/theme-licenses](docs/theme-licenses/).

@@ -34,6 +34,7 @@ frameworks.mkdir()
 framework = frameworks / 'Sparkle.framework'
 shutil.copytree(sparkle / 'Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework', framework, symlinks=True)
 runtime = bundle(root, resources)
+shutil.copy2(root / 'LICENSE', resources / 'LICENSE.txt')
 shutil.copy2(sparkle / 'LICENSE', resources / 'ThirdPartyNotices/Sparkle-LICENSE.txt')
 shutil.copy2(root / '.build/checkouts/SwiftTerm/LICENSE', resources / 'ThirdPartyNotices/SwiftTerm-LICENSE.txt')
 for notice in (root / 'docs/theme-licenses').glob('*-LICENSE.txt'):
