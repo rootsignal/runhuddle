@@ -22,9 +22,11 @@ public final class Store {
         catch { try? execute("ROLLBACK"); throw error }
     }
     public func save<T: Encodable>(_ value: T, key: String) throws {
-        let data = try JSONEncoder().encode(value)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(value)
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO records(key,value) VALUES(?,?)", -1, &statement, nil) == SQLITE_OK else { throw failure() }
+        guard sqlite3_prepare_v2(db, "INSERT INTO records(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE records.value != excluded.value", -1, &statement, nil) == SQLITE_OK else { throw failure() }
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_text(statement, 1, key, -1, transient)
         _ = data.withUnsafeBytes { sqlite3_bind_blob(statement, 2, $0.baseAddress, Int32(data.count), transient) }

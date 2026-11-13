@@ -455,6 +455,8 @@ struct ContentView: View {
         ].filter { !$0.1.isEmpty }
     }
     @ViewBuilder private func sessionCells(_ rows: [Session]) -> some View {
+        let groups = model.chainGroups
+        let earlierIDs = Set(groups.values.flatMap { $0.map(\.id) })
         ForEach(rows) { row in
             HStack {
                 if model.bulkMode {
@@ -474,7 +476,7 @@ struct ContentView: View {
                     }.contentShape(Rectangle())
                 }.buttonStyle(.plain).frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityAddTraits(model.selection == row.id ? .isSelected : [])
-            }.padding(.leading, model.chainGroups.values.contains(where: { $0.contains(where: { $0.id == row.id }) }) ? 20 : 0)
+            }.padding(.leading, earlierIDs.contains(row.id) ? 20 : 0)
                 .modifier(SessionCardSurface(selected: model.selection == row.id))
                 .background {
                     // Keep the entire card, including its padding, selectable.
@@ -507,7 +509,7 @@ struct ContentView: View {
                     if row.state != .saved { Text("Session must be confirmed closed before archiving") }
                 }
             }
-            if let earlier = model.chainGroups[row.id], !earlier.isEmpty {
+            if let earlier = groups[row.id], !earlier.isEmpty {
                 Button {
                     if !model.expandedChains.insert(row.id).inserted {
                         model.expandedChains.remove(row.id)

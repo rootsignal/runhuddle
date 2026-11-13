@@ -20,6 +20,8 @@ import SessionCore
     @Published var exitCode: Int32?
     private(set) var pid: Int32 = 0
     var onProcessExit: ((EmbeddedAgentSession) -> Void)?
+    var appliedAppearanceSettings: TerminalOptionsPreference?
+    var appliedDarkAppearance: Bool?
     var appliedCursorPreference: String?
     var appliedPalette: [SwiftTerm.Color]?
     var persistentRecord: PersistentTerminalRecord?
@@ -58,9 +60,9 @@ import SessionCore
             attach()
             monitor = Task { @MainActor [weak self] in
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(1))
-                    guard let self, !self.detaching else { return }
-                    self.checkPersistentProcess()
+                    do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                    guard let self, !self.detaching, !self.ended else { return }
+                    await self.checkPersistentProcess()
                 }
             }
             return
@@ -103,13 +105,21 @@ import SessionCore
         let service = persistentService
         terminal.startProcess(executable: service.executable, args: service.baseArguments + ["attach-session", "-t", record.name], environment: service.environment.map { "\($0.key)=\($0.value)" }, currentDirectory: directory)
     }
-    private func checkPersistentProcess() {
+    private func checkPersistentProcess() async {
         guard let record = persistentRecord else { return }
+        let service = persistentService
+        let shell = isShell
         do {
-            let pane = try persistentService.pane(record)
+            // Process.waitUntilExit must never run on the UI executor. Awaiting
+            // each poll also prevents overlapping requests for this terminal.
+            let (pane, activity) = try await Task.detached(priority: .utility) {
+                let pane = try service.pane(record)
+                let activity = shell && !pane.dead ? try? service.shellActivity(record) : nil
+                return (pane, activity)
+            }.value
+            guard !Task.isCancelled, !detaching, !ended else { return }
             pid = pane.pid
             if isShell {
-                let activity = pane.dead ? nil : try? persistentService.shellActivity(record)
                 if activity != shellActivity {
                     shellActivity = activity
                     EmbeddedTerminals.shared.objectWillChange.send()
@@ -122,7 +132,8 @@ import SessionCore
             }
             if !terminal.process.running { attach() }
         } catch {
-            if isShell { shellActivity = nil; EmbeddedTerminals.shared.objectWillChange.send() }
+            guard !Task.isCancelled, !detaching, !ended else { return }
+            if shellActivity != nil { shellActivity = nil; EmbeddedTerminals.shared.objectWillChange.send() }
             if !ended { onProcessExit?(self) }
             ended = true; stopping = false
         }
@@ -357,9 +368,12 @@ struct EmbeddedTerminalHost: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) { applyAppearance() }
     private func applyAppearance() {
         let dark = colorScheme == .dark
+        let settings = preferences.value
+        guard session.appliedAppearanceSettings != settings || session.appliedDarkAppearance != dark else { return }
+        session.appliedAppearanceSettings = settings
+        session.appliedDarkAppearance = dark
         let terminal = session.terminal
         terminal.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        let settings = preferences.value
         terminal.getTerminal().ansi256PaletteStrategy = .xterm
         let colors = settings.colors(dark: dark)
         if terminal.nativeBackgroundColor != colors.0 { terminal.nativeBackgroundColor = colors.0 }

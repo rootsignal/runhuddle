@@ -79,7 +79,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var claudeRepairNotice: String? = UserDefaults.standard.bool(forKey: "claudeRepairNoticePending")
         ? "Claude tracking paths were updated. Fully exit already-open Claude processes, then launch Claude again from your shell to reload hooks. Using /resume inside an existing process may retain old paths." : nil
     private struct ClaudeRepairResult: Decodable { let repaired: Bool }
-    @Published var sessions: [Session] = []
+    @Published var sessions: [Session] = [] { didSet { cachedSearchMatches = nil } }
     @Published var selection: String? {
         didSet {
             guard let selection, !selection.hasPrefix("Claude:demo-") else { return }
@@ -88,12 +88,12 @@ struct CopilotTrackingStatus: Decodable {
             catch { self.error = "Could not save selection: \(error.localizedDescription)" }
         }
     }
-    @Published var query = ""
+    @Published var query = "" { didSet { cachedSearchMatches = nil } }
     @Published var searchScope = SessionSearchScope.currentView
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    @Published var briefs: [String: SessionBrief] = [:]
-    @Published var historyMatches: [String: HistoryMatch] = [:]
-    @Published var historySearchQuery = ""
+    @Published var briefs: [String: SessionBrief] = [:] { didSet { cachedSearchMatches = nil } }
+    @Published var historyMatches: [String: HistoryMatch] = [:] { didSet { cachedSearchMatches = nil } }
+    @Published var historySearchQuery = "" { didSet { cachedSearchMatches = nil } }
     @Published var historySearchStatus = ""
     @Published var searchingHistory = false
     private var searchDebounce: Task<Void, Never>?
@@ -102,14 +102,14 @@ struct CopilotTrackingStatus: Decodable {
     @Published var projectFilter = "All projects"
     @Published var pinned: Set<String> = []
     @Published var providerErrors: [String: String] = [:]
-    @Published var provider = "All tools"
-    @Published var showDemo = false
+    @Published var provider = "All tools" { didSet { cachedSearchMatches = nil } }
+    @Published var showDemo = false { didSet { cachedSearchMatches = nil } }
     @Published var refreshing = false
     @Published var manualRefreshing = false
     @Published var connection = "Connecting to Codex…"
     @Published var lastRefresh: Date?
     @Published var error: String?
-    @Published var displayNames: [String: String] = [:]
+    @Published var displayNames: [String: String] = [:] { didSet { cachedSearchMatches = nil } }
     @Published var renameSession: Session?
     @Published var renameText = ""
     @Published var renameError: String?
@@ -275,9 +275,15 @@ struct CopilotTrackingStatus: Decodable {
         }
     }
 
+    private var cachedChains: (rows: [Session], links: [String: SessionContinuation], pinned: Set<String>, groups: [String: [Session]])?
     var chainGroups: [String: [Session]] {
         guard filter == "All sessions", query.isEmpty, !bulkMode else { return [:] }
-        return SessionChain.groups(rows: visible, links: continuations, pinned: pinned)
+        guard !continuations.isEmpty else { return [:] }
+        let rows = visible
+        if let cache = cachedChains, cache.rows == rows, cache.links == continuations, cache.pinned == pinned { return cache.groups }
+        let groups = SessionChain.groups(rows: rows, links: continuations, pinned: pinned)
+        cachedChains = (rows, continuations, pinned, groups)
+        return groups
     }
     var chainListRows: [Session] {
         let groups = chainGroups
@@ -393,11 +399,15 @@ struct CopilotTrackingStatus: Decodable {
         }
     }
 
+    private var cachedSearchMatches: [Session]?
     private var searchAndToolMatches: [Session] {
-        sessions.filter {
+        if let cachedSearchMatches { return cachedSearchMatches }
+        let result = sessions.filter {
             (!$0.simulated || showDemo) && matchesSearch($0)
             && (provider == "All tools" || $0.provider == provider)
         }
+        cachedSearchMatches = result
+        return result
     }
     private var matchingSessions: [Session] {
         searchAndToolMatches.filter { ProjectFilter.matches($0.cwd, selection: projectFilter) }
@@ -1074,7 +1084,13 @@ struct CopilotTrackingStatus: Decodable {
                 guard !Task.isCancelled else { return }
                 struct Result: Decodable { let text: String; let latestRequest: String?; let latestResponse: String?; let messages: [ConversationMessage]? }
                 let history = try JSONDecoder().decode(Result.self, from: data)
-                contexts[row.id] = HandoffContext(text: history.text, latestRequest: history.latestRequest, latestResponse: history.latestResponse, sessionUpdated: row.updated, messages: history.messages)
+                let previous = contexts[row.id]
+                let contextChanged = previous?.text != history.text || previous?.latestRequest != history.latestRequest
+                    || previous?.latestResponse != history.latestResponse || previous?.messages != history.messages
+                    || previous?.sessionUpdated != row.updated
+                if contextChanged {
+                    contexts[row.id] = HandoffContext(text: history.text, latestRequest: history.latestRequest, latestResponse: history.latestResponse, sessionUpdated: row.updated, messages: history.messages)
+                }
                 if var reply = replies[row.id], var submissions = reply.submissions, let messages = history.messages {
                     var used = Set(submissions.compactMap(\.observedMessageID))
                     var changed = false
@@ -1100,7 +1116,7 @@ struct CopilotTrackingStatus: Decodable {
                     }
                 }
                 historyErrors.removeValue(forKey: row.id)
-                do { try store?.save(contexts, key: "handoffContexts") }
+                do { if contextChanged { try store?.save(contexts, key: "handoffContexts") } }
                 catch { self.error = "Could not save recorded context: \(error.localizedDescription)" }
             } catch {
                 guard !Task.isCancelled else { return }
