@@ -26,7 +26,8 @@ import SessionCore
     var appliedPalette: [SwiftTerm.Color]?
     var persistentRecord: PersistentTerminalRecord?
     let persistentService: PersistentTerminalService
-    private var monitor: Task<Void, Never>?
+    private var exitWatch: DispatchSourceProcess?
+    private var reportedTerminalTitle: String?
     var isShell: Bool { provider == "Shell" }
     var isAgentRunning: Bool { persistentRecord != nil ? !ended : terminal.process.running }
     private var detaching = false
@@ -58,13 +59,7 @@ import SessionCore
         if let persistent {
             if let pane = try? persistentService.pane(persistent) { pid = pane.pid; ended = pane.dead; exitCode = pane.exitCode }
             attach()
-            monitor = Task { @MainActor [weak self] in
-                while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(1)) } catch { return }
-                    guard let self, !self.detaching, !self.ended else { return }
-                    await self.checkPersistentProcess()
-                }
-            }
+            watchProcessExit()
             return
         }
         var arguments = [executable]
@@ -85,6 +80,8 @@ import SessionCore
         pid = terminal.process.shellPid
         if !terminal.process.running { ended = true }
     }
+    deinit { exitWatch?.cancel() }
+
     func row(in model: AppModel) -> Session? {
         guard !isShell else { return nil }
         let rows = model.sessions.filter { $0.provider == provider && !$0.simulated }
@@ -105,37 +102,43 @@ import SessionCore
         let service = persistentService
         terminal.startProcess(executable: service.executable, args: service.baseArguments + ["attach-session", "-t", record.name], environment: service.environment.map { "\($0.key)=\($0.value)" }, currentDirectory: directory)
     }
-    private func checkPersistentProcess() async {
-        guard let record = persistentRecord else { return }
-        let service = persistentService
-        let shell = isShell
-        do {
-            // Process.waitUntilExit must never run on the UI executor. Awaiting
-            // each poll also prevents overlapping requests for this terminal.
-            let (pane, activity) = try await Task.detached(priority: .utility) {
-                let pane = try service.pane(record)
-                let activity = shell && !pane.dead ? try? service.shellActivity(record) : nil
-                return (pane, activity)
-            }.value
-            guard !Task.isCancelled, !detaching, !ended else { return }
-            pid = pane.pid
-            if isShell {
-                if activity != shellActivity {
-                    shellActivity = activity
-                    EmbeddedTerminals.shared.objectWillChange.send()
-                }
+    private func watchProcessExit() {
+        exitWatch?.cancel(); exitWatch = nil
+        guard pid > 1, !ended, !detaching else { return }
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+        source.setEventHandler { [weak self] in
+            guard let self, !self.detaching else { return }
+            self.exitWatch?.cancel(); self.exitWatch = nil
+            // tmux records the final status after reaping the child.
+            EmbeddedTerminals.shared.requestReconciliation()
+        }
+        exitWatch = source
+        source.resume()
+    }
+    func applyPersistentSnapshot(_ pane: PersistentPane?, activity: ShellAgentLink?) {
+        guard !detaching, !ended else { return }
+        if let pane {
+            if pid != pane.pid { pid = pane.pid; watchProcessExit() }
+            if isShell, shellActivity != activity {
+                shellActivity = activity
+                EmbeddedTerminals.shared.objectWillChange.send()
             }
-            if pane.dead && !ended {
-                exitCode = pane.exitCode
-                onProcessExit?(self)
-                ended = true; stopping = false
+            if !pane.dead {
+                if !terminal.process.running { attach() }
+                return
             }
-            if !terminal.process.running { attach() }
-        } catch {
-            guard !Task.isCancelled, !detaching, !ended else { return }
-            if shellActivity != nil { shellActivity = nil; EmbeddedTerminals.shared.objectWillChange.send() }
-            if !ended { onProcessExit?(self) }
-            ended = true; stopping = false
+            exitCode = pane.exitCode
+        }
+        exitWatch?.cancel(); exitWatch = nil
+        if shellActivity != nil { shellActivity = nil }
+        onProcessExit?(self)
+        ended = true; stopping = false
+    }
+    func reconcileUnavailableServer() {
+        // A missing server cannot provide a snapshot. Only close a terminal if
+        // the OS also confirms its owned process is gone (EPERM is not exit).
+        if pid > 1, kill(pid, 0) == -1, errno == ESRCH {
+            applyPersistentSnapshot(nil, activity: nil)
         }
     }
     func renameShell(_ name: String) throws {
@@ -148,7 +151,7 @@ import SessionCore
         EmbeddedTerminals.shared.objectWillChange.send()
     }
     func detach() {
-        detaching = true; monitor?.cancel()
+        detaching = true; exitWatch?.cancel(); exitWatch = nil
         if persistentRecord != nil { terminal.terminate() }
     }
     func stop() {
@@ -178,7 +181,12 @@ import SessionCore
     }
     nonisolated func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     nonisolated func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-        DispatchQueue.main.async { [weak self] in if !title.isEmpty, self?.isShell == false { self?.title = title } }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.reportedTerminalTitle != title else { return }
+            self.reportedTerminalTitle = title
+            if !title.isEmpty, !self.isShell, self.title != title { self.title = title }
+            if self.isShell { EmbeddedTerminals.shared.requestReconciliation() }
+        }
     }
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
@@ -186,6 +194,7 @@ import SessionCore
             guard let self else { return }
             if self.persistentRecord != nil {
                 // An attaching client's exit is not the agent's exit.
+                if !self.detaching { EmbeddedTerminals.shared.requestReconciliation() }
                 return
             }
             self.exitCode = exitCode
@@ -200,7 +209,53 @@ import SessionCore
 @MainActor final class EmbeddedTerminals: ObservableObject {
     static let shared = EmbeddedTerminals()
     static let shellWorkspaceID = "shell-workspace"
-    @Published var sessions: [EmbeddedAgentSession] = []
+    @Published var sessions: [EmbeddedAgentSession] = [] {
+        didSet { requestReconciliation() }
+    }
+    private var reconciliation: Task<Void, Never>?
+    private var reconciliationRequested = false
+    private var fallback: Task<Void, Never>?
+
+    init() {
+        fallback = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                self?.requestReconciliation()
+            }
+        }
+    }
+    deinit { fallback?.cancel(); reconciliation?.cancel() }
+
+    /// Coalesce lifecycle, title and provider events; never overlap snapshots.
+    func requestReconciliation() {
+        reconciliationRequested = true
+        guard reconciliation == nil else { return }
+        reconciliation = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while self.reconciliationRequested {
+                self.reconciliationRequested = false
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { break }
+                let active = self.sessions.filter { $0.persistentRecord != nil && !$0.ended }
+                let groups = Dictionary(grouping: active, by: { ObjectIdentifier($0.persistentService) })
+                for group in groups.values {
+                    guard let service = group.first?.persistentService else { continue }
+                    let snapshot = await Task.detached(priority: .utility) { try? service.snapshot() }.value
+                    // A failed query is not evidence that every agent exited.
+                    guard let snapshot else {
+                        for terminal in group { terminal.reconcileUnavailableServer() }
+                        continue
+                    }
+                    for terminal in group {
+                        guard let record = terminal.persistentRecord else { continue }
+                        let value = snapshot[record.name]
+                        terminal.applyPersistentSnapshot(value?.pane, activity: value?.activity)
+                    }
+                }
+            }
+            self.reconciliation = nil
+        }
+    }
+
     @Published var presentedID: String? {
         didSet {
             if let id = presentedID, sessions.contains(where: { $0.id == id && $0.isShell }) {

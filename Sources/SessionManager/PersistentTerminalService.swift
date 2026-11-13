@@ -170,6 +170,23 @@ final class PersistentTerminalService {
         guard fields.count == 3, let pid = Int32(fields[0]) else { throw TerminalStartError.message("Terminal process status is unavailable.") }
         return PersistentPane(pid: pid, dead: fields[1] == "1", exitCode: Int32(fields[2]))
     }
+    /// One tmux request covers every owned terminal, including shell routing metadata.
+    func snapshot() throws -> [String: (pane: PersistentPane, activity: ShellAgentLink)] {
+        let separator = "|RunHuddle-" + UUID().uuidString + "|"
+        let format = ["#{session_name}", "#{pane_pid}", "#{pane_dead}", "#{pane_dead_status}",
+                      "#{pane_current_command}", "#{pane_current_path}", "#{pane_title}", "#{pane_tty}"].joined(separator: separator)
+        let output = try run(["list-panes", "-a", "-F", format])
+        var result: [String: (pane: PersistentPane, activity: ShellAgentLink)] = [:]
+        for line in output.split(separator: "\n") {
+            let fields = String(line).components(separatedBy: separator)
+            guard fields.count == 8, let pid = Int32(fields[1]) else {
+                throw TerminalStartError.message("Terminal snapshot is unavailable.")
+            }
+            result[fields[0]] = (PersistentPane(pid: pid, dead: fields[2] == "1", exitCode: Int32(fields[3])),
+                ShellAgentLink(command: fields[4], directory: fields[5], title: fields[6], tty: fields[7]))
+        }
+        return result
+    }
     func shellActivity(_ record: PersistentTerminalRecord) throws -> ShellAgentLink {
         // tmux display-message escapes control bytes (e.g. US becomes \037).
         // A fresh printable delimiter survives transport and avoids field collisions.

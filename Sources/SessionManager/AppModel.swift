@@ -566,6 +566,7 @@ struct CopilotTrackingStatus: Decodable {
         let sessionsChanged = sessions != nextSessions
         AttentionInboxStore.shared.observe(previous: sessions, current: nextSessions)
         if sessionsChanged { sessions = nextSessions }
+        EmbeddedTerminals.shared.requestReconciliation()
         EmbeddedTerminals.shared.rememberMappings(model: self)
         resolvePendingContinuations()
         synchronizePresentedTerminalSelection()

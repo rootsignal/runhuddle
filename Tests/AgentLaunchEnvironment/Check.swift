@@ -27,6 +27,32 @@ enum TerminalStartError: Error { case message(String) }
         let shim = root.appendingPathComponent("agent")
         try "#!/bin/sh\nprintf '%s\\n' \"$RH_LOGIN_FIXTURE\" \"$RH_INTERACTIVE_FIXTURE\" \"$@\" > result\n".write(to: shim, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: shim.path)
+        // Multiple panes must be reconciled by one snapshot, with an OS exit
+        // event available independently of any recurring status timer.
+        let batchService = PersistentTerminalService(folder: root.appendingPathComponent("batch"), runtimeExecutable: ProcessInfo.processInfo.environment["RUNHUDDLE_TMUX"])
+        try batchService.prepare()
+        defer { _ = try? batchService.run(["kill-server"]) }
+        try batchService.run(["new-session", "-d", "-s", "first", "sleep 20"])
+        try batchService.run(["new-session", "-d", "-s", "second", "sleep 20"])
+        let batch = try batchService.snapshot()
+        guard batch.count == 2, let first = batch["first"], !first.pane.dead,
+              batch["second"]?.pane.dead == false else {
+            throw TerminalStartError.message("Batch did not include both live terminals")
+        }
+        let exited = DispatchSemaphore(value: 0)
+        let source = DispatchSource.makeProcessSource(identifier: first.pane.pid, eventMask: .exit, queue: .global())
+        source.setEventHandler { exited.signal() }
+        source.resume()
+        defer { source.cancel() }
+        try batchService.run(["kill-session", "-t", "first"])
+        guard exited.wait(timeout: .now() + 3) == .success else {
+            throw TerminalStartError.message("Owned pane exit did not emit lifecycle event")
+        }
+        let remaining = try batchService.snapshot()
+        guard remaining["first"] == nil, remaining["second"]?.pane.dead == false else {
+            throw TerminalStartError.message("Closing one terminal affected its sibling")
+        }
+        print("Batched terminal snapshot: live panes, OS exit event, removed pane, sibling preserved")
         for shell in ["/bin/zsh", "/bin/bash", "/bin/tcsh"] {
         let service = PersistentTerminalService(folder: root.appendingPathComponent(URL(fileURLWithPath: shell).lastPathComponent), runtimeExecutable: ProcessInfo.processInfo.environment["RUNHUDDLE_TMUX"], loginShell: shell)
         defer { _ = try? service.run(["kill-server"]) }
@@ -37,6 +63,12 @@ enum TerminalStartError: Error { case message(String) }
                 defer { try? service.remove(record) }
                 let deadline = Date().addingTimeInterval(8)
                 while !(try service.pane(record).dead) && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+                let snapshot = try service.snapshot()
+                guard let state = snapshot[record.name], state.pane.dead,
+                      state.pane.pid == (try service.pane(record)).pid,
+                      !state.activity.tty.isEmpty else {
+                    throw TerminalStartError.message("Batched snapshot lost terminal identity, exit state, or tty")
+                }
                 let actual = try String(contentsOf: root.appendingPathComponent("result"), encoding: .utf8)
                 let arguments = resume ? (provider == "Codex" ? "resume\n" : "--resume\n") + "session-fixture\n"
                     : (provider == "Copilot" ? "-i\n" : "") + "literal $value 'quotes'\n"
