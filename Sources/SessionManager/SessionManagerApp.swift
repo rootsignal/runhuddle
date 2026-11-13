@@ -164,9 +164,28 @@ struct ContentView: View {
             toggleInfo: { showSessionInfo.toggle() }
         )
     }
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(model.filter == "Saved work" ? "Search notes" : "Search sessions", text: Binding(get: { model.filter == "Saved work" ? model.libraryQuery : model.query }, set: { if model.filter == "Saved work" { model.libraryQuery = $0 } else { model.query = $0 } }))
+                .textFieldStyle(.plain).focused($searchFocused)
+                .onExitCommand { model.query = ""; model.libraryQuery = ""; searchFocused = false }
+                .accessibilityLabel(model.filter == "Saved work" ? "Search notes" : "Search sessions, projects, and messages")
+            if !(model.filter == "Saved work" ? model.libraryQuery : model.query).isEmpty {
+                Button { if model.filter == "Saved work" { model.libraryQuery = "" } else { model.query = "" }; searchFocused = true } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Clear search (Escape)").accessibilityLabel("Clear search")
+            }
+        }.padding(.horizontal, 8).frame(height: 30)
+            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(searchFocused ? HuddleStyle.accent : .clear))
+            .help(model.filter == "Saved work" ? "Search notes (⌘F)" : "Search sessions (⌘F)")
+    }
+
     @ViewBuilder private var sessionList: some View {
 
                     VStack(spacing: 0) {
+                        searchField.padding(.horizontal, 16).padding(.vertical, 10)
                         if ["All sessions", "Running here"].contains(model.filter), ["All tools", "Shell"].contains(model.provider),
                            !model.shellTerminals(filter: model.filter).isEmpty || (model.query.isEmpty && model.projectFilter == "All projects") {
                             ShellTerminalsEntry(matching: model.shellTerminals(filter: model.filter))
@@ -332,21 +351,9 @@ struct ContentView: View {
                 } label: { Label("Help", systemImage: "questionmark.circle") }
             }
             ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(model.filter == "Saved work" ? "Search notes" : "Search sessions", text: Binding(get: { model.filter == "Saved work" ? model.libraryQuery : model.query }, set: { if model.filter == "Saved work" { model.libraryQuery = $0 } else { model.query = $0 } }))
-                        .textFieldStyle(.plain).focused($searchFocused)
-                        .onExitCommand { model.query = ""; model.libraryQuery = ""; searchFocused = false }
-                        .accessibilityLabel(model.filter == "Saved work" ? "Search notes" : "Search sessions, projects, and messages")
-                    if !(model.filter == "Saved work" ? model.libraryQuery : model.query).isEmpty {
-                        Button { if model.filter == "Saved work" { model.libraryQuery = "" } else { model.query = "" }; searchFocused = true } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain).foregroundStyle(.secondary)
-                            .help("Clear search (Escape)").accessibilityLabel("Clear search")
-                    }
-                }.padding(.horizontal, 8).frame(width: 210, height: 28)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(searchFocused ? HuddleStyle.accent : .clear))
-                    .help(model.filter == "Saved work" ? "Search notes (⌘F)" : "Search sessions (⌘F)")
+                if model.filter == "Saved work" {
+                    searchField.frame(width: 210)
+                }
             }
 
         }
@@ -354,7 +361,14 @@ struct ContentView: View {
             NewShellTerminalView(initialDirectory: embeddedTerminals.sessions.first { $0.id == embeddedTerminals.presentedID }?.directory ?? model.selected?.cwd ?? "")
         }
         .sheet(isPresented: $showNewSession) { NewSessionLaunchView(initialDirectory: model.selected?.cwd ?? "") }
-        .focusedSceneValue(\.searchSessions, { searchFocused = true })
+        .focusedSceneValue(\.searchSessions, {
+            if model.filter != "Saved work" { expandedSession = false }
+            // Focus after the sidebar field has been inserted into the view hierarchy.
+            Task { @MainActor in
+                await Task.yield()
+                searchFocused = true
+            }
+        })
         .focusedSceneValue(\.workspaceViewActions, WorkspaceViewActions(
             listVisible: !showDetails || !expandedSession,
             infoVisible: showSessionInfo && showDetails && model.selected != nil,
