@@ -54,7 +54,9 @@ final class PersistentTerminalService {
         if FileManager.default.fileExists(atPath: terminfo.path) { env["TERMINFO"] = terminfo.path }
         return env
     }
-    var baseArguments: [String] { ["-S", socket, "-f", configuration.path] }
+    // SwiftTerm supports UTF-8 regardless of the locale inherited by this GUI app.
+    // Apply this to every client attachment, including restored persistent sessions.
+    var baseArguments: [String] { ["-u", "-S", socket, "-f", configuration.path] }
     func prepare() throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)

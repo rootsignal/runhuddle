@@ -43,6 +43,27 @@ enum TerminalStartError: Error { case message(String) }
                 guard actual == "login\ninteractive\n" + arguments else {
                     throw TerminalStartError.message("\(provider) \(resume ? "resume" : "new") failed shell environment or exact argument check: \(actual.debugDescription)")
                 }
+                if shell == "/bin/zsh" && provider == "Claude" && resume {
+                    // Use the production argument path with an explicitly ASCII locale.
+                    // A control-mode attachment exposes the same client UTF-8 flag.
+                    let client = Process()
+                    client.executableURL = URL(fileURLWithPath: service.executable)
+                    client.arguments = service.baseArguments + ["-C", "attach-session", "-t", record.name]
+                    client.environment = service.environment.merging(["LANG": "C", "LC_ALL": "C"]) { _, new in new }
+                    let input = Pipe(), output = Pipe()
+                    client.standardInput = input; client.standardOutput = output; client.standardError = output
+                    try client.run()
+                    defer { if client.isRunning { client.terminate(); client.waitUntilExit() } }
+                    let limit = Date().addingTimeInterval(3)
+                    var flags = ""
+                    repeat {
+                        flags = try service.run(["list-clients", "-t", record.name, "-F", "#{client_utf8}"])
+                        if flags == "1" { break }
+                        Thread.sleep(forTimeInterval: 0.05)
+                    } while Date() < limit
+                    guard flags == "1" else { throw TerminalStartError.message("ASCII-locale attachment did not enable UTF-8") }
+                    print("ASCII locale: restored tmux attachment advertises UTF-8")
+                }
                 print("\(shell) \(provider) \(resume ? "resume" : "new"): login + interactive environment; exact arguments; no permission overrides")
             }
         }
