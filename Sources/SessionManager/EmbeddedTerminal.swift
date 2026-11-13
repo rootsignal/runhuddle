@@ -68,14 +68,17 @@ import SessionCore
         var arguments = [executable]
         if let resume { arguments += provider == "Codex" ? ["resume", resume] : ["--resume", resume] }
         if let prompt { arguments += provider == "Copilot" ? ["-i", prompt] : [prompt] }
-        // Login shell supplies the user's normal CLI PATH. The executable and
+        // Login + interactive shell supplies the user's normal CLI environment. The executable and
         // arguments remain individually quoted; no prompt or approval flags.
         let command = "exec " + arguments.map(ShellCommand.quote).joined(separator: " ")
         var env = ProcessInfo.processInfo.environment
         env.removeValue(forKey: "NO_COLOR")
         env["TERM"] = "xterm-256color"; env["COLORTERM"] = "truecolor"
         env["TERM_PROGRAM"] = "RunHuddle"
-        terminal.startProcess(executable: "/bin/zsh", args: ["-l", "-c", command],
+        // Keep argv quoting in zsh; the user's shell supplies its normal startup environment.
+        let startup = PersistentTerminalService.loginInvocation(shell: persistentService.agentShell,
+            command: "exec /bin/zsh -c " + ShellCommand.quote(command))
+        terminal.startProcess(executable: startup[0], args: Array(startup.dropFirst()),
                               environment: env.map { "\($0.key)=\($0.value)" }, currentDirectory: directory)
         pid = terminal.process.shellPid
         if !terminal.process.running { ended = true }

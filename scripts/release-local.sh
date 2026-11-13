@@ -12,6 +12,7 @@ export RUNHUDDLE_BUILD_PYTHON="$python"
 "$python" -c 'import websockets, yaml'
 gh auth status
 swift test --build-system native
+bash scripts/check-agent-launch-environment.sh
 "$python" -m unittest discover -s Tests -p 'test_*.py'
 bash scripts/build-app.sh
 "$python" scripts/verify_standalone.py

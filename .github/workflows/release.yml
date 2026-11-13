@@ -28,6 +28,8 @@ jobs:
         run: bash scripts/prepare-ci-terminal.sh
       - run: python3 -m pip install -r scripts/requirements.txt
       - run: swift test --build-system native
+      - name: Verify agent shell environments
+        run: bash scripts/check-agent-launch-environment.sh
       - run: python3 -m unittest discover -s Tests -p 'test_*.py'
       - name: Import signing credentials
         env:

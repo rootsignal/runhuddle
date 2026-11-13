@@ -28,10 +28,13 @@ final class PersistentTerminalService {
     static let shared = PersistentTerminalService()
     let folder: URL
     private let runtimeExecutable: String?
+    private let configuredLoginShell: String?
+    var agentShell: String { configuredLoginShell ?? Self.loginShell }
     var socket: String { folder.appendingPathComponent("terminals.sock").path }
     private var registry: URL { folder.appendingPathComponent("terminals.json") }
     private var configuration: URL { folder.appendingPathComponent("tmux.conf") }
-    init(folder: URL? = nil, runtimeExecutable: String? = nil) {
+    init(folder: URL? = nil, runtimeExecutable: String? = nil, loginShell: String? = nil) {
+        self.configuredLoginShell = loginShell
         self.runtimeExecutable = runtimeExecutable
         self.folder = folder ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("RunHuddle")
     }
@@ -111,6 +114,16 @@ final class PersistentTerminalService {
         }
         return "/bin/zsh"
     }
+    static func loginInvocation(shell: String, command: String) -> [String] {
+        // csh/tcsh forbid combining -l with other options. A leading dash in
+        // argv[0] selects login startup without changing the command's quoting.
+        if ["csh", "tcsh"].contains(URL(fileURLWithPath: shell).lastPathComponent) {
+            let words = ["exec", "-a", "-" + URL(fileURLWithPath: shell).lastPathComponent, shell, "-i", "-c", command]
+            return ["/bin/zsh", "-c", words.map(ShellCommand.quote).joined(separator: " ")]
+        }
+        return [shell, "-l", "-i", "-c", command]
+    }
+
     func create(executable: String, directory: String, provider: String, resume: String?, prompt: String?) throws -> PersistentTerminalRecord {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -139,7 +152,11 @@ final class PersistentTerminalService {
             }
             // A server launched by an older build may still retain this flag.
             _ = try? run(["set-environment", "-gu", "NO_COLOR"])
-            try run(["new-session", "-d", "-s", record.name, "-c", directory, "-x", "100", "-y", "32", "-e", "TERM_PROGRAM=RunHuddle", "-e", "COLORTERM=truecolor", "/bin/zsh"] + (provider == "Shell" ? [] : ["-l"]) + [script.path])
+            // Match a regular terminal: provider startup needs both login and
+            // interactive shell configuration (including .zshrc exports).
+            let startup = provider == "Shell" ? ["/bin/zsh", script.path]
+                : Self.loginInvocation(shell: agentShell, command: "exec /bin/zsh " + ShellCommand.quote(script.path))
+            try run(["new-session", "-d", "-s", record.name, "-c", directory, "-x", "100", "-y", "32", "-e", "TERM_PROGRAM=RunHuddle", "-e", "COLORTERM=truecolor"] + startup)
             return record
         } catch {
             try? remove(record)
