@@ -19,6 +19,8 @@ jobs:
       RUNHUDDLE_NOTARY_PROFILE: RunHuddle-CI
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 26 SDK
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
