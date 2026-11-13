@@ -6,38 +6,17 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.36.1</title>
-            <pubDate>Thu, 12 Nov 2026 18:21:08 -0600</pubDate>
-            <sparkle:version>114</sparkle:version>
-            <sparkle:shortVersionString>0.36.1</sparkle:shortVersionString>
+            <title>0.36.2</title>
+            <pubDate>Thu, 12 Nov 2026 18:57:34 -0600</pubDate>
+            <sparkle:version>115</sparkle:version>
+            <sparkle:shortVersionString>0.36.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# 0.36.1
-
-- Remove handoff-status and saved-note icons from session cards and their icon-guide entries.
-- Keep draft freshness guidance within handoff review. Project note counts remain beside the Project notes action in Session Info; continuation links remain in session history.
-
-
-## Public preview update (since 0.19.3)
-
-- Work with coding agents in embedded terminals, with clearer running, waiting and closed states.
-- Open standalone shell terminals in compact tabs; keep shell terminals and agent conversations linked where detected.
-- Inspect project changes with readable diffs and open files in your preferred editor.
-- Review scoped project changes with another agent without embedding the entire diff in the launch prompt.
-- Follow reported agent checklists and an attention inbox, with project preferences and optional isolated workspaces.
-- Save project notes for reusable knowledge, or session reports for a record of the work. Continue conversations with reviewed handoffs.
-- Simplified navigation, collapsible side panes, terminal themes, and a new RunHuddle icon.
-
-Requires Apple Silicon and macOS 14 or newer. Install and sign in to your agent CLIs separately.
-Agent checklists appear only when the provider reports a supported structured plan.
-Project changes belong to the working folder and can include edits from multiple sessions.
-This is a preview; review generated notes and handoffs before reusing them.
-]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.1/RunHuddle-0.36.1-arm64.dmg" length="46172860" type="application/octet-stream" sparkle:edSignature="41qvWrwXlFQBHa7a1Q+aDGAFAYgajGrReDyycr/ow3dWA/2Z2hDn2zp2tJgNmf0YSXxTiCJwx+IbL+uRW26+DQ=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.2/RunHuddle-0.36.2-arm64.dmg" length="46174913" type="application/octet-stream" sparkle:edSignature="43exM2sWQel0T4xeb63IeXqkowWFPDDyie8+AJCy4VwBOR7SLuq8T7U8gwd2xm9ukY9s3fORCCKC5ClGj0zOBw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: +xclEOFp+WXzb4hb2tWjsr0Lsq1yTe/BhM0rYZBpBgrj2f9mNWdIPuSAvX/SHyrpYLqOcr0fzNpmX6DrHURfCw==
-length: 2639
+edSignature: nEXqtTZaPyoV7M1NxoyB8dYXJuw+LA1MbjtR4tbvWpeyuVOwyopwPVVhPArYPu/f/kOnjkqvrewZxqHTKHsTAQ==
+length: 1130
 -->
