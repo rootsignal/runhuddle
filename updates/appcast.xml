@@ -6,26 +6,24 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.36.9</title>
-            <pubDate>Fri, 13 Nov 2026 11:34:43 -0600</pubDate>
-            <sparkle:version>122</sparkle:version>
-            <sparkle:shortVersionString>0.36.9</sparkle:shortVersionString>
+            <title>0.36.10</title>
+            <pubDate>Fri, 13 Nov 2026 11:46:34 -0600</pubDate>
+            <sparkle:version>123</sparkle:version>
+            <sparkle:shortVersionString>0.36.10</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# 0.36.9
+            <description sparkle:format="markdown"><![CDATA[# 0.36.10
 
-- Group search, Active / All / Pinned / Archived navigation, and tool and project filters above the session list.
-- Preserve the search query and open terminal when switching session scopes.
-- Offer Search all sessions when an Active search has no results, keeping the query intact.
-- Hide navigation counts when the sidebar is too narrow to fit them; retain readable text labels and accessible counts.
+- Count only agent sessions in Active and All. Open shell terminals are counted separately under Terminals, matching the agent activity summary.
+- Describe navigation counts as sessions for accessibility.
 
-Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.9-source.tar.gz` alongside this installer. See docs/BUILDING.md and docs/LICENSING.md in that archive.
+Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.10-source.tar.gz` alongside this installer. See docs/BUILDING.md and docs/LICENSING.md in that archive.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.9/RunHuddle-0.36.9-arm64.dmg" length="47736806" type="application/octet-stream" sparkle:edSignature="op6ekhzqAoioHprKZ7O+fV7MeeKfWSP+1OAQrBH34HRi2JaJZR3vK3Ifi4M0fSFO+L5+97kGCvm6nhfZcb04AA=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.10/RunHuddle-0.36.10-arm64.dmg" length="47736759" type="application/octet-stream" sparkle:edSignature="QzwOh37XeOjwUIIR71+n9st46I6Wq2Wj++vGLIMxLawhfAZUI2cA6uv7nsJ41JtpS9/qGTya32r4FK7RUMbVDQ=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: dlq+3tLUv0xZfYFpankj7KT4tWGCXwEMc3T23A9ZgIzyBjE/y6jPFIEBjge4NIzt+jwqvC22gi+M2Pof70pwBw==
-length: 1847
+edSignature: BKPJprBjodtLqc7s9iJzDZMihS3diTo/zrfK7YozXuaZTTg5cL0VsjmZWmgxk0FEtTjS6ZaMijgUpMjnMtD4Aw==
+length: 1655
 -->
