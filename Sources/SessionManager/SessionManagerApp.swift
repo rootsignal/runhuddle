@@ -105,26 +105,6 @@ struct ContentView: View {
 
             if model.filter == "Saved work" { SavedWorkLibrary() } else {
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    SessionFilterMenu()
-                    VStack(alignment: .leading, spacing: 5) {
-                        if model.isSearching || !["Running here", "Running elsewhere", "All sessions", "Pinned", "Archived"].contains(model.filter) {
-                            Text(model.isSearching ? "Search results" : model.filter).font(.headline)
-                        }
-                        Text(workspaceSubtitle)
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        if isNow { ActivityOverview(sessions: model.visible) }
-                        if model.filter == "Archived" && !model.visible.isEmpty {
-                            Text(SessionStorageTotal(model.visible).label)
-                                .font(.caption).foregroundStyle(.secondary)
-                                .help("Allocated space for available primary transcript files in these results. Shared files counted once. Excludes project files, attachments, agent indexes, and RunHuddle’s library. APFS shared blocks may not be uniquely reclaimable.")
-                        }
-                    }
-                    Spacer()
-                    workspacePaneControls
-                    if model.cleaning || model.manualRefreshing { ProgressView().controlSize(.small) }
-                }.padding(.horizontal, 20).padding(.vertical, 8)
-                    .background(LinearGradient(colors: [HuddleStyle.accent.opacity(0.035), .clear], startPoint: .topLeading, endPoint: .bottomTrailing))
                 if isNow && model.visible.contains(where: { $0.state == .needsInput }) {
                     NowAttentionPanel(
                         sessions: model.visible,
@@ -185,7 +165,22 @@ struct ContentView: View {
     @ViewBuilder private var sessionList: some View {
 
                     VStack(spacing: 0) {
-                        searchField.padding(.horizontal, 16).padding(.vertical, 10)
+                        VStack(alignment: .leading, spacing: 10) {
+                            searchField
+                            SessionScopeNavigation(selection: model.filter, count: { model.count(for: $0) }, select: selectSessionScope)
+                            SessionFilterMenu()
+                            if isNow { ActivityOverview(sessions: model.visible) }
+                            if model.filter == "Archived" && !model.visible.isEmpty {
+                                Text(SessionStorageTotal(model.visible).label)
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .help("Allocated transcript storage; excludes project files and attachments. Shared files counted once.")
+                            }
+                            HStack {
+                                Text(workspaceSubtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                Spacer(minLength: 0)
+                                if model.cleaning || model.manualRefreshing { ProgressView().controlSize(.small) }
+                            }
+                        }.padding(.horizontal, 16).padding(.vertical, 10)
                         if ["All sessions", "Running here"].contains(model.filter), ["All tools", "Shell"].contains(model.provider),
                            !model.shellTerminals(filter: model.filter).isEmpty || (model.query.isEmpty && model.projectFilter == "All projects") {
                             ShellTerminalsEntry(matching: model.shellTerminals(filter: model.filter))
@@ -194,19 +189,12 @@ struct ContentView: View {
                             UnmatchedTerminalRow(session: terminal)
                         }
 
-                        if !model.query.isEmpty {
+                        if model.isSearching && !model.historySearchStatus.isEmpty {
                             HStack(spacing: 8) {
-                                Button("Clear search") { model.query = ""; model.libraryQuery = ""; searchFocused = false }
-                                Picker("Search scope", selection: $model.searchScope) {
-                                    ForEach(SessionSearchScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                                }.labelsHidden().fixedSize().help("Search all sessions includes archived sessions; tool and project filters still apply")
                                 if model.searchingHistory { ProgressView().controlSize(.small) }
                                 Text(model.historySearchStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                Spacer(minLength: 0)
-                            }.padding(.horizontal, 16).padding(.top, 8)
-                            Text(model.searchScope == .everywhere ? "All session states · includes archived sessions · selected filters apply" : "\(model.filter) · \(model.provider) · \(model.projectFilter == "All projects" ? "All projects" : ProjectFilter.title(model.projectFilter))")
-                                .font(.caption2).foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 8)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16).padding(.bottom, 8)
                         }
                         if model.bulkMode {
                             VStack(alignment: .leading, spacing: 8) {
@@ -274,14 +262,14 @@ struct ContentView: View {
                         .overlay {
                             if model.visible.isEmpty && model.shellTerminals(filter: model.filter).isEmpty {
                                 ContentUnavailableView {
-                                    Label(model.filter == "Running here" ? (hasSessionFilters ? "No active sessions match these filters" : "No active sessions") : "No matching sessions", systemImage: "magnifyingglass")
+                                    Label(model.filter == "Running here" ? (model.isSearching ? "No active sessions match" : (hasSessionFilters ? "No active sessions match these filters" : "No active sessions")) : "No matching sessions", systemImage: "magnifyingglass")
                                 } description: {
                                     Text(hasSessionFilters ? "Try removing a filter or view matching session history." : "Browse previous sessions or start work in your preferred agent.")
                                 } actions: {
                                     if hasSessionFilters {
                                         Button("Clear filters") { model.provider = "All tools"; model.projectFilter = "All projects" }
                                     }
-                                    Button(hasSessionFilters ? "View matching history" : "Browse all sessions") { model.filter = "All sessions"; model.searchScope = .everywhere }
+                                    Button(model.isSearching ? "Search all sessions" : "Browse all sessions") { selectSessionScope("All sessions") }
                                 }
                             }
                         }
@@ -320,7 +308,8 @@ struct ContentView: View {
                 } label: { Label("New session", systemImage: "plus") } primaryAction: { showNewSession = true }
                     .menuStyle(.borderlessButton).fixedSize().padding(.horizontal, 10).padding(.vertical, 7)
                     .background(HuddleStyle.accent.opacity(0.2), in: RoundedRectangle(cornerRadius: 7)).padding(.leading, 16)
-                WorkspaceNavigation(selection: model.filter, count: { model.count(for: $0) }, select: selectDestination, returnToSessions: { selectDestination(lastSessionFilter) })
+                WorkspaceNavigation(selection: model.filter, select: selectDestination, returnToSessions: { selectDestination(lastSessionFilter) })
+                if model.filter != "Saved work" { workspacePaneControls }
                 AttentionInboxButton().padding(.trailing, 16)
             }
             Divider()
@@ -542,10 +531,16 @@ struct ContentView: View {
         guard !model.renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         if model.saveDisplayName(model.renameText, for: row) { model.renameSession = nil }
     }
+    private func selectSessionScope(_ destination: String) {
+        model.searchScope = .currentView
+        model.filter = destination
+        lastSessionFilter = destination
+        // Scope changes affect results only; keep the open terminal and query.
+    }
     private func selectDestination(_ destination: String) {
         if model.filter != "Saved work" { lastSessionFilter = model.filter }
         embeddedTerminals.presentedID = nil
-        model.query = ""; model.filter = destination
+        model.filter = destination
         if destination == "Saved work" { model.workError = nil }
         else { lastSessionFilter = destination }
         showDetails = false; searchFocused = false; listFocused = destination != "Saved work"

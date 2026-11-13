@@ -47,7 +47,7 @@ struct SessionFilterMenu: View {
                     Image(systemName: "xmark.circle.fill")
                 }.buttonStyle(.plain).help("Clear tool and project filters").accessibilityLabel("Clear tool and project filters")
             }
-        }.buttonStyle(.bordered).controlSize(.small).fixedSize(horizontal: true, vertical: false)
+        }.buttonStyle(.bordered).controlSize(.small)
     }
     private func projectRow(_ path: String, title: String) -> some View {
         Button { model.projectFilter = path; presented = false; projectQuery = "" } label: {
