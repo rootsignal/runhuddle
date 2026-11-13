@@ -6,26 +6,29 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.36.4</title>
-            <pubDate>Thu, 12 Nov 2026 19:33:51 -0600</pubDate>
-            <sparkle:version>117</sparkle:version>
-            <sparkle:shortVersionString>0.36.4</sparkle:shortVersionString>
+            <title>0.36.5</title>
+            <pubDate>Fri, 13 Nov 2026 07:52:05 -0600</pubDate>
+            <sparkle:version>118</sparkle:version>
+            <sparkle:shortVersionString>0.36.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# 0.36.4
+            <description sparkle:format="markdown"><![CDATA[# 0.36.5
 
-- Replace the app and menu-bar logo with three stacked terminal panes and a prompt, designed to stay recognizable at notification size.
-- Handoffs default to the current folder and exclude their original session from warnings about other agents. Idle sessions no longer block the handoff; isolation remains optional.
-- Label unresolved questions and next steps as optional, with clearer guidance when the original agent is still working.
-- Refresh macOS application registration after local installation so system surfaces can pick up the app icon.
+- Reduce repeated session-list grouping and search work during refreshes.
+- Avoid database WAL writes when saved content is unchanged, and avoid replacing identical recorded history solely to update its retrieval timestamp.
+- Move recurring terminal status queries off the UI thread and stop polling ended terminals.
+- Apply terminal appearance settings only when preferences or appearance change.
+- Include GPLv3 licensing and notices. Earlier MIT permissions are not revoked.
 
-Built-in agent integrations currently support Codex CLI, Claude Code, and GitHub Copilot CLI. Other commands can run in shell terminals; that alone does not provide session tracking or other provider-specific integrations.
+Build and 100 Swift tests passed, including unchanged-write and transaction rollback regression tests. These changes address identified sources of UI stalls; the reported CPU bursts on the affected Mac still need post-update verification.
+
+Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.5-source.tar.gz` alongside this installer. See its README and docs/BUILDING.md for build instructions and docs/LICENSING.md for licensing details.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.4/RunHuddle-0.36.4-arm64.dmg" length="46403280" type="application/octet-stream" sparkle:edSignature="ypt8C4+5wQMgGseuKnv5JnA23jJhR6YNebdcDTqVrxMp6dDutPMVf8BekBRTcVpPUfckbjl9XQ2ewcwkO1Q2Cw=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.5/RunHuddle-0.36.5-arm64.dmg" length="46750771" type="application/octet-stream" sparkle:edSignature="ObrAWe8sClsPUouhe0cPoDl5VtPrwD9qI095oGyqogtAgRn/LaB9NebsqWpaOUMMNl9BcC2Ycr9+XHcVpIPyBQ=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 5JZTGpzBcoPQYLXuCcVTCJyjqAdsK1HwssowVYH8Q1JPYkmjzYBDiWf0OR5jyfv92ddmyWeQu6Fxm1R7xkuJBQ==
-length: 1991
+edSignature: 30/rcJmhZ3MqaMR1YSS0oBH35C1WJzMERP59Js+/qsO/e+We9cmNnbdLsXtoHuflDO4vcuDFQryU2fspT1TZAQ==
+length: 2206
 -->
