@@ -14,12 +14,16 @@ Create a GitHub environment named **release**. Restrict it to main and optionall
 
 | Secret | Value |
 | --- | --- |
-| DEVELOPER_ID_P12_BASE64 | Base64-encoded export of the RootSignal Developer ID Application certificate **and private key**, in password-protected PKCS#12 format. |
+| DEVELOPER_ID_P12_BASE64 | Base64-encoded export of your Developer ID Application certificate **and private key**, in password-protected PKCS#12 format. |
 | DEVELOPER_ID_P12_PASSWORD | Password protecting that export. |
 | APPLE_ID | Apple Developer account login. |
 | APPLE_APP_SPECIFIC_PASSWORD | App-specific password for notarization from the Apple account portal. |
 
-The workflow uses team C65AQBMSBJ and identity Developer ID Application: RootSignal LLC (C65AQBMSBJ). Change these when changing organizations. The local Keychain profile is not available on GitHub runners; CI needs its own secrets. Never commit private keys, passwords, or credential exports. The temporary keychain is removed even if a job fails.
+Also configure repository or release environment **variables** `APPLE_TEAM_ID` and
+`RUNHUDDLE_SIGN_IDENTITY` (the full Developer ID Application identity name).
+The workflow fails before building if either is missing. These are public
+identifiers, not secrets. The official repository stores these as repository
+variables; environment variables may override them. The local Keychain profile is not available on GitHub runners; CI needs its own secrets. Never commit private keys, passwords, or credential exports. The temporary keychain is removed even if a job fails.
 
 ## Each release
 
@@ -31,12 +35,13 @@ The workflow uses team C65AQBMSBJ and identity Developer ID Application: RootSig
 
 Use a new version for each release. The workflow fails if the release tag exists instead of replacing published artifacts. Failed notarization requires investigation before retrying; do not distribute unapproved output.
 
-## Recommended: release from this Mac
+## Recommended: release from a maintainer’s Mac
 
-With the Developer ID identity installed and credentials stored in the RunHuddle Keychain profile:
+With your Developer ID identity installed and notarization credentials stored in
+your Keychain profile (default: `RunHuddle`; override with `RUNHUDDLE_NOTARY_PROFILE`):
 
 ```sh
-export RUNHUDDLE_SIGN_IDENTITY='Developer ID Application: RootSignal LLC (C65AQBMSBJ)'
+export RUNHUDDLE_SIGN_IDENTITY='Developer ID Application: Your Organization (YOURTEAMID)'
 bash scripts/build-app.sh
 python3 scripts/verify_standalone.py
 bash scripts/notarize.sh

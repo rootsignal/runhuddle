@@ -2,9 +2,24 @@
 
 [Documentation](README.md) · [RunHuddle](../README.md)
 
+## Contributor builds
+
+No Apple Developer membership, signing certificate, notarization credentials, or
+GitHub secrets are needed for local builds. Leave `RUNHUDDLE_SIGN_IDENTITY` unset
+to use ad-hoc signing. Official release signing is a separate maintainer workflow.
+
+Local builds currently use the official app identity and storage locations.
+Installing one replaces `~/Applications/RunHuddle.app` and shares its preferences
+and session data. Use a separate macOS account for isolated development; choosing
+a different installation directory alone does not isolate app data.
+
 ## Build and install from source
 
-Builders need macOS 14+, Swift 6+ (Xcode or compatible Command Line Tools), Python 3.12+, Git, and internet access. These requirements apply only to building the app.
+Builders need macOS 14+, Swift 6+ (Xcode or compatible Command Line Tools), Python 3.12+, Git, and internet access. These requirements apply only to building the app. Packaging also requires
+**tmux 3.5a** and ncurses terminfo, with Homebrew-installed runtime libraries.
+`RUNHUDDLE_TMUX` can point to a custom build of that exact tmux version; a newer
+Homebrew tmux is not a substitute. The pinned build recipe is in
+`scripts/prepare-ci-terminal.sh` (its `RUNNER_TEMP`/`GITHUB_ENV` plumbing is CI-only).
 
 ```sh
 git clone https://github.com/rootsignal/runhuddle.git
@@ -29,7 +44,7 @@ The DMG and SHA-256 checksum are written to `dist/`. Build on the target archite
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r scripts/requirements.txt
-swift test
+swift test --build-system native
 .venv/bin/python -m unittest discover -s Tests -p 'test_*.py' -v
 bash scripts/build-app.sh
 open dist/RunHuddle.app
@@ -46,6 +61,12 @@ The historical `scripts/render-switcher-screenshot.sh` and `scripts/render-works
 Use a current checkout and a supported Swift/Python toolchain. If your Python version manager reports “No version is set,” select Python 3.12+ before running the installer. Older SwiftUI macro or build-system errors may require updating the checkout and rebuilding. Runtime downloads use system curl with TLS verification; do not disable certificate verification to work around certificate errors.
 
 For runtime problems, see [Troubleshooting](https://runhuddle.rootsignal.io/docs/troubleshooting/).
+
+## Forks
+
+Read [forking guidance](FORKING.md) before distributing a renamed build or
+configuring updates. The checked-in packaging and publishing scripts target the
+official RunHuddle product; changing the Git remote alone does not retarget them.
 
 ## Releasing
 

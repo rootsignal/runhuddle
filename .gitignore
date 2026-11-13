@@ -11,3 +11,12 @@ dist/
 *.db-*
 *.log
 *.jsonl
+
+# Signing credentials and local Keychain exports (never commit)
+*.p12
+*.pfx
+*.p8
+*.keychain
+*.keychain-db
+*.mobileprovision
+AuthKey_*

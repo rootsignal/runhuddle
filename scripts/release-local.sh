@@ -6,7 +6,8 @@ if [[ -n "$(git status --porcelain)" ]]; then
   echo 'Commit or stash working tree changes before releasing.' >&2
   exit 1
 fi
-export RUNHUDDLE_SIGN_IDENTITY="${RUNHUDDLE_SIGN_IDENTITY:-Developer ID Application: RootSignal LLC (C65AQBMSBJ)}"
+: "${RUNHUDDLE_SIGN_IDENTITY:?Set your Developer ID Application identity; see docs/RELEASING.md}"
+export RUNHUDDLE_SIGN_IDENTITY
 python="${RUNHUDDLE_BUILD_PYTHON:-python3}"
 export RUNHUDDLE_BUILD_PYTHON="$python"
 "$python" -c 'import websockets, yaml'

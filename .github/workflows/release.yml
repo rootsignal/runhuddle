@@ -15,9 +15,14 @@ jobs:
       contents: write
     timeout-minutes: 120
     env:
-      RUNHUDDLE_SIGN_IDENTITY: 'Developer ID Application: RootSignal LLC (C65AQBMSBJ)'
+      RUNHUDDLE_SIGN_IDENTITY: ${{ vars.RUNHUDDLE_SIGN_IDENTITY }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       RUNHUDDLE_NOTARY_PROFILE: RunHuddle-CI
     steps:
+      - name: Validate signing configuration
+        run: |
+          : "${RUNHUDDLE_SIGN_IDENTITY:?Set the release environment variable RUNHUDDLE_SIGN_IDENTITY}"
+          : "${APPLE_TEAM_ID:?Set the release environment variable APPLE_TEAM_ID}"
       - uses: actions/checkout@v4
       - name: Select Xcode 26 SDK
         run: sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
@@ -53,7 +58,7 @@ jobs:
           security list-keychains -d user -s "$keychain" login.keychain-db
           security import "$RUNNER_TEMP/signing.p12" -P "$CERTIFICATE_PASSWORD" -k "$keychain" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
-          xcrun notarytool store-credentials "$RUNHUDDLE_NOTARY_PROFILE" --apple-id "$APPLE_ID" --team-id C65AQBMSBJ --password "$APPLE_PASSWORD" --keychain "$keychain"
+          xcrun notarytool store-credentials "$RUNHUDDLE_NOTARY_PROFILE" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD" --keychain "$keychain"
           security default-keychain -d user -s "$keychain"
           rm "$RUNNER_TEMP/signing.p12"
       - run: bash scripts/build-app.sh
