@@ -2,10 +2,22 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from codex_bridge import state_of, snapshot, history, continuation_context
+from codex_bridge import state_of, snapshot, history, continuation_context, handoff_origin
 
 
 class BridgeTests(unittest.TestCase):
+    def test_handoff_origin_uses_initial_user_message_not_recent_replies(self):
+        class Client:
+            def request(self, method, params):
+                assert method == "thread/turns/list"
+                assert params["sortDirection"] == "asc" and params["limit"] == 1
+                return {"data": [{"items": [
+                    {"type": "agentMessage", "text": "not the source"},
+                    {"type": "userMessage", "content": [{"type": "text", "text": "Original handoff"}]},
+                    {"type": "userMessage", "content": [{"type": "text", "text": "Later message"}]}
+                ]}]}
+        self.assertEqual(handoff_origin(Client(), "thread"), {"text": "Original handoff"})
+
     def test_history_uses_recent_paginated_turns_in_chronological_order(self):
         class Client:
             def request(self, method, params):

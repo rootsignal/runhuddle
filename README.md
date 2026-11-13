@@ -7,7 +7,7 @@
 ## Download
 
 <!-- current-download:start -->
-**[Download RunHuddle — available releases](https://github.com/rootsignal/runhuddle/releases)**
+**[Download RunHuddle for macOS](https://runhuddle.rootsignal.io/download)**
 <!-- current-download:end -->
 
 Requires **macOS 14 or newer on Apple Silicon**. Agent CLIs and accounts are installed separately. Release downloads are Developer ID signed and notarized. No Python, Swift or source checkout is required to use the downloaded app.

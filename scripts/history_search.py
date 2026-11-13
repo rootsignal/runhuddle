@@ -5,13 +5,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from app_support import prepare_storage
 import re
 import sqlite3
 from codex_bridge import Client, list_rows
 from copilot_bridge import HOME as COPILOT_HOME
 from claude_bridge import paths as claude_paths, message as claude_message
 
-INDEX = Path.home() / 'Library/Application Support/Agent Session Manager/history-search.sqlite'
+INDEX = Path.home() / 'Library/Application Support/RunHuddle/history-search.sqlite'
 
 
 def initialize(db):
@@ -105,7 +106,7 @@ def main():
     complete.add('Copilot')
     sources.update({'Claude:' + sid: path for sid, path in claude_paths().items()})
     complete.add('Claude')
-    INDEX.parent.mkdir(parents=True, exist_ok=True)
+    prepare_storage(INDEX)
     with sqlite3.connect(INDEX, timeout=10) as db:
         initialize(db)
         os.chmod(INDEX, 0o600)

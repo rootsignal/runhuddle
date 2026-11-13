@@ -138,7 +138,7 @@ struct InlineReplyComposer: View {
                 }
                 if uncertain {
                     HStack {
-                        Button("Go to terminal") { model.resume(row) }.disabled(model.navigatingTerminal)
+                        Button("Open session") { model.resume(row) }.disabled(model.navigatingTerminal)
                         Button("I’ve checked delivery…") { confirmChecked = true }
                     }.font(.caption)
                 }

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 from bundle_runtime import bundle, sign_nested
+from bundle_terminal import bundle_terminal
 
 root = Path(__file__).resolve().parents[1]
 build_folder = tempfile.TemporaryDirectory(prefix="runhuddle-package-", dir=root / ".build")
@@ -15,6 +16,8 @@ contents = app / "Contents"
 shutil.copy2(root / ".build/release/SessionManager", contents / "MacOS/SessionManager")
 resources = contents / "Resources"
 resources.mkdir(parents=True, exist_ok=True)
+# SwiftTerm probes Contents/Resources in packaged macOS apps.
+shutil.copytree(root / '.build/release/SwiftTerm_SwiftTerm.bundle', resources / 'SwiftTerm_SwiftTerm.bundle')
 iconset = root / ".build/RunHuddle.iconset"
 generator = root / ".build/generate-runhuddle-icon"
 subprocess.run(["swiftc", str(root / "Sources/SessionManager/RunHuddleIcon.swift"),
@@ -23,7 +26,7 @@ subprocess.run([str(generator), str(iconset)], check=True)
 subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(resources / "RunHuddle.icns")], check=True)
 bridge = resources / "bridge"
 bridge.mkdir()
-for name in ("attention_request.py", "codex_bridge.py", "codex_events.py", "handoff_ai.py", "copilot_bridge.py", "claude_bridge.py", "local_cleanup.py", "context_usage.py", "compaction_count.py", "session_storage.py", "session_reply.py", "claude_channel.py", "copilot_reply.py", "copilot_extension.mjs", "copilot_extension_core.mjs", "history_search.py"):
+for name in ("app_support.py", "agent_plan.py", "attention_request.py", "codex_bridge.py", "codex_events.py", "handoff_ai.py", "copilot_bridge.py", "claude_bridge.py", "local_cleanup.py", "context_usage.py", "compaction_count.py", "session_storage.py", "session_reply.py", "claude_channel.py", "copilot_reply.py", "copilot_extension.mjs", "copilot_extension_core.mjs", "history_search.py"):
     shutil.copy2(root / "scripts" / name, bridge / name)
 sparkle = root / '.build/artifacts/sparkle/Sparkle'
 frameworks = contents / 'Frameworks'
@@ -32,12 +35,16 @@ framework = frameworks / 'Sparkle.framework'
 shutil.copytree(sparkle / 'Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework', framework, symlinks=True)
 runtime = bundle(root, resources)
 shutil.copy2(sparkle / 'LICENSE', resources / 'ThirdPartyNotices/Sparkle-LICENSE.txt')
+shutil.copy2(root / '.build/checkouts/SwiftTerm/LICENSE', resources / 'ThirdPartyNotices/SwiftTerm-LICENSE.txt')
+for notice in (root / 'docs/theme-licenses').glob('*-LICENSE.txt'):
+    shutil.copy2(notice, resources / 'ThirdPartyNotices' / notice.name)
 sign_nested(runtime)
+sign_nested(bundle_terminal(resources))
 info = {
     "CFBundleExecutable": "SessionManager", "CFBundleIdentifier": "local.rickbaker.agent-sessions",
     "CFBundleName": "RunHuddle", "CFBundleDisplayName": "RunHuddle",
     "CFBundleIconFile": "RunHuddle",
-    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.19.3", "CFBundleVersion": "62",
+    "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "0.36.1", "CFBundleVersion": "114",
     "SUFeedURL": "https://raw.githubusercontent.com/rootsignal/runhuddle/main/updates/appcast.xml",
     "SUPublicEDKey": (root / 'config/sparkle-public-key.txt').read_text().strip(),
     "SURequireSignedFeed": True,
@@ -45,7 +52,6 @@ info = {
     "SUEnableAutomaticChecks": False,
     "SUAutomaticallyUpdate": False,
     "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True,
-    "NSAppleEventsUsageDescription": "Find and focus your existing AI session in Terminal or Ghostty, or open a new terminal when requested.",
 }
 with (contents / "Info.plist").open("wb") as file:
     plistlib.dump(info, file)

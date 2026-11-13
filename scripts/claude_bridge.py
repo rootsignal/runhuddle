@@ -2,12 +2,14 @@
 """RunHuddle Claude observer. Never approves tools or injects context."""
 from compaction_count import read_compactions
 from session_storage import transcript_storage
+from agent_plan import read_plan, read_claude_tasks
 import argparse
 from contextlib import contextmanager
 import json
 import os
 import re
 from pathlib import Path
+from app_support import prepare_storage
 import shlex
 import shutil
 import sqlite3
@@ -19,14 +21,14 @@ from copilot_bridge import events, process_info
 from attention_request import request as attention_request
 
 HOME = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
-STATE = Path(os.environ.get('SESSION_TRACKER_CLAUDE_STATE', Path.home() / 'Library/Application Support/Agent Session Manager/claude.sqlite'))
+STATE = Path(os.environ.get('SESSION_TRACKER_CLAUDE_STATE', Path.home() / 'Library/Application Support/RunHuddle/claude.sqlite'))
 EVENTS = ('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PermissionRequest', 'PostToolUse',
           'PostToolUseFailure', 'Notification', 'Stop', 'StopFailure', 'SessionEnd', 'Elicitation', 'ElicitationResult')
 
 
 @contextmanager
 def database():
-    STATE.parent.mkdir(parents=True, exist_ok=True)
+    prepare_storage(STATE)
     db = sqlite3.connect(STATE, timeout=1)
     db.execute('CREATE TABLE IF NOT EXISTS states (id TEXT PRIMARY KEY, timestamp REAL, data TEXT)')
     db.execute('CREATE TABLE IF NOT EXISTS discovered (id TEXT PRIMARY KEY, data TEXT)')
@@ -324,7 +326,7 @@ def snapshot():
         rows.append(dict(provider='Claude', sessionID=sid, title=data.get('title', 'Claude session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=reason, updated=data.get('updated', 0),
-                         storage=transcript_storage(path), compactions=compactions, attention=data.get('attention') if state == 'needsInput' else None, simulated=False, agentPID=(identity or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(identity or {}).get('tty') if state not in ('saved', 'disconnected') else None))
+                         storage=transcript_storage(path), compactions=compactions, agentPlan=read_claude_tasks(HOME, sid) or read_plan(path, "Claude"), attention=data.get('attention') if state == 'needsInput' else None, simulated=False, agentPID=(identity or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(identity or {}).get('tty') if state not in ('saved', 'disconnected') else None))
     return rows
 
 

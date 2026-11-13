@@ -4,11 +4,11 @@ import PackageDescription
 let package = Package(
     name: "SessionManager", platforms: [.macOS(.v14)],
     products: [.executable(name: "SessionManager", targets: ["SessionManager"])],
-    dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")],
+    dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"), .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.20.0")],
     targets: [
         .systemLibrary(name: "CSQLite"),
         .target(name: "SessionCore", dependencies: ["CSQLite"]),
-        .executableTarget(name: "SessionManager", dependencies: ["SessionCore", .product(name: "Sparkle", package: "Sparkle")],
+        .executableTarget(name: "SessionManager", dependencies: ["SessionCore", .product(name: "Sparkle", package: "Sparkle"), .product(name: "SwiftTerm", package: "SwiftTerm")],
                           linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "SessionCoreTests", dependencies: ["SessionCore"])
     ], swiftLanguageModes: [.v5]

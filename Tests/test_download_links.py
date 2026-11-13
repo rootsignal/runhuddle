@@ -25,7 +25,7 @@ class DownloadLinksTests(unittest.TestCase):
                     links.update(feed)
                     for name in ['README.md', 'docs/GETTING_STARTED.md']:
                         text = (root / name).read_text()
-                        self.assertIn('(https://github.com/rootsignal/runhuddle/releases)', text)
+                        self.assertIn('(https://runhuddle.rootsignal.io/download)', text)
                         self.assertNotIn('/releases/download/', text)
                         self.assertTrue(text.startswith('Before\n'))
                         self.assertTrue(text.endswith('After\n'))

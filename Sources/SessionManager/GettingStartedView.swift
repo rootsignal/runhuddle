@@ -5,10 +5,11 @@ struct RunHuddleHelpCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .help) {
             Button("Getting started…") { openWindow(id: "getting-started") }
+            Button("Icon guide…") { openWindow(id: "icon-guide") }
             Divider()
-            Link("Set up agent replies", destination: URL(string: "https://github.com/rootsignal/runhuddle/blob/main/docs/GETTING_STARTED.md#reply-from-runhuddle")!)
-            Link("User guide", destination: URL(string: "https://github.com/rootsignal/runhuddle/blob/main/docs/USING_RUNHUDDLE.md")!)
-            Link("Troubleshooting", destination: URL(string: "https://github.com/rootsignal/runhuddle/blob/main/docs/TROUBLESHOOTING.md")!)
+            Link("Using the terminal", destination: URL(string: "https://runhuddle.rootsignal.io/docs/workspace/#work-in-the-embedded-terminal")!)
+            Link("User guide", destination: URL(string: "https://runhuddle.rootsignal.io/docs/")!)
+            Link("Troubleshooting", destination: URL(string: "https://runhuddle.rootsignal.io/docs/troubleshooting/")!)
             Link("Report an issue…", destination: URL(string: "https://github.com/rootsignal/runhuddle/issues")!)
         }
     }
@@ -56,16 +57,11 @@ struct GettingStartedView: View {
                             showConnections = true
                         }
                     case 1:
-                        Text("Tracking a conversation and sending replies are separate connections. Start sessions with the New session button beside search for the simplest setup.")
-                        Label("Codex", systemImage: "bubble.left.and.text.bubble.right").font(.headline)
-                        Text("Open a live Codex session. When connected, Activity lets you send follow-ups; messages sent while it works are queued.")
-                        Label("Claude Code", systemImage: "bubble.left.and.text.bubble.right").font(.headline)
-                        Text("Choose Claude Code in New session and leave replies enabled. Accept RunHuddle’s development channel in Claude’s terminal if asked. Sessions started elsewhere need Connect Claude replies; exit the old session before resuming it through that setup.")
-                        Label("GitHub Copilot", systemImage: "bubble.left.and.text.bubble.right").font(.headline)
-                        Text("Choose Copilot in New session. RunHuddle installs its extension and enables experimental extension support automatically. For an existing conversation, use Reconnect with replies in Activity; only a verified idle process is restarted, preserving the conversation ID.")
-                        Text("Installing an extension alone does not mean the session is connected. The reply composer becomes available when RunHuddle confirms the connection. Agent policy or version restrictions can prevent replies.").foregroundStyle(.secondary)
-                        Label("Questions and approvals stay in the terminal", systemImage: "hand.raised").font(.headline)
-                        Text("Use Go to terminal to answer an approval or question. RunHuddle does not change your model or permission settings. Return sends a follow-up; Shift-Return adds a new line.")
+                        Label("One terminal for each session", systemImage: "terminal").font(.headline)
+                        Text("Start Codex, Claude Code, or GitHub Copilot from New session. Select the session to use its terminal. Hide the session list or Session info when you want more room.")
+                        Text("Prompts and approvals happen directly in the terminal. No reply extension or development channel is required. Your agent’s model, authentication, and permission settings still apply.")
+                        Text("Sessions started elsewhere remain visible. Exit their external terminal before resuming them inside RunHuddle.")
+                        Text("Close RunHuddle and keep agents running to reconnect to the same terminals later. Updates preserve running agents. End sessions and quit stops them; saved conversations can still be resumed.")
                     case 2:
                         Label("Working — the agent reports work in progress.", systemImage: "bolt")
                         Label("Needs input — open the session to answer its request.", systemImage: "hand.raised")
@@ -78,16 +74,16 @@ struct GettingStartedView: View {
                         }
                         if model.notificationBlocked { Text("Notifications are blocked in macOS. Open notification settings to allow them.").font(.caption).foregroundStyle(.orange) }
                     case 3:
-                        Text("Click the owl in your menu bar to see active sessions without opening the main window. Choose a session to bring its terminal forward.")
+                        Text("Click the RunHuddle icon in your menu bar to see active sessions without opening the main window. Choose a session to bring its terminal forward.")
                         Text("Use ↑ and ↓ to choose, Return to switch, and Escape to dismiss. Configure a global shortcut in General settings to open the switcher from any app.").foregroundStyle(.secondary)
                         Button("Customize keyboard shortcut…") { settings("general") }
-                        Text("Saved sessions reopen in your preferred terminal. Choose Terminal, iTerm2, or Ghostty and whether to open tabs or windows. Terminal tabs require Accessibility access; setup explains how to enable it.").font(.callout)
+                        Text("Saved sessions resume inside RunHuddle. Choose your terminal font, colors, cursor, and scrollback in Settings.").font(.callout)
                         Button("Set up your terminal…") { settings("terminal") }
-                        Text("If a running session cannot be matched confidently, RunHuddle asks you to locate its tab or pane.").font(.callout)
+                        Text("External sessions open recorded conversation. Exit the original agent before resuming it inside RunHuddle.").font(.callout)
                     default:
                         Text("Archive a session to remove it from your active lists while keeping its history available.")
                         Text("Generate a handoff when you want to continue work in a new session. Review and edit it before using it.")
-                        Text("Choose Save work summary… from a session’s actions, or Save to library from a handoff. Saved work is a separate, searchable library that survives deleting the original session.")
+                        Text("Choose Save as project note… from a session’s actions, or Save to Notes from a handoff. Search and edit your project notes, follow their source sessions, or use selected notes in a new session. They survive deleting the source session.")
                         Text("AI generation is optional and uses your selected CLI account. You can write your own summary and export saved records as Markdown.").foregroundStyle(.secondary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)

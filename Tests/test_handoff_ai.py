@@ -9,13 +9,39 @@ import handoff_ai
 import codex_bridge
 
 class HandoffAITests(unittest.TestCase):
-    def test_work_summary_prompt_keeps_evidence_rules(self):
-        prompt = handoff_ai.prompt_for({'recordKind': 'work-summary', 'history': 'Recorded evidence'})
-        self.assertIn('lasting work summary', prompt)
-        self.assertIn('Approaches tried and rejected', prompt)
-        self.assertIn('A request or plan is NOT completed work', prompt)
-        self.assertIn('Do not include secrets', prompt)
-        self.assertNotIn('lasting work summary', handoff_ai.prompt_for({'history': 'History'}))
+    def test_note_report_and_handoff_have_separate_instructions(self):
+        note = handoff_ai.prompt_for({'recordKind': 'project-note', 'captureFocus': 'Terminal lifecycle', 'history': 'Recorded evidence'})
+        report = handoff_ai.prompt_for({'recordKind': 'session-report', 'history': 'Recorded evidence'})
+        handoff = handoff_ai.prompt_for({'history': 'Recorded evidence'})
+        self.assertIn('reusable Markdown project note', note)
+        self.assertIn('Terminal lifecycle', note)
+        self.assertNotIn('Use these sections: Objective', note)
+        self.assertNotIn('Write a concise, accurate Markdown handoff', note)
+        self.assertIn('Session report', report)
+        self.assertIn('Verification; Unfinished work', report)
+        self.assertIn('fresh AI session', handoff)
+        for prompt in (note, report, handoff):
+            self.assertIn('Do not include secrets', prompt)
+            self.assertIn('A request or plan is NOT completed work', prompt)
+
+    def test_note_title_is_separate_from_body_and_handoffs_are_unchanged(self):
+        output = '# Why terminals keep their identity\n\nKeep shells independent.\n\n## Rationale\nAvoid losing the shell.'
+        parsed = handoff_ai.parse_result(output, 'Codex', 'project-note')
+        self.assertEqual(parsed['title'], 'Why terminals keep their identity')
+        self.assertTrue(parsed['text'].startswith('Keep shells independent.'))
+        self.assertIn('## Rationale', parsed['text'])
+        self.assertEqual(handoff_ai.parse_result(output, 'Codex', None)['text'], output)
+        for invalid in ('No heading', '# ', '# Title\n'):
+            with self.assertRaises(RuntimeError):
+                handoff_ai.parse_result(invalid, 'Claude', 'project-note')
+
+    def test_cli_note_response_reaches_title_and_body_fields(self):
+        for provider in ('Claude', 'Copilot'):
+            process = Mock(returncode=0)
+            process.communicate.return_value = ('# Durable decision\n\nUse explicit note selection.', '')
+            with patch.object(handoff_ai.subprocess, 'Popen', return_value=process):
+                result = handoff_ai.generate({'provider': provider, 'executable': sys.executable, 'recordKind': 'project-note', 'history': 'source'})
+            self.assertEqual(result, {'title': 'Durable decision', 'text': 'Use explicit note selection.', 'provider': provider})
 
     def test_commands_use_isolated_text_generation_not_resume(self):
         for provider in ('Codex', 'Claude', 'Copilot'):
@@ -43,7 +69,7 @@ class HandoffAITests(unittest.TestCase):
             with self.assertRaises(RuntimeError) as error:
                 handoff_ai.generate({'provider': 'Claude', 'executable': sys.executable, 'history': 'source'})
         self.assertNotIn('private', str(error.exception))
-        self.assertIn('existing handoff was kept', str(error.exception))
+        self.assertIn('existing draft was kept', str(error.exception))
 
     def test_empty_output_is_not_a_handoff(self):
         process = Mock(returncode=0)

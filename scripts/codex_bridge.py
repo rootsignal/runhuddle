@@ -10,6 +10,7 @@ import time
 from context_usage import read_context
 from compaction_count import read_compactions
 from session_storage import transcript_storage
+from agent_plan import read_codex_plan
 from websockets.sync.client import unix_connect
 
 
@@ -56,6 +57,7 @@ def normalize(row, projects, archived=False):
             "preview": (row.get("preview") or "")[:8000], "state": state, "reason": reason,
             "updated": row.get("updatedAt") or 0, "simulated": False,
             "contextUsage": read_context(row.get("path")),
+            "agentPlan": read_codex_plan(row.get("path"), row["id"]),
             "storage": transcript_storage(row.get("path")),
             "compactions": read_compactions(row.get("path"), "Codex"),
             "attention": {"kind": "permission" if "waitingOnApproval" in (row.get("status") or {}).get("activeFlags", []) else "question"}
@@ -120,8 +122,28 @@ def snapshot(client, archived=False):
     return [normalize(row, projects, archived) for row in list_rows(client, archived, include_children=archived)]
 
 
+class SessionStillLoaded(ValueError):
+    pass
+
+
+def cleanup_plan_after_close(client, action, thread_id, attempts=46):
+    """Allow Codex's 60s no-subscriber grace period, plus scheduling margin.
+
+    Loaded does not mean the terminal is still running. Keep checking the full
+    tree without resuming, subscribing, or weakening any cleanup checks.
+    """
+    client.deadline = time.monotonic() + 120
+    for attempt in range(attempts):
+        try:
+            return cleanup_plan(client, action, thread_id)
+        except SessionStillLoaded:
+            if attempt + 1 == attempts:
+                raise SessionStillLoaded("The terminal ended, but Codex still has this session or a child loaded after waiting 90 seconds. It may be open in another client or using a longer unload delay. Nothing was archived. Close any other client using this conversation, then retry Archive.")
+            time.sleep(2)
+
+
 def cleanup_plan(client, action, thread_id):
-    if action not in ("archive", "restore", "delete") or not thread_id:
+    if action not in ("archive", "restore", "delete", "archive-delete") or not thread_id:
         raise ValueError("Invalid cleanup request")
     active = list_rows(client, include_children=True)
     archived = list_rows(client, archived=True, include_children=True)
@@ -144,10 +166,10 @@ def cleanup_plan(client, action, thread_id):
     for identifier in affected:
         row = all_rows[identifier]
         if identifier in loaded or (row.get("status") or {}).get("type") != "notLoaded":
-            raise ValueError("Close affected sessions in their agent clients before cleanup. A session is still loaded or its status is unknown.")
+            raise SessionStillLoaded("Close affected sessions in their agent clients before cleanup. A session is still loaded or its status is unknown.")
         if row.get("ephemeral"):
             raise ValueError("Ephemeral sessions cannot be cleaned up here.")
-        if action == "delete" and identifier not in archived_ids:
+        if (action == "delete" or (action == "archive-delete" and thread_id in archived_ids)) and identifier not in archived_ids:
             raise ValueError("An affected child session is not archived. Archive it before deleting this session tree.")
     return {"action": action, "threadID": thread_id, "affected": [
         {"id": identifier, "title": all_rows[identifier].get("name") or (all_rows[identifier].get("preview") or "Untitled session")[:120]}
@@ -159,6 +181,13 @@ def apply_cleanup(client, action, thread_id, expected_ids):
     plan = cleanup_plan(client, action, thread_id)
     if sorted(expected_ids) != sorted(r["id"] for r in plan["affected"]):
         raise ValueError("Affected sessions changed since review. Review cleanup again.")
+    if action == "archive-delete":
+        archived_ids = {r["id"] for r in list_rows(client, archived=True, include_children=True)}
+        if thread_id not in archived_ids:
+            client.request("thread/archive", {"threadId": thread_id})
+        # Revalidate liveness and the entire reviewed scope after archive.
+        # Any change leaves history archived rather than deleting unseen data.
+        return apply_cleanup(client, "delete", thread_id, expected_ids)
     method = {"archive": "thread/archive", "restore": "thread/unarchive", "delete": "thread/delete"}[action]
     client.request(method, {"threadId": thread_id})
     return plan
@@ -214,6 +243,18 @@ def history(client, thread_id):
     return continuation_context(list(reversed(page.get("data", []))), bool(page.get("nextCursor")))
 
 
+def handoff_origin(client, thread_id):
+    if not thread_id:
+        raise ValueError("A thread ID is required")
+    page = client.request("thread/turns/list", {
+        "threadId": thread_id, "limit": 1, "sortDirection": "asc", "itemsView": "full"})
+    for turn in page.get("data", []):
+        for item in turn.get("items", []):
+            if item.get("type") == "userMessage":
+                return {"text": "\n".join(p.get("text", "") for p in item.get("content", []) if p.get("type") == "text")[:16000]}
+    return {"text": ""}
+
+
 def handoff_history(client, thread_id):
     if not thread_id:
         raise ValueError("A thread ID is required")
@@ -241,10 +282,11 @@ def handoff_history(client, thread_id):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["snapshot", "history", "handoff-context", "plan", "apply"])
+    parser.add_argument("action", choices=["snapshot", "history", "handoff-origin", "handoff-context", "plan", "apply"])
     parser.add_argument("thread_id", nargs="?")
-    parser.add_argument("--operation", choices=["archive", "restore", "delete"])
+    parser.add_argument("--operation", choices=["archive", "restore", "delete", "archive-delete"])
     parser.add_argument("--expected-ids")
+    parser.add_argument("--wait-for-close", action="store_true")
     args = parser.parse_args()
     try:
         with Client() as client:
@@ -252,10 +294,12 @@ def main():
                 result = snapshot(client) + snapshot(client, archived=True)
             elif args.action == "handoff-context":
                 result = handoff_history(client, args.thread_id)
+            elif args.action == "handoff-origin":
+                result = handoff_origin(client, args.thread_id)
             elif args.action == "history":
                 result = history(client, args.thread_id)
             elif args.action == "plan":
-                result = cleanup_plan(client, args.operation, args.thread_id)
+                result = (cleanup_plan_after_close if args.wait_for_close else cleanup_plan)(client, args.operation, args.thread_id)
             else:
                 if not args.expected_ids:
                     raise ValueError("A reviewed affected-session list is required")

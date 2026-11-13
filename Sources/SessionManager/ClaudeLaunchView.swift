@@ -28,7 +28,7 @@ struct ClaudeLaunchView: View {
                 if resumeExisting {
                     Text("First exit \(model.displayName(for: row)) in Claude’s terminal with /exit. Its conversation is saved. Then choose Resume with replies below.")
                         .font(.callout).fixedSize(horizontal: false, vertical: true)
-                    Button("Go to terminal") { model.resume(row) }.disabled(model.navigatingTerminal)
+                    Button("Open session") { model.resume(row) }.disabled(model.navigatingTerminal)
                 }
             }
             HStack {

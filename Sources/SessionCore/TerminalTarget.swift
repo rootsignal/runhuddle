@@ -42,6 +42,14 @@ public struct TerminalTarget: Identifiable, Hashable {
                                          with: "", options: .regularExpression)
     }
 
+    /// Title fallback for an embedded terminal must not claim another terminal's session.
+    public func uniqueUnclaimedSession(in rows: [Session], claimedIDs: Set<String>) -> Session? {
+        let matches = rows.filter {
+            !claimedIDs.contains($0.id) && [.working, .idle, .needsInput].contains($0.state) && self.matches($0)
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
     public func matchRank(for row: Session) -> Int {
         if let tty = row.terminalTTY, !tty.isEmpty,
            [.working, .idle, .needsInput].contains(row.state), sessionTTY == tty { return 0 }

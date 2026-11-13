@@ -1,9 +1,9 @@
 import AppKit
 
-/// One Lookout owl silhouette shared by the app tile and macOS template menu-bar icon.
+/// One compact huddle silhouette shared by the app tile and macOS template menu-bar icon.
 enum RunHuddleIcon {
     /// A non-template badge preserves its amber fill in the macOS menu bar.
-    /// The owl remains a separate template image so it follows system appearance.
+    /// The huddle mark remains a separate template image so it follows system appearance.
     static func attentionBadge(count: Int) -> NSImage? {
         guard count > 0 else { return nil }
         let label = count > 99 ? "99+" : String(count)
@@ -32,56 +32,47 @@ enum RunHuddleIcon {
             if appTile {
                 let tile = NSBezierPath(roundedRect: rect.insetBy(dx: size * 0.04, dy: size * 0.04),
                                         xRadius: size * 0.21, yRadius: size * 0.21)
-                NSGradient(starting: NSColor(calibratedRed: 0.09, green: 0.14, blue: 0.25, alpha: 1),
-                           ending: NSColor(calibratedRed: 0.025, green: 0.045, blue: 0.09, alpha: 1))!
+                NSGradient(starting: NSColor(srgbRed: 0.067, green: 0.11, blue: 0.176, alpha: 1),
+                           ending: NSColor(srgbRed: 0.035, green: 0.063, blue: 0.10, alpha: 1))!
                     .draw(in: tile, angle: -70)
             }
             NSGraphicsContext.saveGraphicsState()
             defer { NSGraphicsContext.restoreGraphicsState() }
-            let scale = appTile ? size * 0.72 / 24 : size / 24
+            let scale = appTile ? size * 0.80 / 24 : size / 24
             let transform = NSAffineTransform()
             transform.translateX(by: (width - 24 * scale) / 2, yBy: (size - 24 * scale) / 2)
             transform.scale(by: scale)
             transform.concat()
-            // Rounded ear tips and open eyes keep the owl watchful rather than
-            // scowling. No separate brow or tiny details to disappear at 18 pt.
-            func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
-                NSPoint(x: x, y: y)
-            }
+            // A3: three rounded blocks gather around a shared, open center.
+            // Draw the same vector geometry at every Dock and menu-bar size.
+            func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x, y: y) }
             let mark = NSBezierPath()
-            mark.windingRule = .evenOdd
-            mark.move(to: point(3, 15.5))
-            mark.curve(to: point(3, 21), controlPoint1: point(2.2, 18), controlPoint2: point(2, 22))
-            mark.curve(to: point(7.2, 18.4), controlPoint1: point(3.6, 21), controlPoint2: point(5.9, 19.4))
-            mark.curve(to: point(16.8, 18.4), controlPoint1: point(10, 19.2), controlPoint2: point(14, 19.2))
-            mark.curve(to: point(21, 21), controlPoint1: point(18.1, 19.4), controlPoint2: point(20.4, 21))
-            mark.curve(to: point(21, 15.5), controlPoint1: point(22, 22), controlPoint2: point(21.8, 18))
-            mark.curve(to: point(22.5, 10.5), controlPoint1: point(22, 14), controlPoint2: point(22.5, 12.5))
-            mark.curve(to: point(16, 4.4), controlPoint1: point(22.5, 6.3), controlPoint2: point(19.6, 4.8))
-            mark.curve(to: point(12, 2), controlPoint1: point(14, 4.2), controlPoint2: point(13, 2.8))
-            mark.curve(to: point(8, 4.4), controlPoint1: point(11, 2.8), controlPoint2: point(10, 4.2))
-            mark.curve(to: point(1.5, 10.5), controlPoint1: point(4.4, 4.8), controlPoint2: point(1.5, 6.3))
-            mark.curve(to: point(3, 15.5), controlPoint1: point(1.5, 12.5), controlPoint2: point(2, 14))
+            mark.move(to: point(8.6, 21.3))
+            mark.line(to: point(15.4, 21.3))
+            mark.curve(to: point(17.2, 20), controlPoint1: point(16.2, 21.3), controlPoint2: point(16.8, 20.9))
+            mark.line(to: point(18.3, 17.6))
+            mark.curve(to: point(16.5, 15.3), controlPoint1: point(19, 16.1), controlPoint2: point(18.2, 15.3))
+            mark.line(to: point(7.5, 15.3))
+            mark.curve(to: point(5.7, 17.6), controlPoint1: point(5.8, 15.3), controlPoint2: point(5, 16.1))
+            mark.line(to: point(6.8, 20))
+            mark.curve(to: point(8.6, 21.3), controlPoint1: point(7.2, 20.9), controlPoint2: point(7.8, 21.3))
             mark.close()
-            // Mirrored, gently sloped eye openings use generous negative space.
             for mirrored in [false, true] {
-                func eye(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
-                    point(mirrored ? 24 - x : x, y)
-                }
-                mark.move(to: eye(4.7, 13.6))
-                mark.curve(to: eye(10.4, 12.3), controlPoint1: eye(6.6, 14.5), controlPoint2: eye(9.2, 13.7))
-                mark.curve(to: eye(7.7, 7.5), controlPoint1: eye(11, 9.5), controlPoint2: eye(10, 7.5))
-                mark.curve(to: eye(4.7, 13.6), controlPoint1: eye(4.4, 7.5), controlPoint2: eye(3.7, 11))
+                func side(_ x: CGFloat, _ y: CGFloat) -> NSPoint { point(mirrored ? 24 - x : x, y) }
+                mark.move(to: side(5, 14.6))
+                mark.curve(to: side(6.3, 14.1), controlPoint1: side(5.4, 14.6), controlPoint2: side(5.9, 14.4))
+                mark.line(to: side(9.8, 11.4))
+                mark.curve(to: side(11.1, 9.2), controlPoint1: side(10.7, 10.7), controlPoint2: side(11.1, 10.1))
+                mark.line(to: side(11.1, 5.5))
+                mark.curve(to: side(9.5, 3.6), controlPoint1: side(11.1, 4.2), controlPoint2: side(10.6, 3.6))
+                mark.line(to: side(6, 3.6))
+                mark.curve(to: side(2.5, 7.2), controlPoint1: side(3.8, 3.6), controlPoint2: side(2.5, 4.9))
+                mark.line(to: side(2.5, 10.5))
+                mark.curve(to: side(5, 14.6), controlPoint1: side(2.5, 12.9), controlPoint2: side(3.7, 14.6))
                 mark.close()
             }
-            if appTile {
-                NSGradient(starting: NSColor(calibratedRed: 0.16, green: 0.94, blue: 0.72, alpha: 1),
-                           ending: NSColor(calibratedRed: 0.03, green: 0.69, blue: 0.95, alpha: 1))!
-                    .draw(in: mark, angle: -25)
-            } else {
-                NSColor.black.setFill()
-                mark.fill()
-            }
+            (appTile ? NSColor(srgbRed: 0.14, green: 0.78, blue: 0.90, alpha: 1) : .black).setFill()
+            mark.fill()
             return true
         }
         image.isTemplate = !appTile

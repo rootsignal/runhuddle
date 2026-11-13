@@ -27,7 +27,7 @@ def update(feed: Path):
         content = path.read_text()
         if content.count(START) != 1 or content.count(END) != 1:
             raise ValueError(f'Missing or duplicate download markers: {relative}')
-        block = f'{START}\n**[Download RunHuddle — available releases](https://github.com/rootsignal/runhuddle/releases)**\n{END}'
+        block = f'{START}\n**[Download RunHuddle for macOS](https://runhuddle.rootsignal.io/download)**\n{END}'
         updated = re.sub(re.escape(START) + r'.*?' + re.escape(END), lambda _: block, content, flags=re.S)
         changes.append((path, updated))
     for path, content in changes:

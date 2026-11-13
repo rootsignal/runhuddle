@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from app_support import prepare_storage
 import sqlite3
 import stat
 import claude_bridge
@@ -16,8 +17,12 @@ def targets(provider, sid):
         root = claude_bridge.HOME / 'projects'
         transcript = claude_bridge.paths().get(sid)
         if transcript is None:
-            raise ValueError('Claude transcript is unavailable; no files will be removed.')
-        paths = [transcript, transcript.with_suffix('')]
+            # Closed hook-only sessions may never create a transcript. Include any
+            # companion directories so they are still reviewed and validated.
+            paths = sorted(project / sid for project in root.glob('*')
+                           if (project / sid).exists() or (project / sid).is_symlink())
+        else:
+            paths = [transcript, transcript.with_suffix('')]
     elif provider == 'Copilot':
         root = copilot_bridge.HOME / 'session-state'
         paths = [root / sid]
@@ -50,7 +55,7 @@ def plan(provider, sid):
     if provider == 'Copilot' and copilot_bridge.has_open_cli(copilot_bridge.HOME / 'session-state' / sid):
         raise ValueError('Copilot still has this session open.')
     root, paths = targets(provider, sid)
-    if not paths:
+    if not paths and provider != 'Claude':
         raise ValueError('No session history files were found.')
     return {'provider': provider, 'sessionID': sid, 'paths': [str(p) for p in paths], 'fingerprint': fingerprint(root, paths)}
 
@@ -63,7 +68,8 @@ def forget(provider, sid):
             db.execute('DELETE FROM states WHERE id=?', (sid,))
             if provider == 'Claude':
                 db.execute('DELETE FROM discovered WHERE id=?', (sid,))
-    index = Path.home() / 'Library/Application Support/Agent Session Manager/history-search.sqlite'
+    index = Path.home() / 'Library/Application Support/RunHuddle/history-search.sqlite'
+    prepare_storage(index)
     if index.exists():
         db = sqlite3.connect(index, timeout=5)
         try:

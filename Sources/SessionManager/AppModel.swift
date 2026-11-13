@@ -9,6 +9,26 @@ enum Bridge {
            FileManager.default.fileExists(atPath: path + "/codex_bridge.py") { return path }
         return FileManager.default.currentDirectoryPath + "/scripts"
     }
+    static func migrateStorage() throws {
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("python/bin/python3").path
+        let python = bundled.flatMap { FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil }
+            ?? FileManager.default.currentDirectoryPath + "/.venv/bin/python"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: python)
+        process.arguments = ["-E", "-s", "-B", root + "/app_support.py"]
+        let errors = Pipe()
+        process.standardError = errors
+        process.standardOutput = FileHandle.nullDevice
+        try process.run()
+        let detail = errors.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw NSError(domain: "RunHuddleStorage", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: String(data: detail, encoding: .utf8) ?? "Local storage migration failed."
+            ])
+        }
+    }
+
     static func run(_ arguments: [String], provider: String = "Codex", input: Data? = nil) async throws -> Data {
         let root = root
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("python/bin/python3").path
@@ -63,6 +83,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var selection: String? {
         didSet {
             guard let selection, !selection.hasPrefix("Claude:demo-") else { return }
+            AttentionInboxStore.shared.read(selection)
             do { try store?.save(selection, key: "selection") }
             catch { self.error = "Could not save selection: \(error.localizedDescription)" }
         }
@@ -77,7 +98,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var searchingHistory = false
     private var searchDebounce: Task<Void, Never>?
     private var searchInFlight = false
-    @Published var filter = "Now"
+    @Published var filter = "Running here"
     @Published var projectFilter = "All projects"
     @Published var pinned: Set<String> = []
     @Published var providerErrors: [String: String] = [:]
@@ -96,6 +117,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var replies: [String: InlineReplyRecord] = [:]
     @Published var replySending: Set<String> = []
     @Published var savedWork: [SavedWork] = []
+    @Published var notesProjectFilter = "All projects"
     private var savedWorkLoaded = false
     @Published var libraryQuery = ""
     @Published var workSource: Session?
@@ -128,10 +150,6 @@ struct CopilotTrackingStatus: Decodable {
     @Published var navigatingTerminal = false
     @Published var terminalNavigationSessionID: String?
     @Published var terminalProgress = ""
-    @Published var terminalSession: Session?
-    @Published var terminalTargets: [TerminalTarget] = []
-    private var terminalChoices: [String: TerminalTarget] = [:]
-    @Published var terminalMessage = ""
     @Published var bulkMode = false
     @Published var bulkSelection: Set<String> = []
     @Published var bulkReview: BulkCleanupReview?
@@ -141,7 +159,18 @@ struct CopilotTrackingStatus: Decodable {
     @Published var cleaning = false { didSet { if !cleaning { cleanupProgress = "" } } }
     @Published var cleanupMessage: String?
     @Published var terminalLaunchNotice: String?
+    @Published var continuations: [String: SessionContinuation] = [:]
+    @Published var expandedChains: Set<String> = []
+    private struct PendingContinuation: Codable {
+        let link: SessionContinuation
+        let existingIDs: Set<String>
+    }
+    private var pendingContinuations: [String: PendingContinuation] = [:] {
+        didSet { try? store?.save(pendingContinuations, key: "pendingContinuations") }
+    }
+    private var checkedContinuationOrigins: Set<String> = []
     private var store: Store?
+    private var closedEmbeddedSessions: [String: ClosedEmbeddedSession] = [:]
     private var timer: Task<Void, Never>?
     private var hookWatcher: HookEventWatcher?
     private var codexObserver: CodexEventObserver?
@@ -156,17 +185,22 @@ struct CopilotTrackingStatus: Decodable {
     private var connectedProviders: Set<String> = []
     private let attentionDelegate = AttentionDelegate()
     var openMainWindow: (() -> Void)?
+    var openEmbeddedTerminal: ((String) -> Void)?
     var onTerminalOpened: (() -> Void)?
     var openSettingsWindow: (() -> Void)?
 
     init() {
         do {
+            try Bridge.migrateStorage()
             let folder = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                .appendingPathComponent("Agent Session Manager", isDirectory: true)
+                .appendingPathComponent("RunHuddle", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             store = try Store(path: folder.appendingPathComponent("sessions.sqlite").path)
             sessions = try store?.load([Session].self, key: "sessions") ?? []
             sessions = Recovery.restore(sessions)
+            pendingContinuations = try store?.load([String: PendingContinuation].self, key: "pendingContinuations") ?? [:]
+            continuations = try store?.load([String: SessionContinuation].self, key: "sessionContinuations") ?? [:]
+            closedEmbeddedSessions = try store?.load([String: ClosedEmbeddedSession].self, key: "closedEmbeddedSessions") ?? [:]
             pinned = try store?.load(Set<String>.self, key: "pinnedSessions") ?? []
             localCleanupState = try store?.load(LocalCleanupState.self, key: "localCleanupState") ?? LocalCleanupState()
             briefs = try store?.load([String: SessionBrief].self, key: "sessionBriefs") ?? [:]
@@ -184,11 +218,14 @@ struct CopilotTrackingStatus: Decodable {
             savedWorkLoaded = true
             handoffBackups = try store?.load([String: String].self, key: "handoffBackups") ?? [:]
             selection = try store?.load(String.self, key: "selection")
-        } catch { self.error = "Local storage: \(error.localizedDescription)" }
+        } catch {
+            self.error = "Local storage: \(error.localizedDescription)"
+            return
+        }
         attentionDelegate.onSelect = { [weak self] id, goToTerminal in
             guard let self else { return }
             if id == "activity-batch" {
-                self.filter = "Now"; self.query = ""; self.provider = "All tools"; self.projectFilter = "All projects"
+                self.filter = "Running here"; self.query = ""; self.provider = "All tools"; self.projectFilter = "All projects"
                 self.openMainWindow?(); NSApp.activate(ignoringOtherApps: true)
                 return
             }
@@ -202,7 +239,7 @@ struct CopilotTrackingStatus: Decodable {
         }
         UNUserNotificationCenter.current().delegate = attentionDelegate
         let actions = [
-            UNNotificationAction(identifier: "goToTerminal", title: "Go to terminal", options: [.foreground]),
+            UNNotificationAction(identifier: "goToTerminal", title: "Open session", options: [.foreground]),
             UNNotificationAction(identifier: "viewSession", title: "View session", options: [.foreground])
         ]
         UNUserNotificationCenter.current().setNotificationCategories([
@@ -216,7 +253,7 @@ struct CopilotTrackingStatus: Decodable {
                 try? await Task.sleep(for: .seconds(30))
             }
         }
-        let storage = NSHomeDirectory() + "/Library/Application Support/Agent Session Manager/"
+        let storage = NSHomeDirectory() + "/Library/Application Support/RunHuddle/"
         let environment = ProcessInfo.processInfo.environment
         hookWatcher = HookEventWatcher(paths: [
             (environment["SESSION_TRACKER_CLAUDE_STATE"] ?? storage + "claude.sqlite") + ".signal": "Claude",
@@ -236,6 +273,68 @@ struct CopilotTrackingStatus: Decodable {
                 self?.eventRefreshTask?.cancel(); self?.timer?.cancel()
             }
         }
+    }
+
+    var chainGroups: [String: [Session]] {
+        guard filter == "All sessions", query.isEmpty, !bulkMode else { return [:] }
+        return SessionChain.groups(rows: visible, links: continuations, pinned: pinned)
+    }
+    var chainListRows: [Session] {
+        let groups = chainGroups
+        let hidden = Set(groups.values.flatMap { $0.map(\.id) })
+        return visible.filter { !hidden.contains($0.id) }.flatMap { row in
+            [row] + (expandedChains.contains(row.id) ? groups[row.id, default: []] : [])
+        }
+    }
+    func earlierSessions(_ row: Session) -> [Session] {
+        SessionChain.ancestors(of: row.id, links: continuations).compactMap { id in sessions.first { $0.id == id } }
+    }
+    func recordContinuation(child: String, link: SessionContinuation) {
+        guard continuations[child] == nil, SessionChain.canLink(child: child, parent: link.sourceID, links: continuations) else { return }
+        var next = continuations; next[child] = link
+        do {
+            try store?.save(next, key: "sessionContinuations")
+            continuations = next
+        } catch { self.error = "Could not save session chain: \(error.localizedDescription)" }
+    }
+    private func resolvePendingContinuations() {
+        for terminal in EmbeddedTerminals.shared.sessions {
+            guard let pending = pendingContinuations[terminal.id], let row = terminal.row(in: self), !pending.existingIDs.contains(row.id) else { continue }
+            recordContinuation(child: row.id, link: pending.link)
+            if continuations[row.id] != nil { pendingContinuations.removeValue(forKey: terminal.id) }
+        }
+    }
+
+    func endAndReviewArchive(_ terminal: EmbeddedAgentSession, row: Session) {
+        terminal.stop()
+        Task {
+            for _ in 0..<40 {
+                if terminal.ended { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            guard terminal.ended else { error = "The agent has not stopped yet. Nothing was archived."; return }
+            await refresh()
+            await prepareBulkCleanup("archive", rows: [sessions.first { $0.id == row.id } ?? row], waitForClose: true)
+        }
+    }
+
+    func recordInboxExit(_ row: Session) { AttentionInboxStore.shared.exited(row) }
+
+    func embeddedProcessExited(_ row: Session, unexpected: Bool = false) {
+        if unexpected { recordInboxExit(row) }
+        let now = Date().timeIntervalSince1970
+        closedEmbeddedSessions = closedEmbeddedSessions.filter { now - $0.value.closedAt < 120 }
+        closedEmbeddedSessions[row.id] = ClosedEmbeddedSession(updated: max(row.updated, now), closedAt: now)
+        if let index = sessions.firstIndex(where: { $0.id == row.id }) {
+            sessions[index].state = .saved
+            sessions[index].attention = nil
+            sessions[index].reason = "Embedded process ended; resume in RunHuddle when ready."
+        }
+        do {
+            try store?.save(closedEmbeddedSessions, key: "closedEmbeddedSessions")
+            try store?.save(sessions.filter { !$0.simulated }, key: "sessions")
+        } catch { self.error = "Could not save ended session status: \(error.localizedDescription)" }
+        processExited(row.provider)
     }
 
     private func processExited(_ provider: String) {
@@ -294,15 +393,32 @@ struct CopilotTrackingStatus: Decodable {
         }
     }
 
-    private var matchingSessions: [Session] {
+    private var searchAndToolMatches: [Session] {
         sessions.filter {
             (!$0.simulated || showDemo) && matchesSearch($0)
             && (provider == "All tools" || $0.provider == provider)
-            && ProjectFilter.matches($0.cwd, selection: projectFilter)
         }
     }
+    private var matchingSessions: [Session] {
+        searchAndToolMatches.filter { ProjectFilter.matches($0.cwd, selection: projectFilter) }
+    }
+    private func includesInCurrentView(_ row: Session, owned: Set<String>) -> Bool {
+        (isSearching && searchScope == .everywhere)
+            || SessionPresentation.includes(row, filter: filter, pinned: pinned, owned: owned.contains(row.id))
+    }
+    var ownedSessionIDs: Set<String> {
+        Set(EmbeddedTerminals.shared.sessions.filter { !$0.ended && $0.isAgentRunning }.compactMap {
+            ($0.row(in: self) ?? EmbeddedTerminals.shared.linkedRow(for: $0, model: self))?.id
+        })
+    }
+    func isExternalSession(_ row: Session) -> Bool {
+        SessionPresentation.includes(row, filter: "Running elsewhere", owned: ownedSessionIDs.contains(row.id))
+    }
     var visible: [Session] {
-        return matchingSessions.filter { searchScope.includes($0, searching: isSearching, filter: filter, provider: provider, project: projectFilter, pinned: pinned) }.sorted {
+        let owned = ownedSessionIDs
+        return matchingSessions.filter {
+            includesInCurrentView($0, owned: owned)
+        }.sorted {
             if $0.state.rank != $1.state.rank { return $0.state.rank < $1.state.rank }
             if $0.state == .needsInput, $1.state == .needsInput {
                 let left = $0.attention?.since ?? $0.updated, right = $1.attention?.since ?? $1.updated
@@ -312,10 +428,25 @@ struct CopilotTrackingStatus: Decodable {
             return $0.updated == $1.updated ? $0.id < $1.id : $0.updated > $1.updated
         }
     }
-    func count(for filter: String) -> Int {
-        matchingSessions.filter { SessionPresentation.includes($0, filter: filter, pinned: pinned) }.count
+    func shellTerminals(filter view: String, includeProject: Bool = true) -> [EmbeddedAgentSession] {
+        guard ["All sessions", "Running here"].contains(view), ["All tools", "Shell"].contains(provider) else { return [] }
+        return EmbeddedTerminals.shared.sessions.filter {
+            $0.isShell && (view != "Running here" || !$0.ended)
+            && (!includeProject || ProjectFilter.matches($0.directory, selection: projectFilter))
+            && (query.isEmpty || ($0.title + " " + $0.directory).localizedCaseInsensitiveContains(query))
+        }
     }
-    var projectPaths: [String] { ProjectFilter.options(sessions.filter { !$0.simulated }.map(\.cwd)) }
+    func count(for filter: String) -> Int {
+        let owned = ownedSessionIDs
+        return matchingSessions.filter { SessionPresentation.includes($0, filter: filter, pinned: pinned, owned: owned.contains($0.id)) }.count + shellTerminals(filter: filter).count
+    }
+    var projectPaths: [String] {
+        let owned = ownedSessionIDs
+        // Ignore only the project selection so switching projects remains possible.
+        return ProjectFilter.options(searchAndToolMatches.filter {
+            includesInCurrentView($0, owned: owned)
+        }.map(\.cwd) + shellTerminals(filter: filter, includeProject: false).map(\.directory))
+    }
     func togglePin(_ row: Session) {
         var next = pinned
         if !next.insert(row.id).inserted { next.remove(row.id) }
@@ -336,11 +467,6 @@ struct CopilotTrackingStatus: Decodable {
         let purpose = briefs[row.id]?.purpose ?? ""
         let source = !purpose.isEmpty ? purpose : !latest.isEmpty ? latest : row.preview
         return SessionPresentation.excerpt(source)
-    }
-    func terminalActionTitle(for row: Session) -> String {
-        if row.state == .saved { return "Resume session…" }
-        if matchingTerminal(for: row, targets: terminalTargets) != nil { return "Go to terminal" }
-        return "Locate terminal…"
     }
     var selected: Session? { visible.first { $0.id == selection } }
     var attentionCount: Int { sessions.filter { !$0.simulated && $0.state == .needsInput }.count }
@@ -372,7 +498,17 @@ struct CopilotTrackingStatus: Decodable {
             do {
                 let data = try await Bridge.run(["snapshot"], provider: tool)
                 var rows = try JSONDecoder().decode([Session].self, from: data)
+                let now = Date().timeIntervalSince1970
+                let owned = ownedSessionIDs
                 for index in rows.indices {
+                    let row = rows[index]
+                    if let closed = closedEmbeddedSessions[row.id] {
+                        if !owned.contains(row.id), closed.suppressesIdle(row, now: now) {
+                            rows[index] = closed.applying(to: row, now: now)
+                        } else {
+                            closedEmbeddedSessions.removeValue(forKey: row.id)
+                        }
+                    }
                     rows[index].attention = AttentionRequest.reconcile(rows[index], previous: sessions.first { $0.id == rows[index].id }, now: Date().timeIntervalSince1970)
                 }
                 if connectedProviders.contains(tool) {
@@ -417,8 +553,11 @@ struct CopilotTrackingStatus: Decodable {
         recentAlerts = Array(recentAlerts.prefix(8))
         let nextSessions = fetched + sessions.filter(\.simulated)
         let sessionsChanged = sessions != nextSessions
+        AttentionInboxStore.shared.observe(previous: sessions, current: nextSessions)
         if sessionsChanged { sessions = nextSessions }
-        terminalChoices = terminalChoices.filter { id, _ in sessions.contains { $0.id == id && [.working, .idle, .needsInput].contains($0.state) } }
+        EmbeddedTerminals.shared.rememberMappings(model: self)
+        resolvePendingContinuations()
+        synchronizePresentedTerminalSelection()
         connection = ["Codex", "Copilot", "Claude"].map { tool in
             if let error = providerErrors[tool] { return "\(tool) unavailable: \(error)" }
             if connectedProviders.contains(tool) { return "\(tool) connected · \(fetched.filter { $0.provider == tool }.count) sessions" }
@@ -543,22 +682,6 @@ struct CopilotTrackingStatus: Decodable {
             try store.save(updated, key: "displayNames")
             displayNames = updated
             renameError = nil
-            let appliedName = updated[row.id] ?? row.title
-            Task { @MainActor in
-                guard [.working, .idle, .needsInput].contains(row.state) else { return }
-                let result = await TerminalNavigator.discover()
-                guard displayName(for: row) == appliedName else { return }
-                let remembered = terminalChoices[row.id].flatMap { previous in result.targets.first { $0.stillMatchesChoice(previous, provider: row.provider) } }
-                guard let target = remembered ?? matchingTerminal(for: row, targets: result.targets), target.app == "Terminal", target.tmux == nil else {
-                    cleanupMessage = "Name saved in RunHuddle. No unique supported Terminal tab was found to rename."; return
-                }
-                do {
-                    let title = appliedName + " | " + URL(fileURLWithPath: row.cwd).lastPathComponent
-                    try await TerminalNavigator.rename(target, title: title)
-                    terminalChoices[row.id] = TerminalTarget(app: target.app, window: target.window, identity: target.identity, title: title, cwd: target.cwd, tty: target.tty, applicationPID: target.applicationPID)
-                    cleanupMessage = "Session and Terminal tab renamed. The agent may later update its tab title."
-                } catch { cleanupMessage = "Name saved in RunHuddle; Terminal tab title was not updated: " + error.localizedDescription }
-            }
             return true
         } catch {
             let message = "Could not save session name: \(error.localizedDescription)"
@@ -600,6 +723,7 @@ struct CopilotTrackingStatus: Decodable {
             let encoded = String(data: try JSONEncoder().encode(ids), encoding: .utf8)!
             _ = try await Bridge.run(["apply", plan.threadID, "--operation", plan.action, "--expected-ids", encoded])
             let affected = Set(ids.map { "Codex:" + $0 })
+            if plan.action != "restore" { EmbeddedTerminals.shared.closeEndedAgents(sessionIDs: affected) }
             sessions.removeAll { affected.contains($0.id) }
             recentAlerts.removeAll { affected.contains($0.session.id) }
             if let selection, affected.contains(selection) { self.selection = nil }
@@ -635,7 +759,7 @@ struct CopilotTrackingStatus: Decodable {
         cleaning = false
         await refresh()
     }
-    func prepareBulkCleanup(_ operation: String, rows requested: [Session]) async {
+    func prepareBulkCleanup(_ operation: String, rows requested: [Session], waitForClose: Bool = false) async {
         guard await beginCleanup() else { return }
         defer { cleaning = false }
         var entries: [BulkCleanupReview.Entry] = []
@@ -646,7 +770,8 @@ struct CopilotTrackingStatus: Decodable {
             guard let row = sessions.first(where: { $0.id == old.id }), !row.simulated else {
                 skipped.append("\(name): unavailable or simulated"); continue
             }
-            let eligible = operation == "archive" ? row.state == .saved : row.state == .archived
+            guard !ownedSessionIDs.contains(row.id) else { skipped.append("\(name): still open in RunHuddle; end the session before archiving or deleting"); continue }
+            let eligible = operation == "archive-delete" ? [.saved, .archived].contains(row.state) : operation == "archive" ? row.state == .saved : row.state == .archived
             guard eligible else {
                 skipped.append("\(name): \(operation == "delete" ? "archive first; running or unknown sessions cannot be removed" : "running, unknown, or not eligible for this action")")
                 continue
@@ -655,9 +780,10 @@ struct CopilotTrackingStatus: Decodable {
                 var native: CleanupPlan?
                 var local: LocalHistoryPlan?
                 if row.provider == "Codex" {
-                    let data = try await Bridge.run(["plan", row.sessionID, "--operation", operation])
+                    if waitForClose { cleanupProgress = "Session ended. Waiting for Codex to release it—this normally takes about a minute…" }
+                    let data = try await Bridge.run(["plan", row.sessionID, "--operation", operation] + (waitForClose ? ["--wait-for-close"] : []))
                     native = try JSONDecoder().decode(CleanupPlan.self, from: data)
-                } else if operation == "delete" {
+                } else if operation == "delete" || operation == "archive-delete" {
                     let data = try await Bridge.run(["plan", row.provider, row.sessionID], provider: "LocalCleanup")
                     local = try JSONDecoder().decode(LocalHistoryPlan.self, from: data)
                 }
@@ -673,6 +799,10 @@ struct CopilotTrackingStatus: Decodable {
             covered.formUnion(ids)
             return true
         }
+        if waitForClose && entries.isEmpty {
+            error = skipped.joined(separator: "\n")
+            return
+        }
         bulkReview = BulkCleanupReview(operation: operation, entries: entries, skipped: skipped)
     }
 
@@ -684,13 +814,16 @@ struct CopilotTrackingStatus: Decodable {
             cleanupProgress = "Processing session \(index + 1) of \(review.entries.count)…"
             do {
                 let row = entry.session
+                guard !ownedSessionIDs.contains(row.id) else {
+                    throw NSError(domain: "Cleanup", code: 1, userInfo: [NSLocalizedDescriptionKey: "Session is running in RunHuddle"])
+                }
                 var affected = Set([row.id])
                 if let native = entry.native {
                     let ids = native.affected.map(\.id)
                     let encoded = String(data: try JSONEncoder().encode(ids), encoding: .utf8)!
                     _ = try await Bridge.run(["apply", native.threadID, "--operation", review.operation, "--expected-ids", encoded])
                     affected = Set(ids.map { "Codex:" + $0 })
-                    if review.operation == "delete" {
+                    if review.removesHistory {
                         for id in ids { _ = try await Bridge.run(["forget", "Codex", id], provider: "LocalCleanup") }
                     }
                 } else {
@@ -709,6 +842,12 @@ struct CopilotTrackingStatus: Decodable {
                         let data = try await Bridge.run(["validate", row.provider, row.sessionID, "--expected", plan.fingerprint], provider: "LocalCleanup")
                         let checked = try JSONDecoder().decode(LocalHistoryPlan.self, from: data)
                         guard checked.paths == plan.paths else { throw NSError(domain: "Cleanup", code: 1, userInfo: [NSLocalizedDescriptionKey: "History paths changed; review again"]) }
+                        if review.operation == "archive-delete" {
+                            // Persist the archive before trashing files; a partial failure stays recoverable in Archived.
+                            local.archived.insert(row.id)
+                            try store.save(local, key: "localCleanupState")
+                            localCleanupState = local
+                        }
                         let paths = plan.paths
                         try await Task.detached {
                             for path in paths {
@@ -729,10 +868,11 @@ struct CopilotTrackingStatus: Decodable {
                     try store.save(local, key: "localCleanupState")
                     localCleanupState = local
                 }
-                if review.operation == "delete" { try removeLocalNotes(affected) }
+                if review.removesHistory { try removeLocalNotes(affected) }
+                if review.operation != "restore" { EmbeddedTerminals.shared.closeEndedAgents(sessionIDs: affected) }
                 bulkSelection.subtract(affected)
                 recentAlerts.removeAll { affected.contains($0.session.id) }
-                if review.operation == "delete", let selection, affected.contains(selection) { self.selection = nil }
+                if review.removesHistory, let selection, affected.contains(selection) { self.selection = nil }
                 completed += entry.count
             } catch {
                 failures.append("\(entry.name): \(error.localizedDescription.split(separator: "\n").last.map(String.init) ?? "Cleanup failed"). Some changes may already have completed. Refresh before retrying.")
@@ -797,19 +937,19 @@ struct CopilotTrackingStatus: Decodable {
             savedWork = next; workError = nil
         } catch { workError = "Could not delete saved record: " + error.localizedDescription }
     }
-    func preserveHandoff(_ row: Session) {
+    func preserveHandoff(_ row: Session, additionalContext: String = "") {
         guard let generated = handoffs[row.id], !draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        var record = SavedWork(session: row, title: displayName(for: row), text: draft(for: row), kind: "Handoff", sourceUpdated: generated.sessionUpdated)
+        var record = SavedWork(session: row, title: displayName(for: row), text: draft(for: row) + (additionalContext.isEmpty ? "" : "\n\n" + additionalContext), kind: "Handoff", sourceUpdated: generated.sessionUpdated)
         record.generatedBy = generated.provider; record.generatedAt = generated.generatedAt
-        if saveWork(record) { workNotice = "Handoff saved independently in Saved work." }
+        if saveWork(record) { workNotice = "Handoff saved independently in Notes." }
     }
     func exportWork(_ record: SavedWork) {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "saved-work.md"
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "project-note.md"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try record.markdown.write(to: url, atomically: true, encoding: .utf8) }
         catch { workError = "Could not export: " + error.localizedDescription }
     }
-    func generateWorkSummary(_ row: Session) async throws -> SavedWork {
+    func generateWorkSummary(_ row: Session, focus: String = "", sessionReport: Bool = false) async throws -> SavedWork {
         let provider = handoffAIProvider
         let generator = Session(provider: provider, sessionID: "", title: "", cwd: "", state: .saved)
         guard !row.simulated, let executable = executable(for: generator) else {
@@ -818,7 +958,7 @@ struct CopilotTrackingStatus: Decodable {
         let sourceData = try await Bridge.run(["handoff-context", row.sessionID], provider: row.provider)
         struct Source: Decodable { let text: String }
         let source = try JSONDecoder().decode(Source.self, from: sourceData)
-        let payload: [String: String] = ["provider": provider, "executable": executable, "recordKind": "work-summary",
+        let payload: [String: String] = ["provider": provider, "executable": executable, "recordKind": sessionReport ? "session-report" : "project-note", "captureFocus": focus,
             "sourceProvider": row.provider, "sessionID": row.sessionID, "sessionState": row.state.title,
             "title": displayName(for: row), "project": row.cwd, "purpose": briefs[row.id]?.purpose ?? "",
             "nextStep": briefs[row.id]?.nextStep ?? "", "history": "Original recorded objective: " + row.preview + "\n\n" + source.text]
@@ -829,9 +969,10 @@ struct CopilotTrackingStatus: Decodable {
         try JSONEncoder().encode(payload).write(to: input)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: input.path)
         let data = try await Bridge.run([input.path], provider: "HandoffAI")
-        struct Response: Decodable { let text: String; let provider: String }
+        struct Response: Decodable { let title: String; let text: String; let provider: String }
         let response = try JSONDecoder().decode(Response.self, from: data)
-        var record = SavedWork(session: row, title: displayName(for: row), text: response.text)
+        var record = SavedWork(session: row, title: response.title, text: response.text,
+                               kind: sessionReport ? "Session report" : "Project note")
         record.generatedBy = response.provider; record.generatedAt = Date()
         return record
     }
@@ -945,6 +1086,18 @@ struct CopilotTrackingStatus: Decodable {
                         }
                     }
                     if changed { reply.submissions = submissions; _ = saveReply(reply, for: row.id) }
+                }
+                if continuations[row.id] == nil {
+                    if row.provider == "Codex", !checkedContinuationOrigins.contains(row.id) {
+                        do {
+                            let data = try await Bridge.run(["handoff-origin", row.sessionID], provider: "Codex")
+                            struct Origin: Decodable { let text: String }
+                            if let origin = SessionContinuation.fromHandoff(try JSONDecoder().decode(Origin.self, from: data).text) {
+                                recordContinuation(child: row.id, link: .init(sourceID: origin.sourceID, sourceTitle: origin.sourceTitle, createdAt: row.updated))
+                            }
+                            checkedContinuationOrigins.insert(row.id)
+                        } catch { /* Older/offline bridges can retry on the next history refresh. */ }
+                    }
                 }
                 historyErrors.removeValue(forKey: row.id)
                 do { try store?.save(contexts, key: "handoffContexts") }
@@ -1078,151 +1231,96 @@ struct CopilotTrackingStatus: Decodable {
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
         return (candidates + additional.map { $0 + "/" + name }).first { FileManager.default.isExecutableFile(atPath: $0) }
     }
-    private func matchingTerminal(for row: Session, targets: [TerminalTarget]) -> TerminalTarget? {
-        if let original = TerminalTarget.uniqueMatch(for: row, sessions: sessions, targets: targets) { return original }
-        var renamed = row; renamed.title = displayName(for: row)
-        let renamedPeers = sessions.map { session -> Session in
-            var peer = session; peer.title = displayName(for: session); return peer
-        }
-        return TerminalTarget.uniqueMatch(for: renamed, sessions: renamedPeers, targets: targets)
-    }
     func resume(_ row: Session, fromMenu: Bool = false) {
-        // The menu/detail view may hold an older snapshot; prefer current liveness.
         let row = sessions.first(where: { $0.id == row.id }) ?? row
-        guard !row.simulated, row.state != .archived, !navigatingTerminal else { return }
-        if row.state == .saved {
-            // Saved conversations have no known live process. Resume their exact ID
-            // in their saved project, without offering unrelated terminals or stale
-            // remembered choices. launch() owns the navigation lock for this path.
-            openAnotherTerminal(row)
+        guard !row.simulated, !navigatingTerminal else { return }
+        if let shell = EmbeddedTerminals.shared.shell(containing: row, model: self) { presentEmbedded(shell.id); return }
+        if let owned = EmbeddedTerminals.shared.sessions.first(where: { $0.row(in: self)?.id == row.id && !$0.ended }) {
+            presentEmbedded(owned.id)
             return
         }
-        navigatingTerminal = true
-        terminalNavigationSessionID = row.id
-        terminalProgress = "Finding terminal…"
-        Task { @MainActor in
-            defer { navigatingTerminal = false; terminalNavigationSessionID = nil; terminalProgress = "" }
-            await navigate(row, fromMenu: fromMenu)
+        guard row.state == .saved else {
+            // External and uncertain sessions are read-only here. Never launch a duplicate agent.
+            showSession(row.id)
+            onTerminalOpened?()
+            return
         }
+        do { presentEmbedded(try EmbeddedTerminals.shared.start(model: self, directory: row.cwd, resume: row)) }
+        catch { self.error = error.localizedDescription }
     }
-    private func navigate(_ row: Session, fromMenu: Bool) async {
-        await discoverTerminals()
-        let remembered = terminalChoices[row.id].flatMap { previous in terminalTargets.first { $0.stillMatchesChoice(previous, provider: row.provider) } }
-        let automatic = matchingTerminal(for: row, targets: terminalTargets)
-        let preferred = automatic?.matchRank(for: row) == 0 ? automatic : remembered ?? automatic
-        if let match = preferred {
-            do { terminalProgress = "Opening terminal…"; try await TerminalNavigator.focus(match); terminalChoices[row.id] = match; onTerminalOpened?(); return }
-            catch { terminalMessage = error.localizedDescription }
-        }
-        if fromMenu {
-            selection = row.id; query = ""; filter = "All sessions"; provider = "All tools"; projectFilter = "All projects"
-            openMainWindow?()
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        terminalSession = row
+    func synchronizePresentedTerminalSelection() {
+        if EmbeddedTerminals.shared.presentedID == EmbeddedTerminals.shellWorkspaceID { if selection != nil { selection = nil }; return }
+        guard let id = EmbeddedTerminals.shared.presentedID,
+              let terminal = EmbeddedTerminals.shared.sessions.first(where: { $0.id == id }) else { return }
+        if terminal.isShell { if selection != nil { selection = nil }; return }
+        guard let row = terminal.row(in: self) else { return }
+        if selection != row.id { selection = row.id }
     }
-    func refreshTerminals() {
-        guard !navigatingTerminal else { return }
-        navigatingTerminal = true
-        terminalProgress = "Finding terminals…"
-        Task { @MainActor in
-            defer { navigatingTerminal = false; terminalProgress = "" }
-            await discoverTerminals()
-        }
-    }
-    private func discoverTerminals() async {
-        let result = await TerminalNavigator.discover()
-        terminalTargets = result.targets
-        terminalMessage = result.errors.isEmpty
-            ? "Choose an existing tab or pane to bring it forward without sending a prompt."
-            : result.errors.joined(separator: "\n")
-    }
-    func focusTerminal(_ target: TerminalTarget) {
-        guard !navigatingTerminal else { return }
-        navigatingTerminal = true
-        terminalProgress = "Opening terminal…"
-        Task { @MainActor in
-            defer { navigatingTerminal = false; terminalProgress = "" }
-            do {
-                try await TerminalNavigator.focus(target)
-                if let row = terminalSession, [.working, .idle, .needsInput].contains(row.state) { terminalChoices[row.id] = target }
-                terminalSession = nil; onTerminalOpened?()
-            }
-            catch {
-                let message = error.localizedDescription
-                await discoverTerminals()
-                terminalMessage = message
-            }
-        }
+    func presentEmbedded(_ id: String) {
+        EmbeddedTerminals.shared.presentedID = id
+        openEmbeddedTerminal?(id)
+        onTerminalOpened?()
+        openMainWindow?()
+        NSApp.activate(ignoringOtherApps: true)
     }
     func installedLaunchAgents() -> [String] {
         ["Codex", "Claude", "Copilot"].filter {
             executable(for: Session(provider: $0, sessionID: "", title: "", cwd: "", state: .saved)) != nil
         }
     }
-    func startNewSession(provider: String, directory: String, claudeReplies: Bool) async -> String? {
-        guard ["Codex", "Claude", "Copilot"].contains(provider) else { return "Choose an installed agent." }
-        if provider == "Claude", claudeReplies {
-            return await launchConnectedClaude(sessionID: UUID().uuidString.lowercased(), directory: directory, resume: false)
-        }
-        if provider == "Copilot" {
-            return await launchConnectedCopilot(sessionID: UUID().uuidString.lowercased(), directory: directory, resume: false)
-        }
-        guard !navigatingTerminal else { return "A terminal is already opening. Try again in a moment." }
-        let row = Session(provider: provider, sessionID: "", title: "", cwd: directory, state: .saved)
-        guard let executable = executable(for: row) else { return "Install and sign in to \(provider) first." }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else { return "Choose an existing project folder." }
-        launch("cd -- \(ShellCommand.quote(directory)) && \(ShellCommand.quote(executable))", cwd: directory)
-        return nil
+    func startNewSession(provider: String, directory: String, claudeReplies: Bool, prompt: String? = nil) async -> String? {
+        do {
+            presentEmbedded(try EmbeddedTerminals.shared.start(model: self, directory: directory, provider: provider, prompt: prompt))
+            return nil
+        } catch { return error.localizedDescription }
     }
     func launchConnectedClaude(sessionID: String, directory: String, resume: Bool) async -> String? {
-        let row = Session(provider: "Claude", sessionID: sessionID, title: "Claude session", cwd: directory, state: .saved)
-        guard !navigatingTerminal, let executable = executable(for: row) else { return "Install and sign in to Claude Code first." }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else { return "Choose an existing project folder." }
-        do {
-            let input = try JSONEncoder().encode(InlineReplyPayload(action: "setup", provider: "Claude", sessionID: sessionID, executable: executable, text: "", resume: resume))
-            let result = try JSONDecoder().decode(InlineReplyResult.self, from: await Bridge.run([], provider: "Reply", input: input))
-            guard result.outcome == "setup" else { return result.message }
-            launch("cd -- \(ShellCommand.quote(directory)) && " + result.message, cwd: directory)
-            return nil
-        } catch { return "Could not prepare Claude’s connection: \(error.localizedDescription)" }
+        "Use New session to start Claude in RunHuddle. For an existing session, exit its external terminal first, then resume it here."
     }
     func launchConnectedCopilot(sessionID: String, directory: String, resume: Bool) async -> String? {
-        let row = Session(provider: "Copilot", sessionID: sessionID, title: "Claude session", cwd: directory, state: .saved)
-        guard !navigatingTerminal, let executable = executable(for: row) else { return "Install and sign in to Copilot first." }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else { return "Choose an existing project folder." }
-        do {
-            let input = try JSONEncoder().encode(InlineReplyPayload(action: "setup", provider: "Copilot", sessionID: sessionID, executable: executable, text: "", resume: resume))
-            let result = try JSONDecoder().decode(InlineReplyResult.self, from: await Bridge.run([], provider: "Reply", input: input))
-            guard result.outcome == "setup" else { return result.message }
-            launch("cd -- \(ShellCommand.quote(directory)) && " + result.message, cwd: directory)
-            return nil
-        } catch { return "Could not prepare Copilot’s connection: \(error.localizedDescription)" }
+        "Use New session to start Copilot in RunHuddle. For an existing session, exit its external terminal first, then resume it here."
     }
-    func openAnotherTerminal(_ row: Session) {
-        guard !row.simulated, let executable = executable(for: row), let command = ShellCommand.resume(row, executable: executable) else {
-            error = "The agent executable could not be found."; return
-        }
-        terminalSession = nil
-        launch(command, cwd: row.cwd)
-    }
+    func openAnotherTerminal(_ row: Session) { resume(row) }
     func showSession(_ id: String) {
         guard id != "notification-test" else { openMainWindow?(); return }
-        selection = id; query = ""; filter = "All sessions"; provider = "All tools"; projectFilter = "All projects"
+        if let row = sessions.first(where: { $0.id == id }), let shell = EmbeddedTerminals.shared.shell(containing: row, model: self) {
+            presentEmbedded(shell.id); return
+        }
+        selection = id; query = ""; filter = sessions.first(where: { $0.id == id })?.state == .archived ? "Archived" : "All sessions"; provider = "All tools"; projectFilter = "All projects"
+        for (head, earlier) in chainGroups where earlier.contains(where: { $0.id == id }) { expandedChains.insert(head) }
         openMainWindow?()
     }
-    func fresh(_ row: Session) async {
-        guard !row.simulated, let executable = executable(for: row) else { return }
-        await appendHistory(row)
-        let prompt = "Continue from this handoff. First inspect the current project state.\n\n" + completeHandoff(row)
-        launch("cd -- \(ShellCommand.quote(row.cwd)) && \(ShellCommand.quote(executable)) \(row.provider == "Copilot" ? "-i " : "")\(ShellCommand.quote(prompt))", cwd: row.cwd)
+    func startReview(_ row: Session, provider: String, request: ProjectReview) -> String? {
+        guard !row.simulated, installedLaunchAgents().contains(provider) else { return "Install and sign in to the selected reviewer first." }
+        guard !navigatingTerminal else { return "A session is already opening. Try again in a moment." }
+        do {
+            let terminalID = try EmbeddedTerminals.shared.start(model: self, directory: request.directory, provider: provider, prompt: request.prompt)
+            pendingContinuations[terminalID] = .init(link: .init(sourceID: row.id, sourceTitle: displayName(for: row), relationship: "reviewed"), existingIDs: Set(sessions.map(\.id)))
+            presentEmbedded(terminalID)
+            return nil
+        } catch { return error.localizedDescription }
+    }
+    func startContinuation(_ row: Session, provider: String, allowWorking: Bool, directory: String? = nil, additionalContext: String = "", relationship: String = "continued") -> String? {
+        let current = sessions.first { $0.id == row.id } ?? row
+        guard !current.simulated, installedLaunchAgents().contains(provider) else { return "Install and sign in to the selected agent first." }
+        guard !navigatingTerminal, !handoffGenerating.contains(row.id), handoffCandidates[row.id] == nil else { return "Finish reviewing the handoff before starting." }
+        guard !draft(for: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "Prepare a handoff before starting." }
+        guard allowWorking || ![.working, .needsInput].contains(current.state) else { return "The original agent is working or waiting for input. Confirm that you want another session running alongside it." }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: row.cwd, isDirectory: &isDirectory), isDirectory.boolValue else { return "The original project folder is unavailable." }
+        let targetDirectory = directory ?? row.cwd
+        let instruction = "Continue from this handoff. First inspect the current project state."
+        let prompt = instruction + "\n\n" + completeHandoff(current) + "\n\n" + additionalContext
+        do {
+            let terminalID = try EmbeddedTerminals.shared.start(model: self, directory: targetDirectory, provider: provider, prompt: prompt)
+            pendingContinuations[terminalID] = .init(link: .init(sourceID: row.id, sourceTitle: displayName(for: row), relationship: relationship), existingIDs: Set(sessions.map(\.id)))
+            presentEmbedded(terminalID)
+            return nil
+        } catch { return error.localizedDescription }
     }
     func startFromSavedWork(_ record: SavedWork, provider: String, directory: String, prompt: String) -> Bool {
         let row = Session(provider: provider, sessionID: "", title: record.title, cwd: directory, state: .saved)
-        guard ["Codex", "Claude", "Copilot"].contains(provider), let executable = executable(for: row) else {
+        guard ["Codex", "Claude", "Copilot"].contains(provider), executable(for: row) != nil else {
             workError = "Install and sign into the selected AI CLI first."; return false
         }
         var isDirectory: ObjCBool = false
@@ -1231,36 +1329,18 @@ struct CopilotTrackingStatus: Decodable {
         }
         guard !navigatingTerminal, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         workError = nil
-        launch("cd -- \(ShellCommand.quote(directory)) && \(ShellCommand.quote(executable)) \(provider == "Copilot" ? "-i " : "")\(ShellCommand.quote(prompt))", cwd: directory)
-        return true
-    }
-    private func launch(_ command: String, cwd: String) {
-        var directory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: cwd, isDirectory: &directory), directory.boolValue else {
-            error = "The saved project folder no longer exists: \(cwd)"; return
+        do {
+            let terminalID = try EmbeddedTerminals.shared.start(model: self, directory: directory, provider: provider, prompt: prompt)
+            presentEmbedded(terminalID)
+            return true
         }
-        guard !navigatingTerminal else { return }
-        navigatingTerminal = true
-        terminalProgress = "Opening preferred terminal…"
-        Task { @MainActor in
-            defer { navigatingTerminal = false; terminalProgress = "" }
-            do {
-                let preferTab = UserDefaults.standard.string(forKey: "terminalLaunchStyle") != "window"
-                let terminal = PreferredTerminal.stored(UserDefaults.standard.string(forKey: "preferredTerminal"))
-                terminalLaunchNotice = nil
-                if let notice = try await TerminalNavigator.launchNew(command, cwd: cwd, terminal: terminal, preferTab: preferTab) {
-                    terminalLaunchNotice = notice
-                    openMainWindow?()
-                }
-                onTerminalOpened?()
-            } catch { self.error = "Could not confirm that the preferred terminal opened: \(error.localizedDescription). Check the selected terminal before trying again." }
-        }
+        catch { workError = error.localizedDescription; return false }
     }
-    func export(_ row: Session) async {
+    func export(_ row: Session, additionalContext: String = "") async {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "handoff.md"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try completeHandoff(row).write(to: url, atomically: true, encoding: .utf8) }
+        do { try (completeHandoff(row) + (additionalContext.isEmpty ? "" : "\n\n" + additionalContext)).write(to: url, atomically: true, encoding: .utf8) }
         catch { self.error = error.localizedDescription }
     }
     func enableNotifications() async {

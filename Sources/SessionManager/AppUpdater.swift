@@ -3,14 +3,25 @@ import Combine
 import Sparkle
 import SwiftUI
 
-@MainActor final class AppUpdater: ObservableObject {
+@MainActor final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     @Published var canCheck = false
-    private let controller: SPUStandardUpdaterController?
-    init() {
+    private var controller: SPUStandardUpdaterController?
+    override init() {
+        super.init()
         guard Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil else { controller = nil; return }
-        let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
         self.controller = controller
         controller.updater.publisher(for: \.canCheckForUpdates).assign(to: &$canCheck)
+    }
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        EmbeddedTerminals.shared.updating = true
+    }
+    func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        EmbeddedTerminals.shared.updating = true
+        EmbeddedTerminals.shared.detachAll()
+    }
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        EmbeddedTerminals.shared.updating = false
     }
     var checksAutomatically: Bool {
         get { controller?.updater.automaticallyChecksForUpdates ?? false }

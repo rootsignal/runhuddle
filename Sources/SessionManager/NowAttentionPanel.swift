@@ -38,7 +38,7 @@ struct NowAttentionPanel: View {
                 }.foregroundStyle(.secondary).help(title(row))
                 Spacer(minLength: 0)
                 Button { resume(row) } label: {
-                    Text(navigating ? "Locating…" : "Go to terminal")
+                    Text(navigating ? "Opening…" : "Open session")
                 }.disabled(navigating || row.simulated)
                     .buttonStyle(.borderedProminent).tint(HuddleStyle.action)
             } else {

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import time
 from websockets.sync.client import unix_connect
+from agent_plan import record_codex_plan
 
 METHODS = frozenset(('thread/started', 'thread/status/changed', 'thread/closed',
                      'thread/archived', 'thread/unarchived', 'thread/deleted', 'thread/name/updated'))
@@ -33,7 +34,7 @@ def observe(connection, emit, should_stop=lambda: False):
         except TimeoutError:
             continue
         message = json.loads(raw)
-        if relevant(message):
+        if record_codex_plan(message) or relevant(message):
             emit({'type': 'changed'})
         # Never answer approval/tool requests or take control of a thread.
 

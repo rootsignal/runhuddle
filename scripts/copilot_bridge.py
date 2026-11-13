@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Read-only Copilot transcript adapter; hooks write only tracker-owned state."""
 from compaction_count import read_compactions
+from agent_plan import read_copilot_tasks
 from session_storage import transcript_storage
 import argparse
 from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+from app_support import prepare_storage
 import sqlite3
 import subprocess
 import sys
@@ -16,13 +18,13 @@ import yaml
 from attention_request import request as attention_request
 
 HOME = Path(os.environ.get('COPILOT_HOME', Path.home() / '.copilot'))
-STATE = Path(os.environ.get('SESSION_TRACKER_COPILOT_STATE', Path.home() / 'Library/Application Support/Agent Session Manager/copilot.sqlite'))
+STATE = Path(os.environ.get('SESSION_TRACKER_COPILOT_STATE', Path.home() / 'Library/Application Support/RunHuddle/copilot.sqlite'))
 EVENTS = ('sessionStart', 'userPromptSubmitted', 'postToolUse', 'postToolUseFailure', 'agentStop', 'sessionEnd', 'notification', 'errorOccurred')
 
 
 @contextmanager
 def database():
-    STATE.parent.mkdir(parents=True, exist_ok=True)
+    prepare_storage(STATE)
     db = sqlite3.connect(STATE, timeout=2)
     db.execute('CREATE TABLE IF NOT EXISTS states (id TEXT PRIMARY KEY, timestamp REAL, data TEXT)')
     os.chmod(STATE, 0o600)
@@ -140,6 +142,7 @@ def transcript(path):
             if isinstance(content, str) and content:
                 messages.append(kind.split('.')[0].capitalize() + ': ' + content[:12000])
                 if kind == 'user.message':
+                    info['latestRequest'] = event.get('timestamp')
                     info.setdefault('title', content.splitlines()[0][:100])
                     info['preview'] = content[:2000]
     return info, messages
@@ -190,7 +193,7 @@ def snapshot():
         if path:
             try:
                 info, _ = transcript(path)
-                data.update({k: v for k, v in info.items() if k in ('cwd', 'branch', 'title', 'preview') and v})
+                data.update({k: v for k, v in info.items() if k in ('cwd', 'branch', 'title', 'preview', 'latestRequest') and v})
                 data['updated'] = max(data.get('updated', 0), path.stat().st_mtime)
             except FileNotFoundError:
                 continue
@@ -220,7 +223,7 @@ def snapshot():
         rows.append(dict(provider='Copilot' , sessionID=sid, title=data.get('title', 'Copilot session'), cwd=cwd,
                          project=Path(cwd).name if cwd else 'Unknown project', branch=data.get('branch', ''),
                          preview=data.get('preview', ''), state=state, reason=data.get('reason', '') if state != 'saved' else 'Saved session; live activity is not confirmed.',
-                         storage=transcript_storage(path), compactions=read_compactions(path, "Copilot"), updated=data.get('updated', 0), attention=data.get('attention') if state == 'needsInput' else None, simulated=False,
+                         agentPlan=read_copilot_tasks(HOME, sid, data.get('latestRequest')), storage=transcript_storage(path), compactions=read_compactions(path, "Copilot"), updated=data.get('updated', 0), attention=data.get('attention') if state == 'needsInput' else None, simulated=False,
                          agentPID=(data.get('identity') or {}).get('pid') if state in ('idle', 'working', 'needsInput') else None, terminalTTY=(data.get('identity') or {}).get('tty') if state not in ('saved', 'disconnected') else None))
     return rows
 

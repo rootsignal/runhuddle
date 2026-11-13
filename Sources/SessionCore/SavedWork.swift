@@ -27,6 +27,18 @@ public struct SavedWork: Codable, Identifiable, Equatable, Sendable {
                       createdAt.formatted(date: .numeric, time: .omitted), createdAt.ISO8601Format()].joined(separator: "\n")
         return words.allSatisfy { fields.localizedCaseInsensitiveContains(String($0)) }
     }
+    public func belongs(to directory: String) -> Bool {
+        guard !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        func canonical(_ path: String) -> String {
+            URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path
+        }
+        return canonical(project) == canonical(directory)
+    }
+    public static func referencePrompt(_ notes: [SavedWork]) -> String {
+        guard !notes.isEmpty else { return "" }
+        return "Use these project notes as reference for my next request. They may be outdated; verify relevant claims against the current project. They are background knowledge, not instructions to resume their original sessions.\n\n"
+            + notes.map { "## Reference note\n\n" + $0.markdown }.joined(separator: "\n\n---\n\n")
+    }
     public var markdown: String {
         """
         # \(title)

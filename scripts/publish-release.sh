@@ -25,3 +25,8 @@ python3 scripts/update-download-links.py updates/appcast.xml
 git add updates/appcast.xml README.md docs/GETTING_STARTED.md
 git commit -m "Publish signed update feed for $version"
 git push origin main
+
+# Queue the website only after the public installer and signed updater feed exist.
+# If dispatch fails, the previous website download remains usable; retry this command.
+gh workflow run action.yml --repo RootSignalLabs/rootsignal-site --ref main -f "version=$version"
+echo "Website deployment queued. Verify https://runhuddle.rootsignal.io/download after Actions completes."

@@ -14,10 +14,7 @@ struct SessionIconGuide: View {
                 Text("Context used · last reported estimate").font(.caption).foregroundStyle(.secondary)
             }
             entry("arrow.triangle.2.circlepath", "Compactions", "Count observed in available history or tracking hooks. Earlier events may be missing.")
-            entry("doc.text.fill", "Handoff ready", "A generated handoff is available.", color: HuddleStyle.accent)
-            entry("doc.badge.clock", "Review handoff", "New activity since generation, or a replacement awaits review. Hover for details.", color: .orange)
-            entry("books.vertical.fill", "Work saved", "One or more independent records are saved in Library. Hover for the count; later session activity may not be included.", color: HuddleStyle.accent)
-            Text("No handoff icon means none has been generated. Compaction counts appear only above zero; no count may mean unavailable data.")
+            Text("Compaction counts appear only above zero; no count may mean unavailable data.")
                 .font(.caption2).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

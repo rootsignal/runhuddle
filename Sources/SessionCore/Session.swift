@@ -8,7 +8,7 @@ public enum SessionState: String, Codable, CaseIterable, Sendable {
         case .working: "Working"
         case .idle: "Idle"
         case .saved: "Previous session"
-        case .disconnected: "Previous session"
+        case .disconnected: "Status unknown"
         case .archived: "Archived"
         }
     }
@@ -32,6 +32,7 @@ public struct Session: Codable, Identifiable, Hashable, Sendable {
     public var state: SessionState
     public var reason: String
     public var updated: Double
+    public var agentPlan: AgentPlan?
     public var contextUsage: ContextUsage?
     public var compactions: CompactionCount?
     public var storage: SessionStorage?

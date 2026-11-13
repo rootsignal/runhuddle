@@ -1,23 +1,33 @@
 import SwiftUI
+import SessionCore
 
 struct NewSessionLaunchView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     @ViewState private var agents: [String] = []
     @ViewState private var provider = ""
     @ViewState private var directory: String
     @ViewState private var busy = false
+    @ViewState private var selectedNotes: Set<UUID> = []
+    @ViewState private var notesExpanded = true
+    @ViewState private var prompt = ""
+    private var projectNotes: [SavedWork] { model.savedWork.filter { $0.belongs(to: directory) } }
+
+    @ViewState private var isolated = false
+    @ViewState private var allowShared = false
+    @ViewState private var branch = "runhuddle/work-" + String(UUID().uuidString.prefix(8)).lowercased()
+    private var workspacePath: String { ProjectWorkspace.destination(directory: (directory as NSString).expandingTildeInPath, suffix: branch.split(separator: "/").last.map(String.init) ?? "work") }
     @ViewState private var failure: String?
-    @ViewState private var copilotMessage: String?
     @AppStorage("newSessionAgent") private var preferredAgent = "Codex"
-    @AppStorage("newSessionClaudeReplies") private var claudeReplies = true
     init(initialDirectory: String = "") {
         _directory = ViewState(initialValue: initialDirectory.isEmpty ? UserDefaults.standard.string(forKey: "newSessionDirectory") ?? "" : initialDirectory)
     }
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 18) {
             Label("New session", systemImage: "plus.bubble").font(.title2.bold())
-            Text("Start work in your preferred terminal. RunHuddle will track the conversation here.")
+            Text("Choose an agent and project to start working.")
                 .foregroundStyle(.secondary)
             if agents.isEmpty {
                 Label("No supported agents detected", systemImage: "info.circle").font(.headline)
@@ -36,25 +46,33 @@ struct NewSessionLaunchView: View {
                         if panel.runModal() == .OK, let url = panel.url { directory = url.path }
                     }
                 }
-                VStack(alignment: .leading, spacing: 10) {
-                    if provider == "Claude" {
-                        Toggle("Enable replies in RunHuddle", isOn: $claudeReplies)
-                        if claudeReplies {
-                            Label("Experimental Claude connection", systemImage: "info.circle").font(.headline)
-                            Text("Accept RunHuddle’s development channel when Claude asks in the terminal. You can then send follow-ups here. Your model and permission settings still apply; approvals stay in the terminal.")
-                            Text("Claude sessions started normally outside RunHuddle don’t have this reply connection.")
-                        } else {
-                            Text("Conversation viewing and terminal switching are available. To send follow-ups here, enable replies before launching.")
-                        }
-                    } else if provider == "Codex" {
-                        Label("Replies supported", systemImage: "bubble.left.and.text.bubble.right").font(.headline)
-                        Text("Send follow-ups from Activity once the session connects. Approvals stay in the terminal.")
-                    } else {
-                        Label("Replies included", systemImage: "bubble.left.and.text.bubble.right").font(.headline)
-                        Text("RunHuddle installs its reply extension and starts Copilot with experimental extension support. No setup commands needed. Your model and approval settings still apply; approvals stay in the terminal.")
+                WorkspaceLaunchOptions(directory: directory, isolated: $isolated, allowShared: $allowShared, branch: $branch, destination: workspacePath)
+                if !projectNotes.isEmpty {
+                    DisclosureGroup("Include project notes (\(selectedNotes.count) selected)", isExpanded: $notesExpanded) {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(projectNotes) { note in
+                                    Toggle(note.title, isOn: Binding(get: { selectedNotes.contains(note.id) }, set: { included in
+                                        if included { selectedNotes.insert(note.id) } else { selectedNotes.remove(note.id) }
+                                        prompt = SavedWork.referencePrompt(projectNotes.filter { selectedNotes.contains($0.id) })
+                                    }))
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.frame(maxHeight: 120)
+                        Text("Changing the selection rebuilds the prompt below. Notes are never included automatically.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                }.font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(14)
-                    .background(HuddleStyle.raised, in: RoundedRectangle(cornerRadius: 10))
+                }
+                if !selectedNotes.isEmpty {
+                    Text("First prompt · add your task and review exactly what will be sent")
+                        .font(.caption).foregroundStyle(.secondary)
+                    TextEditor(text: $prompt).font(.system(size: 12, design: .monospaced))
+                        .frame(height: 180).border(.quaternary).accessibilityLabel("First prompt with selected notes")
+                }
+                Label("Opens inside RunHuddle", systemImage: "terminal").font(.headline)
+                Text("Prompts, approvals, and agent commands run directly in the terminal. Your existing sign-in, model, and permission settings apply.")
+                    .font(.callout).foregroundStyle(.secondary)
+
             }
             if let failure { Text(failure).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             HStack {
@@ -63,20 +81,31 @@ struct NewSessionLaunchView: View {
                 if busy { ProgressView().controlSize(.small) }
                 Button(provider.isEmpty ? "Start session" : "Start \(provider)") {
                     busy = true; failure = nil
+                    let launchPrompt: String? = selectedNotes.isEmpty ? nil : prompt
                     let path = (directory as NSString).expandingTildeInPath
                     Task {
-                        failure = await model.startNewSession(provider: provider, directory: path, claudeReplies: claudeReplies)
+                        do {
+                            let chosen = isolated ? try await ProjectWorkspace.create(directory: path, branch: branch, destination: workspacePath) : path
+                            if isolated { directory = chosen; isolated = false; allowShared = true }
+                            failure = await model.startNewSession(provider: provider, directory: chosen, claudeReplies: false, prompt: launchPrompt)
+                        } catch { failure = error.localizedDescription }
                         busy = false
                         if failure == nil {
                             preferredAgent = provider
-                            UserDefaults.standard.set(path, forKey: "newSessionDirectory")
+                            UserDefaults.standard.set((directory as NSString).expandingTildeInPath, forKey: "newSessionDirectory")
                             dismiss()
                         }
                     }
-                }.buttonStyle(.borderedProminent).disabled(busy || model.navigatingTerminal || directory.isEmpty || !agents.contains(provider))
+                }.buttonStyle(.borderedProminent).disabled(busy || model.navigatingTerminal || (!selectedNotes.isEmpty && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || directory.isEmpty || !agents.contains(provider) || (!isolated && model.hasOpenSession(in: directory) && !allowShared))
             }
-        }.padding(24).frame(width: 530).background(HuddleStyle.canvas).tint(HuddleStyle.accent)
-            .onAppear { detect() }
+        }.padding(24)
+        }.frame(width: 580, height: 700).background(HuddleStyle.canvas).tint(HuddleStyle.accent)
+            .onAppear { detect(); projectAgent() }
+            .onChange(of: directory) { _, _ in projectAgent(); selectedNotes.removeAll(); prompt = "" }
+    }
+    private func projectAgent() {
+        let choice = ProjectPreferencesStore.shared.value(directory).agent
+        if agents.contains(choice) { provider = choice }
     }
     private func detect() {
         agents = model.installedLaunchAgents()

@@ -23,22 +23,21 @@ import SessionCore
         popover.animates = false
         model.$sessions.map { $0.filter { !$0.simulated && $0.state == .needsInput }.count }
             .removeDuplicates().sink { [weak self] count in self?.updateIcon(count) }.store(in: &subscriptions)
-        model.$terminalSession.compactMap { $0 }.sink { [weak self] _ in self?.dismiss() }.store(in: &subscriptions)
         hotKey.action = { [weak self] in self?.toggle() }; hotKey.start()
     }
     private func updateIcon(_ count: Int) {
         guard let item, let button = item.button else { return }
-        let owl = RunHuddleIcon.image()
+        let mark = RunHuddleIcon.image()
         if let badge = RunHuddleIcon.attentionBadge(count: count) {
             let width = 22 + badge.size.width
             button.image = NSImage(size: NSSize(width: width, height: 18), flipped: false) { _ in
-                owl.draw(in: NSRect(x: 0, y: 0, width: 18, height: 18))
+                mark.draw(in: NSRect(x: 0, y: 0, width: 18, height: 18))
                 NSColor.labelColor.setFill()
                 NSRect(x: 0, y: 0, width: 18, height: 18).fill(using: .sourceIn)
                 badge.draw(in: NSRect(x: 22, y: 1, width: badge.size.width, height: 16))
                 return true
             }
-        } else { button.image = owl }
+        } else { button.image = mark }
         item.length = (button.image?.size.width ?? 18) + 12
         button.toolTip = "RunHuddle · \(count) need input"
         button.setAccessibilityLabel("RunHuddle, \(count) sessions need input")

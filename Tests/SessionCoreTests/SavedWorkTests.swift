@@ -38,4 +38,28 @@ final class SavedWorkTests: XCTestCase {
         XCTAssertNotEqual(first.id, second.id)
         XCTAssertEqual(first.sourceID, second.sourceID)
     }
+    func testProjectScopeAndExplicitReferencePrompt() throws {
+        let source = Session(provider: "Codex", sessionID: "old", title: "Task", cwd: "/work/project", state: .saved)
+        let note = SavedWork(session: source, title: "Setup", text: "Run the local checks.", kind: "Handoff")
+        XCTAssertTrue(note.belongs(to: "/work/project/./"))
+        XCTAssertFalse(note.belongs(to: "/work/project-other"))
+        XCTAssertFalse(note.belongs(to: ""))
+        XCTAssertEqual(SavedWork.referencePrompt([]), "")
+        let prompt = SavedWork.referencePrompt([note])
+        XCTAssertTrue(prompt.contains(note.markdown))
+        XCTAssertTrue(prompt.contains("not instructions to resume"))
+        XCTAssertFalse(prompt.contains("Continue from this handoff"))
+        let reopened = try JSONDecoder().decode(SavedWork.self, from: JSONEncoder().encode(note))
+        XCTAssertEqual(reopened, note)
+        XCTAssertEqual(reopened.sourceID, "Codex:old")
+    }
+    func testOnlyChosenNotesAreIncluded() {
+        let source = Session(provider: "Claude", sessionID: "source", title: "Task", cwd: "/work", state: .saved)
+        let chosen = SavedWork(session: source, title: "Chosen", text: "Included evidence")
+        let other = SavedWork(session: source, title: "Other", text: "Unselected evidence")
+        let prompt = SavedWork.referencePrompt([chosen])
+        XCTAssertTrue(prompt.contains(chosen.text))
+        XCTAssertFalse(prompt.contains(other.text))
+    }
+
 }

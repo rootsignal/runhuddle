@@ -1,11 +1,12 @@
 import Foundation
 
 public enum SessionPresentation {
-    public static func includes(_ row: Session, filter: String, pinned: Set<String> = []) -> Bool {
+    public static func includes(_ row: Session, filter: String, pinned: Set<String> = [], owned: Bool? = nil) -> Bool {
         switch filter {
         case "Saved": return row.state == .saved
         case "Disconnected": return row.state == .disconnected
-        case "Now": return [.needsInput, .working, .idle].contains(row.state)
+        case "Running here": return owned != false && [.needsInput, .working, .idle].contains(row.state)
+        case "Running elsewhere": return owned == false && !row.simulated && [.needsInput, .working, .idle].contains(row.state)
         case "Pinned": return pinned.contains(row.id) && row.state != .archived
         case "All sessions": return row.state != .archived
         default: return row.state.title == filter
@@ -25,8 +26,8 @@ public enum SessionPresentation {
         switch row.state {
         case .needsInput: return "Waiting for your input"
         case .working: return "\(row.provider) reports work in progress"
-        case .idle: return "Ready for your next prompt"
-        case .saved: return "Previous session · resume when you’re ready"
+        case .idle: return "Idle · agent is still open"
+        case .saved: return "Closed · resume when you’re ready"
         case .archived: return "Archived · history preserved until removal"
         case .disconnected:
             if row.reason.localizedCaseInsensitiveContains("no controlling terminal") {

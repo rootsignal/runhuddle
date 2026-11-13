@@ -8,11 +8,37 @@ enum HuddleStyle {
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
         })
     }
-    static let accent = adaptive(NSColor(red: 0.02, green: 0.40, blue: 0.52, alpha: 1), NSColor(red: 0.35, green: 0.82, blue: 0.91, alpha: 1))
-    static let action = Color(red: 0.02, green: 0.40, blue: 0.52)
-    static let canvas = adaptive(NSColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1), NSColor(red: 0.075, green: 0.09, blue: 0.12, alpha: 1))
-    static let panel = adaptive(.white, NSColor(red: 0.105, green: 0.125, blue: 0.16, alpha: 1))
-    static let raised = adaptive(NSColor(red: 0.97, green: 0.98, blue: 0.99, alpha: 1), NSColor(red: 0.145, green: 0.17, blue: 0.215, alpha: 1))
+    private static func themed(_ key: KeyPath<TerminalTheme, String>, fallback: Color) -> Color {
+        let options = TerminalOptionsPreference.stored
+        guard options.coordinateApp else {
+            if key == \TerminalTheme.accent, let hex = UserDefaults.standard.string(forKey: "appAccentColor"), !hex.isEmpty {
+                return Color(nsColor: TerminalOptionsPreference.color(hex))
+            }
+            return fallback
+        }
+        func value(_ dark: Bool) -> NSColor {
+            let hex = key == \TerminalTheme.accent ? (options.customAccent ?? options.preset(dark: dark)[keyPath: key]) : options.preset(dark: dark)[keyPath: key]
+            return TerminalOptionsPreference.color(hex)
+        }
+        return adaptive(value(false), value(true))
+    }
+    static var accent: Color { themed(\.accent, fallback: adaptive(NSColor(red: 0.02, green: 0.40, blue: 0.52, alpha: 1), NSColor(red: 0.35, green: 0.82, blue: 0.91, alpha: 1))) }
+    static var action: Color {
+        let options = TerminalOptionsPreference.stored
+        guard options.coordinateApp else {
+            if let hex = UserDefaults.standard.string(forKey: "appAccentColor"), !hex.isEmpty { return Color(nsColor: TerminalOptionsPreference.color(hex)) }
+            return Color(red: 0.02, green: 0.40, blue: 0.52)
+        }
+        func color(_ dark: Bool) -> NSColor {
+            let preset = options.preset(dark: dark)
+            let accent = TerminalOptionsPreference.color(options.customAccent ?? preset.accent)
+            return preset.dark ? accent.blended(withFraction: 0.45, of: .black)! : accent
+        }
+        return adaptive(color(false), color(true))
+    }
+    static var canvas: Color { themed(\.canvas, fallback: adaptive(NSColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1), NSColor(red: 0.075, green: 0.09, blue: 0.12, alpha: 1))) }
+    static var panel: Color { themed(\.panel, fallback: adaptive(.white, NSColor(red: 0.105, green: 0.125, blue: 0.16, alpha: 1))) }
+    static var raised: Color { themed(\.raised, fallback: adaptive(NSColor(red: 0.97, green: 0.98, blue: 0.99, alpha: 1), NSColor(red: 0.145, green: 0.17, blue: 0.215, alpha: 1))) }
     static let border = Color.primary.opacity(0.10)
     static func inline(_ value: String) -> AttributedString {
         (try? AttributedString(markdown: value, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(value)
@@ -46,8 +72,6 @@ struct SessionCardContent: View {
     let summary: String
     let match: String?
     let pinned: Bool
-    var handoffStatus: String = ""
-    var savedWorkCount: Int = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
@@ -82,17 +106,6 @@ struct SessionCardContent: View {
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                         .help("\(count.count) compactions observed. " + count.source)
                         .accessibilityLabel("\(count.count) compactions observed")
-                }
-                if !handoffStatus.isEmpty {
-                    Image(systemName: handoffStatus == "Handoff ready" ? "doc.text.fill" : "doc.badge.clock")
-                        .font(.system(size: 10)).foregroundStyle(handoffStatus == "Handoff ready" ? HuddleStyle.accent : .orange)
-                        .help(handoffStatus).accessibilityLabel(handoffStatus)
-                }
-                if savedWorkCount > 0 {
-                    Image(systemName: "books.vertical.fill")
-                        .font(.system(size: 10)).foregroundStyle(HuddleStyle.accent)
-                        .help("\(savedWorkCount) saved work \(savedWorkCount == 1 ? "record" : "records") in Library — independent snapshots, which may predate later activity")
-                        .accessibilityLabel("\(savedWorkCount) saved work records in Library")
                 }
             }.fixedSize(horizontal: true, vertical: false)
     }

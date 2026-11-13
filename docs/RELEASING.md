@@ -71,3 +71,17 @@ Initial 0.4.x users must install the 0.5.0 DMG once. Thereafter Sparkle can repl
 The local release flow also runs scripts/test_updater.py against a separate signed fixture bundle. It checks rejection of a modified feed and an actual download/install/relaunch, without reading RunHuddle session data or installing agent hooks. It needs the existing Developer ID identity and Sparkle Keychain key. Put user-facing release notes in docs/releases/VERSION.md; they are embedded in the signed update feed.
 
 The publish script also updates the direct Apple Silicon installer and release-notes links in the README and Getting started guide from the verified appcast. These links point to the same public preview offered by the updater; no manual version edits are needed. Keep the `current-download` markers in both documents. To repair documentation links for the existing feed, run `python3 scripts/update-download-links.py`.
+
+
+## Website download publication
+
+After publishing the signed feed, `publish-release.sh` dispatches `action.yml` in
+`RootSignalLabs/rootsignal-site` with the expected version. The website verifies the
+public DMG's size and SHA-256 against GitHub and the checksum asset, and checks that
+the release appcast matches the updater feed, before building. It deploys version
+metadata and publishes the CloudFront `/download` redirect only after those checks.
+Preview releases are supported; GitHub's latest-stable endpoint is not used.
+
+If website dispatch or deployment fails, the previous download continues to work.
+Retry with `gh workflow run action.yml --repo RootSignalLabs/rootsignal-site --ref main -f version=VERSION`
+and check that workflow's result. Do not rerun the whole release build or replace assets.

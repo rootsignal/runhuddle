@@ -1,11 +1,13 @@
 import SwiftUI
 import SessionCore
 
-/// Uses the same snapshot as the compact header; switching tabs does not re-run Git.
+/// Compact current repository state for the session’s working directory.
 struct RepositoryContextView: View {
     let context: RepositoryContext?
     let loading: Bool
+    var directory: String = ""
     let refresh: () -> Void
+    let openChanges: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -19,23 +21,25 @@ struct RepositoryContextView: View {
                 HStack {
                     Text(context.branch).font(.callout.weight(.medium)).textSelection(.enabled)
                     Spacer()
-                    Text(context.changedFiles == 0 ? "Clean" : "\(context.changedFiles) changed")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Button(context.changedFiles == 0 ? "View changes · clean" : "\(context.changedFiles) changed…") { openChanges() }
+                        .font(.caption).buttonStyle(.plain).foregroundStyle(HuddleStyle.accent)
                 }
-                Text(context.linkedWorktree ? "Linked worktree" : "Main worktree").font(.caption)
-                Text(context.root).font(.caption).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Checked \(context.checkedAt, style: .relative) ago · includes untracked files")
+                if context.linkedWorktree { Text("Linked worktree").font(.caption).foregroundStyle(.secondary) }
+                if context.root != directory {
+                    Text("Root: " + context.root).font(.caption).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Checked \(context.checkedAt, style: .relative) ago")
                     .font(.caption).foregroundStyle(.secondary)
             } else if loading {
                 ProgressView("Reading repository…").controlSize(.small)
             } else {
-                Text("Repository unavailable. The folder may be missing, inaccessible, or outside a Git worktree.")
+                Text("No repository information available.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Text("Shared repository state, not changes attributed to this session.")
-                .font(.caption).foregroundStyle(.secondary)
+            // Attribution and counting details are available without occupying panel space.
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(HuddleStyle.raised.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+            .help("Current repository state, including untracked files. Changes may come from any session or editor.")
     }
 }

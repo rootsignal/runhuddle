@@ -8,9 +8,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from app_support import prepare_storage
 import sqlite3
 
-CACHE = Path(os.environ.get('RUNHUDDLE_COMPACTION_CACHE', Path.home() / 'Library/Application Support/Agent Session Manager/compactions.sqlite'))
+CACHE = Path(os.environ.get('RUNHUDDLE_COMPACTION_CACHE', Path.home() / 'Library/Application Support/RunHuddle/compactions.sqlite'))
 
 
 def marker(event, provider):
@@ -39,7 +40,7 @@ def read_compactions(path, provider):
             stat = os.fstat(file.fileno())
             head = file.read(min(stat.st_size, 256))
             signature = [stat.st_dev, stat.st_ino, hashlib.sha256(head).hexdigest()]
-            CACHE.parent.mkdir(parents=True, exist_ok=True)
+            prepare_storage(CACHE)
             with closing(sqlite3.connect(CACHE, timeout=0.2)) as db, db:
                 db.execute('CREATE TABLE IF NOT EXISTS counts (key TEXT PRIMARY KEY, data TEXT NOT NULL)')
                 key = provider + ':' + str(path)

@@ -21,7 +21,7 @@ struct BulkGenerationView: View {
     private var unsaved: Bool { drafts.keys.contains { !saved.contains($0) } }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(request.summaries ? "Save work summaries" : "Generate handoffs").font(.title2.bold())
+            Text(request.summaries ? "Save project notes" : "Generate handoffs").font(.title2.bold())
             Text("\(request.sessions.count) selected sessions · processed one at a time")
                 .font(.callout).foregroundStyle(.secondary)
             Picker("Generate with", selection: $model.handoffAIProvider) {
@@ -87,7 +87,7 @@ struct BulkGenerationView: View {
         guard var record = drafts[id], !saved.contains(id), !record.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         record.updatedAt = Date()
         if model.saveWork(record) {
-            saved.insert(id); statuses[id] = "Saved in Library → Saved work"
+            saved.insert(id); statuses[id] = "Saved in Notes"
         } else { statuses[id] = model.workError ?? "Could not save summary. Try again." }
     }
     private func run() {

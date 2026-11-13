@@ -28,6 +28,23 @@ class LocalCleanupTests(unittest.TestCase):
             self.assertNotEqual(first['fingerprint'], cleanup.plan('Claude', 'example')['fingerprint'])
         self.assertTrue(self.history.exists())  # review never removes history
 
+    def test_closed_tracking_entry_without_transcript(self):
+        self.history.unlink()
+        with patch.object(claude_bridge, 'snapshot', return_value=[{'sessionID': 'example', 'state': 'saved'}]):
+            empty = cleanup.plan('Claude', 'example')
+            self.assertEqual(empty['paths'], [])
+            # A transcript appearing after review must invalidate the plan.
+            self.history.write_text('{}\n')
+            self.assertNotEqual(empty['fingerprint'], cleanup.plan('Claude', 'example')['fingerprint'])
+
+    def test_missing_transcript_still_reviews_companion_directory(self):
+        self.history.unlink()
+        companion = self.history.with_suffix('')
+        companion.mkdir()
+        (companion / 'child.jsonl').write_text('{}\n')
+        with patch.object(claude_bridge, 'snapshot', return_value=[{'sessionID': 'example', 'state': 'saved'}]):
+            self.assertEqual(cleanup.plan('Claude', 'example')['paths'], [str(companion)])
+
     def test_unknown_or_running_cannot_be_removed(self):
         with patch.object(claude_bridge, 'cli_sessions', return_value=None):
             with self.assertRaises(ValueError):

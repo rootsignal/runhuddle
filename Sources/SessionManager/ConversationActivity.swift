@@ -63,12 +63,23 @@ struct ConversationActivity: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(row.provider) is working")
             }
-            if row.state == .needsInput {
-                AttentionRequestCard(row: row, review: { model.resume(row) }, navigating: model.navigatingTerminal)
-                    .padding(.top, 8)
-            } else {
-                InlineReplyComposer(row: row)
+            if model.isExternalSession(row) {
+                Label("Running elsewhere · reply and approve requests in its original terminal. Exit it there to resume in RunHuddle.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if row.state == .saved {
+                HStack {
+                    Label("Previous session · recorded conversation", systemImage: "archivebox")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else if row.state == .archived {
+                Label("Archived session · recorded conversation", systemImage: "archivebox")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if row.state == .disconnected {
+                Label("Live status could not be confirmed.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
             }
+
         }
         .task(id: row.id) {
             while !Task.isCancelled {

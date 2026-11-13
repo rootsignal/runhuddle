@@ -5,7 +5,7 @@ final class SessionPresentationTests: XCTestCase {
     func testNowShowsOnlyLiveActivityRegardlessOfOldHistory() {
         for state in SessionState.allCases {
             let row = Session(provider: "Claude", sessionID: "x", title: "Test", cwd: "/tmp", state: state, updated: 1)
-            XCTAssertEqual(SessionPresentation.includes(row, filter: "Now"), [.working, .idle, .needsInput].contains(state))
+            XCTAssertEqual(SessionPresentation.includes(row, filter: "Running here"), [.working, .idle, .needsInput].contains(state))
         }
     }
     func testPinnedDoesNotResurrectArchiveAndKeepsProviderIdentity() {
