@@ -6,17 +6,26 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.36.2</title>
-            <pubDate>Thu, 12 Nov 2026 18:57:34 -0600</pubDate>
-            <sparkle:version>115</sparkle:version>
-            <sparkle:shortVersionString>0.36.2</sparkle:shortVersionString>
+            <title>0.36.4</title>
+            <pubDate>Thu, 12 Nov 2026 19:33:51 -0600</pubDate>
+            <sparkle:version>117</sparkle:version>
+            <sparkle:shortVersionString>0.36.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.2/RunHuddle-0.36.2-arm64.dmg" length="46174913" type="application/octet-stream" sparkle:edSignature="43exM2sWQel0T4xeb63IeXqkowWFPDDyie8+AJCy4VwBOR7SLuq8T7U8gwd2xm9ukY9s3fORCCKC5ClGj0zOBw=="/>
+            <description sparkle:format="markdown"><![CDATA[# 0.36.4
+
+- Replace the app and menu-bar logo with three stacked terminal panes and a prompt, designed to stay recognizable at notification size.
+- Handoffs default to the current folder and exclude their original session from warnings about other agents. Idle sessions no longer block the handoff; isolation remains optional.
+- Label unresolved questions and next steps as optional, with clearer guidance when the original agent is still working.
+- Refresh macOS application registration after local installation so system surfaces can pick up the app icon.
+
+Built-in agent integrations currently support Codex CLI, Claude Code, and GitHub Copilot CLI. Other commands can run in shell terminals; that alone does not provide session tracking or other provider-specific integrations.
+]]></description>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.4/RunHuddle-0.36.4-arm64.dmg" length="46403280" type="application/octet-stream" sparkle:edSignature="ypt8C4+5wQMgGseuKnv5JnA23jJhR6YNebdcDTqVrxMp6dDutPMVf8BekBRTcVpPUfckbjl9XQ2ewcwkO1Q2Cw=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: nEXqtTZaPyoV7M1NxoyB8dYXJuw+LA1MbjtR4tbvWpeyuVOwyopwPVVhPArYPu/f/kOnjkqvrewZxqHTKHsTAQ==
-length: 1130
+edSignature: 5JZTGpzBcoPQYLXuCcVTCJyjqAdsK1HwssowVYH8Q1JPYkmjzYBDiWf0OR5jyfv92ddmyWeQu6Fxm1R7xkuJBQ==
+length: 1991
 -->
