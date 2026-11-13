@@ -208,7 +208,7 @@ import SessionCore
             }
         }
     }
-    func start(model: AppModel, directory: String, resume: Session? = nil, provider: String = "Codex", prompt: String? = nil) throws -> String {
+    func start(model: AppModel, directory: String, resume: Session? = nil, provider: String = "Codex", prompt: String? = nil, allowExternalResume: Bool = false) throws -> String {
         let provider = resume?.provider ?? provider
         guard ["Codex", "Claude", "Copilot"].contains(provider) else { throw TerminalStartError.message("Choose an installed agent.") }
         var isDirectory: ObjCBool = false
@@ -218,7 +218,7 @@ import SessionCore
         if let original = resume {
             let resume = model.sessions.first(where: { $0.id == original.id }) ?? original
             if let existing = sessions.first(where: { $0.row(in: model)?.id == resume.id && !$0.ended }) { return existing.id }
-            guard [.saved, .archived].contains(resume.state), !resume.simulated else {
+            guard SessionResumePolicy.canLaunch(resume, externalConfirmed: allowExternalResume) else {
                 throw TerminalStartError.message("This session is still open outside RunHuddle. Exit it there before resuming it here.")
             }
             guard UUID(uuidString: resume.sessionID) != nil else { throw TerminalStartError.message("Invalid session ID.") }

@@ -147,6 +147,7 @@ struct CopilotTrackingStatus: Decodable {
     @Published var notificationBlocked = false
     @Published var notificationMessage: String?
     @Published var recentAlerts: [SessionAlert] = []
+    @Published var externalResume: Session?
     @Published var navigatingTerminal = false
     @Published var terminalNavigationSessionID: String?
     @Published var terminalProgress = ""
@@ -1247,7 +1248,7 @@ struct CopilotTrackingStatus: Decodable {
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
         return (candidates + additional.map { $0 + "/" + name }).first { FileManager.default.isExecutableFile(atPath: $0) }
     }
-    func resume(_ row: Session, fromMenu: Bool = false) {
+    func resume(_ row: Session, fromMenu: Bool = false, allowExternal: Bool = false) {
         let row = sessions.first(where: { $0.id == row.id }) ?? row
         guard !row.simulated, !navigatingTerminal else { return }
         if let shell = EmbeddedTerminals.shared.shell(containing: row, model: self) { presentEmbedded(shell.id); return }
@@ -1255,13 +1256,12 @@ struct CopilotTrackingStatus: Decodable {
             presentEmbedded(owned.id)
             return
         }
-        guard row.state == .saved else {
-            // External and uncertain sessions are read-only here. Never launch a duplicate agent.
-            showSession(row.id)
-            onTerminalOpened?()
+        guard row.state != .archived else { return }
+        if row.state != .saved && !allowExternal {
+            externalResume = row
             return
         }
-        do { presentEmbedded(try EmbeddedTerminals.shared.start(model: self, directory: row.cwd, resume: row)) }
+        do { presentEmbedded(try EmbeddedTerminals.shared.start(model: self, directory: row.cwd, resume: row, allowExternalResume: allowExternal)) }
         catch { self.error = error.localizedDescription }
     }
     func synchronizePresentedTerminalSelection() {

@@ -64,7 +64,7 @@ struct ConversationActivity: View {
                     .accessibilityLabel("\(row.provider) is working")
             }
             if model.isExternalSession(row) {
-                Label("Running elsewhere · reply and approve requests in its original terminal. Exit it there to resume in RunHuddle.", systemImage: "info.circle")
+                Label("Open outside RunHuddle · if the original terminal is unavailable, use Resume here… to reopen the saved conversation.", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else if row.state == .saved {
                 HStack {

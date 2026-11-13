@@ -370,6 +370,7 @@ struct ContentView: View {
         .alert("RunHuddle", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
+        .modifier(ExternalResumeConfirmation())
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await model.refreshNotificationStatus() }
         }
@@ -601,8 +602,8 @@ struct SessionDetail: View {
                             .help("Project changes · " + row.cwd)
                     }
                     Spacer(minLength: 4)
-                    if row.state == .saved && !showingChanges {
-                        Button("Resume this session") { model.resume(row) }
+                    if row.state != .archived && !row.simulated && !showingChanges && owned == nil {
+                        Button(row.state == .saved ? "Resume this session" : "Resume here…") { model.resume(row) }
                             .buttonStyle(.borderedProminent).tint(HuddleStyle.action)
                             .disabled(row.simulated || model.navigatingTerminal)
                             .help("Reopen the same conversation with its existing context")
@@ -725,8 +726,8 @@ struct SessionDetail: View {
                     })
                 }
                 Divider()
-                if row.state == .saved {
-                    Button("Resume this session") { model.resume(row) }
+                if row.state != .archived && owned == nil {
+                    Button(row.state == .saved ? "Resume this session" : "Resume here…") { model.resume(row) }
                         .buttonStyle(.borderedProminent).tint(HuddleStyle.action)
                         .disabled(row.simulated || model.navigatingTerminal)
                     Text("Reopen the same conversation with its existing context.")
@@ -804,8 +805,8 @@ struct SessionDetail: View {
                     Button(owned.stopping ? "Stopping session…" : "End session…", role: .destructive) { confirmStop = true }
                         .disabled(owned.stopping)
                 }
-            } else if row.state == .saved {
-                Button("Resume this session") { model.resume(row) }
+            } else if row.state != .archived {
+                Button(row.state == .saved ? "Resume this session" : "Resume here…") { model.resume(row) }
                     .disabled(row.simulated || model.navigatingTerminal)
             }
             Divider()
