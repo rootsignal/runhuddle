@@ -6,27 +6,26 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.36.6</title>
-            <pubDate>Fri, 13 Nov 2026 09:24:54 -0600</pubDate>
-            <sparkle:version>119</sparkle:version>
-            <sparkle:shortVersionString>0.36.6</sparkle:shortVersionString>
+            <title>0.36.7</title>
+            <pubDate>Fri, 13 Nov 2026 10:09:53 -0600</pubDate>
+            <sparkle:version>120</sparkle:version>
+            <sparkle:shortVersionString>0.36.7</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# 0.36.6
+            <description sparkle:format="markdown"><![CDATA[# 0.36.7
 
-- Add “Resume here…” to the session header, Session Info, and session menu for conversations reported as open elsewhere or with uncertain status.
-- Require confirmation before opening a second client. The original process is not stopped; both clients may modify the same files or conversation if it remains alive. The agent CLI may reject concurrent access.
-- Reuse an existing RunHuddle terminal when that conversation is already open here.
+- Force UTF-8 output for RunHuddle's embedded tmux clients regardless of the locale inherited by the app. This addresses non-ASCII symbols appearing as underscores.
+- Apply the same UTF-8 setting when attaching to existing persistent sessions. No shell-profile edits or tmux server restart are required; the app reconnects its terminal clients after updating.
 
-Build and 103 Swift tests passed, including the external-session confirmation policy. Recovery on the affected laptop still needs verification.
+Validated the production tmux attachment arguments under an explicitly ASCII locale, plus new/resumed agent launches across zsh, bash, and tcsh. Output already emitted as underscores by an application itself cannot be reconstructed by this setting.
 
-Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.6-source.tar.gz` alongside this installer. See docs/BUILDING.md and docs/LICENSING.md in that archive.
+Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.7-source.tar.gz` alongside this installer. See docs/BUILDING.md and docs/LICENSING.md in that archive.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.6/RunHuddle-0.36.6-arm64.dmg" length="45460731" type="application/octet-stream" sparkle:edSignature="PHuYZn7+JPVHZC988tb6rang9+dQ+daMZImsOVwyNOYfgtNODOJgy9Vr3nZ9bxNqAD9a/qH4mYag8Rxa54WoBg=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.7/RunHuddle-0.36.7-arm64.dmg" length="45460690" type="application/octet-stream" sparkle:edSignature="zzPUzZIp7Zmr6ytlAFG7UZuYkGo5PSTNnmvfMERZIf4+nLkoMwW/QUsu+3/sOT2nCJ+XseLgsFVx1LULhKRoCA=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: JW/qEazNMDfDPTsECxYiJeT4K3wo/Cjt/xv9m5osNB8I9XWp1YMrgvn97b6iAZ1zoxVO4ij0N204vlcfN/9jDA==
-length: 2037
+edSignature: bbnQldX3m7szwW2x2ggyr8lveMnrPcWt3ItScesCt5Ocl/FFQiFn1a7wG++RfgIVAycd2L1HF2SXt+OC5PwgCA==
+length: 2054
 -->
