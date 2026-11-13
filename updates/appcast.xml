@@ -6,26 +6,27 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.36.7</title>
-            <pubDate>Fri, 13 Nov 2026 10:09:53 -0600</pubDate>
-            <sparkle:version>120</sparkle:version>
-            <sparkle:shortVersionString>0.36.7</sparkle:shortVersionString>
+            <title>0.36.8</title>
+            <pubDate>Fri, 13 Nov 2026 11:18:09 -0600</pubDate>
+            <sparkle:version>121</sparkle:version>
+            <sparkle:shortVersionString>0.36.8</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# 0.36.7
+            <description sparkle:format="markdown"><![CDATA[# 0.36.8
 
-- Force UTF-8 output for RunHuddle's embedded tmux clients regardless of the locale inherited by the app. This addresses non-ASCII symbols appearing as underscores.
-- Apply the same UTF-8 setting when attaching to existing persistent sessions. No shell-profile edits or tmux server restart are required; the app reconnects its terminal clients after updating.
+- Replace per-terminal one-second status polling with process exit events and shared reconciliation triggered by provider and terminal events. A batched check every 30 seconds catches missed events.
+- Keep live terminals open when a status query fails; require process-exit evidence before marking them closed.
+- Move session search into the session sidebar. Command-F reveals the sidebar and focuses search.
 
-Validated the production tmux attachment arguments under an explicitly ASCII locale, plus new/resumed agent launches across zsh, bash, and tcsh. Output already emitted as underscores by an application itself cannot be reconstructed by this setting.
+Validated with 103 Swift tests and terminal integration checks covering batched status, process exit notifications, and preservation of sibling terminals. CPU improvement on the affected Mac still requires measurement; this release does not claim to resolve all UI refresh overhead.
 
-Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.7-source.tar.gz` alongside this installer. See docs/BUILDING.md and docs/LICENSING.md in that archive.
+Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.8-source.tar.gz` alongside this installer. See docs/BUILDING.md and docs/LICENSING.md in that archive.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.7/RunHuddle-0.36.7-arm64.dmg" length="45460690" type="application/octet-stream" sparkle:edSignature="zzPUzZIp7Zmr6ytlAFG7UZuYkGo5PSTNnmvfMERZIf4+nLkoMwW/QUsu+3/sOT2nCJ+XseLgsFVx1LULhKRoCA=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.8/RunHuddle-0.36.8-arm64.dmg" length="45826270" type="application/octet-stream" sparkle:edSignature="lAfoh3pBghgq/jIy+poi6MEfckJRNiKo6BJYyTMqtYNrgR2XtcyQKYNPvu9sWJ7OM0QgcmKAT7xw/6n/dSJLDA=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: bbnQldX3m7szwW2x2ggyr8lveMnrPcWt3ItScesCt5Ocl/FFQiFn1a7wG++RfgIVAycd2L1HF2SXt+OC5PwgCA==
-length: 2054
+edSignature: +E1RcgpUkfRfnPUrBoQgTTI6fbd4WCzTTcJuczVfSaor05VdQu2zNl3FAQH2bptX9GL8hQBbfbbw/+pTKyNGDQ==
+length: 2137
 -->
