@@ -77,7 +77,7 @@ import SessionCore
         env["TERM_PROGRAM"] = "RunHuddle"
         // Keep argv quoting in zsh; the user's shell supplies its normal startup environment.
         let startup = PersistentTerminalService.loginInvocation(shell: persistentService.agentShell,
-            command: "exec /bin/zsh -c " + ShellCommand.quote(command))
+            command: "exec /bin/zsh -f -c " + ShellCommand.quote(command))
         terminal.startProcess(executable: startup[0], args: Array(startup.dropFirst()),
                               environment: env.map { "\($0.key)=\($0.value)" }, currentDirectory: directory)
         pid = terminal.process.shellPid

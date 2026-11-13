@@ -17,6 +17,7 @@ enum TerminalStartError: Error { case message(String) }
             if let old { setenv("ZDOTDIR", old, 1) } else { unsetenv("ZDOTDIR") }
             try? FileManager.default.removeItem(at: root)
         }
+        try "export RH_INTERACTIVE_FIXTURE=overwritten\n".write(to: root.appendingPathComponent(".zshenv"), atomically: true, encoding: .utf8)
         try "export RH_LOGIN_FIXTURE=login\n".write(to: root.appendingPathComponent(".zprofile"), atomically: true, encoding: .utf8)
         try "export RH_INTERACTIVE_FIXTURE=interactive\n".write(to: root.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
         try "export RH_LOGIN_FIXTURE=login\n. \"$HOME/.bashrc\"\n".write(to: root.appendingPathComponent(".bash_profile"), atomically: true, encoding: .utf8)

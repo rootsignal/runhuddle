@@ -119,7 +119,7 @@ final class PersistentTerminalService {
         // argv[0] selects login startup without changing the command's quoting.
         if ["csh", "tcsh"].contains(URL(fileURLWithPath: shell).lastPathComponent) {
             let words = ["exec", "-a", "-" + URL(fileURLWithPath: shell).lastPathComponent, shell, "-i", "-c", command]
-            return ["/bin/zsh", "-c", words.map(ShellCommand.quote).joined(separator: " ")]
+            return ["/bin/zsh", "-f", "-c", words.map(ShellCommand.quote).joined(separator: " ")]
         }
         return [shell, "-l", "-i", "-c", command]
     }
@@ -154,8 +154,8 @@ final class PersistentTerminalService {
             _ = try? run(["set-environment", "-gu", "NO_COLOR"])
             // Match a regular terminal: provider startup needs both login and
             // interactive shell configuration (including .zshrc exports).
-            let startup = provider == "Shell" ? ["/bin/zsh", script.path]
-                : Self.loginInvocation(shell: agentShell, command: "exec /bin/zsh " + ShellCommand.quote(script.path))
+            let startup = provider == "Shell" ? ["/bin/zsh", "-f", script.path]
+                : Self.loginInvocation(shell: agentShell, command: "exec /bin/zsh -f " + ShellCommand.quote(script.path))
             try run(["new-session", "-d", "-s", record.name, "-c", directory, "-x", "100", "-y", "32", "-e", "TERM_PROGRAM=RunHuddle", "-e", "COLORTERM=truecolor"] + startup)
             return record
         } catch {
