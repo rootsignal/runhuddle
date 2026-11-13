@@ -449,7 +449,7 @@ struct CopilotTrackingStatus: Decodable {
     }
     func count(for filter: String) -> Int {
         let owned = ownedSessionIDs
-        return matchingSessions.filter { SessionPresentation.includes($0, filter: filter, pinned: pinned, owned: owned.contains($0.id)) }.count + shellTerminals(filter: filter).count
+        return matchingSessions.filter { SessionPresentation.includes($0, filter: filter, pinned: pinned, owned: owned.contains($0.id)) }.count
     }
     var projectPaths: [String] {
         let owned = ownedSessionIDs

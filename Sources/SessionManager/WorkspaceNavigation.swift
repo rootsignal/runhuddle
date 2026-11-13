@@ -43,7 +43,7 @@ struct SessionScopeNavigation: View {
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain)
                     .foregroundStyle(selection == key ? HuddleStyle.accent : .secondary)
-                    .accessibilityLabel(title).accessibilityValue("\(count(key)) items")
+                    .accessibilityLabel(title).accessibilityValue("\(count(key)) sessions")
                     .accessibilityAddTraits(selection == key ? .isSelected : [])
             }
         }.fixedSize(horizontal: true, vertical: false)
