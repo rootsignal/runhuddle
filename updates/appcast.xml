@@ -6,27 +6,26 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>RunHuddle</title>
         <item>
-            <title>0.36.8</title>
-            <pubDate>Fri, 13 Nov 2026 11:18:09 -0600</pubDate>
-            <sparkle:version>121</sparkle:version>
-            <sparkle:shortVersionString>0.36.8</sparkle:shortVersionString>
+            <title>0.36.9</title>
+            <pubDate>Fri, 13 Nov 2026 11:34:43 -0600</pubDate>
+            <sparkle:version>122</sparkle:version>
+            <sparkle:shortVersionString>0.36.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# 0.36.8
+            <description sparkle:format="markdown"><![CDATA[# 0.36.9
 
-- Replace per-terminal one-second status polling with process exit events and shared reconciliation triggered by provider and terminal events. A batched check every 30 seconds catches missed events.
-- Keep live terminals open when a status query fails; require process-exit evidence before marking them closed.
-- Move session search into the session sidebar. Command-F reveals the sidebar and focuses search.
+- Group search, Active / All / Pinned / Archived navigation, and tool and project filters above the session list.
+- Preserve the search query and open terminal when switching session scopes.
+- Offer Search all sessions when an Active search has no results, keeping the query intact.
+- Hide navigation counts when the sidebar is too narrow to fit them; retain readable text labels and accessible counts.
 
-Validated with 103 Swift tests and terminal integration checks covering batched status, process exit notifications, and preservation of sibling terminals. CPU improvement on the affected Mac still requires measurement; this release does not claim to resolve all UI refresh overhead.
-
-Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.8-source.tar.gz` alongside this installer. See docs/BUILDING.md and docs/LICENSING.md in that archive.
+Corresponding source, including pinned Swift package dependency sources and build scripts, is provided in `RunHuddle-0.36.9-source.tar.gz` alongside this installer. See docs/BUILDING.md and docs/LICENSING.md in that archive.
 ]]></description>
-            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.8/RunHuddle-0.36.8-arm64.dmg" length="45826270" type="application/octet-stream" sparkle:edSignature="lAfoh3pBghgq/jIy+poi6MEfckJRNiKo6BJYyTMqtYNrgR2XtcyQKYNPvu9sWJ7OM0QgcmKAT7xw/6n/dSJLDA=="/>
+            <enclosure url="https://github.com/rootsignal/runhuddle/releases/download/v0.36.9/RunHuddle-0.36.9-arm64.dmg" length="47736806" type="application/octet-stream" sparkle:edSignature="op6ekhzqAoioHprKZ7O+fV7MeeKfWSP+1OAQrBH34HRi2JaJZR3vK3Ifi4M0fSFO+L5+97kGCvm6nhfZcb04AA=="/>
         </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: +E1RcgpUkfRfnPUrBoQgTTI6fbd4WCzTTcJuczVfSaor05VdQu2zNl3FAQH2bptX9GL8hQBbfbbw/+pTKyNGDQ==
-length: 2137
+edSignature: dlq+3tLUv0xZfYFpankj7KT4tWGCXwEMc3T23A9ZgIzyBjE/y6jPFIEBjge4NIzt+jwqvC22gi+M2Pof70pwBw==
+length: 1847
 -->
