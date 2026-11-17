@@ -694,3 +694,26 @@ svg {
 .terminal-tab > button:not(:first-child) {
   padding: 5px;
 }
+
+.layout-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #34363d;
+  font-size: 12px;
+  color: #a4a6b2;
+}
+.layout-controls > span {
+  margin-right: auto;
+}
+.layout-controls select {
+  max-width: 280px;
+  padding: 6px 10px;
+}
+.pane-badge {
+  display: inline-block;
+  margin-right: 8px;
+  color: #8bcdd2;
+  font-size: 11px;
+}

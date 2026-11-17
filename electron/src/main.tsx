@@ -178,7 +178,7 @@ function App() {
     terminal && (!workspace || terminal.cwd === workspace)
       ? terminal
       : undefined;
-  function select(value: string) {
+  function select(value: string, preserveSplit = false) {
     if (value.startsWith("session:")) {
       const row = snapshot.sessions.find((s) => "session:" + key(s) === value);
       if (
@@ -191,9 +191,8 @@ function App() {
     const id = value.startsWith("terminal:") ? value.slice(9) : "";
     if (id) {
       setHiddenTabs((old) => old.filter((x) => x !== id));
-      if (pair.length === 2 && !pair.includes(id))
-        setPair((old) => old.map((x) => (x === shown?.id ? id : x)));
-    } else setPair([]);
+    }
+    if (!preserveSplit) setPair([]);
     setSelection(value);
     setWorkspaceSelections((old) => ({ ...old, [workspace]: value }));
   }
@@ -233,9 +232,7 @@ function App() {
     setMode("recent");
     setScope("all");
     setQuery("");
-    if (cwd === workspace && pair.length === 2)
-      setPair((old) => old.map((id) => (id === shown?.id ? t.id : id)));
-    else setPair([]);
+    setPair([]);
     setSelection("terminal:" + t.id);
     setWorkspaceSelections((old) => ({ ...old, [cwd]: "terminal:" + t.id }));
     setLastUsed(agent);
@@ -245,21 +242,13 @@ function App() {
   }
   function openBeside(t: TerminalInfo) {
     setHiddenTabs((old) => old.filter((id) => id !== t.id));
-    const other =
-      shown && shown.id !== t.id
-        ? shown
-        : workspaceTerminals.find((x) => x.id !== t.id);
-    if (other) {
-      setHiddenTabs((old) =>
-        old.filter((id) => id !== t.id && id !== other.id),
-      );
-      setPair([other.id, t.id]);
-      setSelection("terminal:" + t.id);
-      setWorkspaceSelections((old) => ({
-        ...old,
-        [workspace]: "terminal:" + t.id,
-      }));
-    } else select("terminal:" + t.id);
+    if (!shown || shown.id === t.id) return;
+    setPair([shown.id, t.id]);
+    setSelection("terminal:" + t.id);
+    setWorkspaceSelections((old) => ({
+      ...old,
+      [workspace]: "terminal:" + t.id,
+    }));
   }
   function hideTab(t: TerminalInfo) {
     const remaining = terminals.filter((x) => x.id !== t.id);
@@ -328,15 +317,22 @@ function App() {
         }
         aria-label={`${terminalTitle(t)} pane`}
         onPointerDown={() => {
-          if (shown?.id !== t.id) select("terminal:" + t.id);
+          if (shown?.id !== t.id) select("terminal:" + t.id, true);
         }}
         onFocusCapture={() => {
-          if (shown?.id !== t.id) select("terminal:" + t.id);
+          if (shown?.id !== t.id) select("terminal:" + t.id, true);
         }}
       >
         <div className="pane-heading">
           <AgentIcon agent={t.agent} />
-          <span>{terminalTitle(t)}</span>
+          <span>
+            {pair.length === 2
+              ? pair[0] === t.id
+                ? "Left · "
+                : "Right · "
+              : ""}
+            {terminalTitle(t)}
+          </span>
           {pair.length === 2 && (
             <button
               onClick={() => {
@@ -560,16 +556,6 @@ function App() {
                               {hiddenTabs.includes(t.id) ? " · Tab closed" : ""}
                             </small>
                           </button>
-                          <button
-                            className="beside-action"
-                            aria-label={`Open ${terminalTitle(t)} beside`}
-                            disabled={
-                              !workspaceTerminals.some((x) => x.id !== t.id)
-                            }
-                            onClick={() => openBeside(t)}
-                          >
-                            Open beside
-                          </button>
                         </div>
                       ))}
                   </>
@@ -660,6 +646,39 @@ function App() {
             <Icon name="chevron" size={14} />
           </button>
         </header>
+        {shown && (
+          <div className="layout-controls">
+            <span>
+              {pair.length === 2 ? "Side by side · 2 panes" : "Single view"}
+            </span>
+            {pair.length === 2 && (
+              <button onClick={() => setPair([])}>Single view</button>
+            )}
+            <select
+              aria-label="Split view with"
+              value=""
+              disabled={workspaceTerminals.filter((t) => !t.exited).length < 2}
+              onChange={(e) => {
+                const target = workspaceTerminals.find(
+                  (t) => t.id === e.target.value,
+                );
+                if (target) openBeside(target);
+              }}
+            >
+              <option value="">
+                {pair.length === 2 ? "Compare with…" : "Split view…"}
+              </option>
+              {workspaceTerminals
+                .filter((t) => t.id !== shown.id && !t.exited)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.agent === "shell" ? "Terminal" : t.agent} ·{" "}
+                    {terminalTitle(t)}
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
         <div className="tabbar" role="tablist" aria-label="Open tabs">
           {terminals.map((t) => (
             <div
@@ -671,22 +690,19 @@ function App() {
               <button
                 role="tab"
                 aria-selected={shown?.id === t.id}
-                title={t.cwd}
+                title={`${t.agent === "shell" ? "Terminal" : t.agent} · ${t.cwd}`}
                 onClick={() => select("terminal:" + t.id)}
               >
                 <AgentIcon agent={t.agent} />
                 <span className="tab-title">
+                  {pair.includes(t.id) && (
+                    <span className="pane-badge">
+                      {pair[0] === t.id ? "Left" : "Right"}
+                    </span>
+                  )}
                   {terminalTitle(t)}
                   {t.exited ? " · Exited" : ""}
                 </span>
-              </button>
-              <button
-                title="Open beside"
-                aria-label={`Split ${terminalTitle(t)}`}
-                disabled={terminals.length < 2}
-                onClick={() => openBeside(t)}
-              >
-                <Icon name="sidebar" size={14} />
               </button>
               <button
                 aria-label={`Close ${terminalTitle(t)}`}

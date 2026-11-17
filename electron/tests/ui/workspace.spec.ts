@@ -166,9 +166,10 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       "true",
     );
     await page
-      .getByRole("button", { name: /^Split / })
-      .first()
-      .click();
+      .getByRole("combobox", { name: "Split view with" })
+      .selectOption(terminalId);
+    await expect(page.getByRole("tab")).toHaveCount(2);
+    await expect(page.getByText("Side by side · 2 panes")).toBeVisible();
     await expect(
       page.getByRole("separator", { name: "Resize panes" }),
     ).toBeVisible();
@@ -197,7 +198,13 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       .click();
     await expect(page.getByRole("separator")).toHaveCount(0);
     await expect(page.locator(".terminal-host")).toHaveCount(1);
+    await page
+      .getByRole("combobox", { name: "Split view with" })
+      .selectOption(terminalId);
+    await expect(page.locator(".terminal-host")).toHaveCount(2);
     await page.getByRole("tab").first().click();
+    await expect(page.locator(".terminal-host")).toHaveCount(1);
+    await expect(page.getByRole("tab")).toHaveCount(2);
     await page
       .getByRole("combobox", { name: "Workspace", exact: true })
       .selectOption("");
