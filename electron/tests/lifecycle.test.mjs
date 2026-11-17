@@ -245,3 +245,109 @@ test("first user prompt supplies a bounded title suggestion for each provider", 
     undefined,
   );
 });
+
+test("owned status wins over newer native snapshots for every provider", () => {
+  for (const provider of ["Claude", "Codex", "Copilot"]) {
+    const native = {
+      provider,
+      sessionID: id,
+      state: "working",
+      updated: 999,
+      title: "Stale",
+    };
+    const owned = {
+      provider,
+      sessionID: id,
+      state: "idle",
+      updated: 1,
+      title: "Current",
+      terminalId: "live",
+    };
+    assert.equal(mergeSessions([native], [owned])[0].state, "idle");
+    assert.equal(mergeSessions([native], [owned])[0].title, "Current");
+    assert.equal(
+      mergeSessions(
+        [native],
+        [{ ...owned, terminalId: undefined, state: "saved" }],
+      )[0].state,
+      "saved",
+    );
+  }
+});
+
+test("observer preserves split UTF-8 and reads replacement transcripts", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-unicode-"));
+  const file = path.join(dir, "events.jsonl");
+  fs.writeFileSync(file, "");
+  const patches = [];
+  const stop = watchTranscript(file, "copilot", (p) => patches.push(p));
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    const bytes = Buffer.from(
+      JSON.stringify({
+        type: "assistant.message",
+        data: { content: "Hello 🐈" },
+      }) + "\n",
+    );
+    const split = bytes.indexOf(Buffer.from("🐈")) + 2;
+    fs.appendFileSync(file, bytes.subarray(0, split));
+    await wait(250);
+    fs.appendFileSync(file, bytes.subarray(split));
+    await wait(250);
+    assert.equal(patches.at(-1).preview, "Hello 🐈");
+    fs.writeFileSync(
+      file + ".new",
+      JSON.stringify({ type: "assistant.turn_end" }) + "\n",
+    );
+    fs.renameSync(file + ".new", file);
+    await wait(250);
+    assert.equal(patches.at(-1).state, "idle");
+  } finally {
+    stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("continuous transcript output cannot postpone status indefinitely", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-stream-"));
+  const file = path.join(dir, "events.jsonl");
+  fs.writeFileSync(file, "");
+  const patches = [];
+  const stop = watchTranscript(file, "claude", (p) => patches.push(p));
+  let interval;
+  try {
+    fs.appendFileSync(
+      file,
+      JSON.stringify({
+        type: "assistant",
+        message: { stop_reason: "end_turn" },
+      }) + "\n",
+    );
+    interval = setInterval(() => fs.appendFileSync(file, "{}\n"), 20);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(patches[0]?.state, "idle");
+  } finally {
+    clearInterval(interval);
+    stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("removing an older terminal cannot release a resumed conversation", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-ownership-"));
+  try {
+    const ledger = new SessionLedger(dir);
+    for (const provider of ["Claude", "Codex", "Copilot"]) {
+      ledger.update(provider, id, { terminalId: "old", state: "idle" });
+      assert.equal(ledger.release(provider, id, "old"), true);
+      ledger.update(provider, id, { terminalId: "resumed", state: "working" });
+      assert.equal(ledger.release(provider, id, "old"), false);
+      const row = ledger.list().find((r) => r.provider === provider);
+      assert.equal(row.terminalId, "resumed");
+      assert.equal(row.state, "working");
+      assert.equal(ledger.release(provider, id, "resumed"), true);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

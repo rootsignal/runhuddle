@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
@@ -318,6 +319,12 @@ export class SessionLedger {
     });
     fs.renameSync(this.file + ".tmp", this.file);
   }
+  release(provider, id, terminalId) {
+    if (this.rows.get(provider + ":" + id)?.terminalId !== terminalId)
+      return false;
+    this.update(provider, id, { terminalId: undefined, state: "saved" });
+    return true;
+  }
   update(provider, id, patch) {
     const key = provider + ":" + validateID(id);
     const old = this.rows.get(key) || {
@@ -342,19 +349,24 @@ export function watchTranscript(file, agent, update) {
     timer,
     offset = 0,
     pending = "",
-    closed = false;
+    closed = false,
+    inode,
+    decoder = new StringDecoder("utf8");
   function read() {
     try {
       const stat = fs.statSync(file);
       if (!stat.isFile()) return;
-      if (stat.size < offset) {
+      if (stat.size < offset || (inode !== undefined && inode !== stat.ino)) {
         offset = 0;
         pending = "";
+        decoder = new StringDecoder("utf8");
       }
       if (stat.size - offset > 512 * 1024) {
         offset = stat.size - 512 * 1024;
         pending = "";
+        decoder = new StringDecoder("utf8");
       }
+      inode = stat.ino;
       const n = Math.min(stat.size - offset, 512 * 1024);
       if (!n) return;
       const fd = fs.openSync(file, "r");
@@ -365,7 +377,7 @@ export function watchTranscript(file, agent, update) {
         fs.closeSync(fd);
       }
       offset += n;
-      pending += bytes.toString("utf8");
+      pending += decoder.write(bytes);
       const lines = pending.split("\n");
       pending = lines.pop();
       let patch = {};
@@ -388,8 +400,9 @@ export function watchTranscript(file, agent, update) {
     }
     try {
       watcher = fs.watch(dir, () => {
-        clearTimeout(timer);
+        if (timer) return;
         timer = setTimeout(() => {
+          timer = undefined;
           read();
           if (dir !== path.dirname(file)) attach();
         }, 150);
@@ -422,15 +435,6 @@ export function mergeSessions(nativeRows, ownedRows) {
           ? native.title
           : owned.title,
       preview: owned.preview || native?.preview || "",
-      ...(owned.terminalId &&
-      native?.updated > owned.updated &&
-      ["working", "idle", "needsInput"].includes(native.state)
-        ? {
-            state: native.state,
-            preview: native.preview || owned.preview,
-            title: native.title || owned.title,
-          }
-        : {}),
     });
   }
   return [...rows.values()];

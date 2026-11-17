@@ -152,8 +152,8 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
   });
   child.onExit(({ exitCode }) => {
     t.unwatch?.();
-    if (ledger.rows.get(sessionKey(t))?.terminalId === t.id)
-      record(t, { terminalId: undefined, state: "saved" });
+    if (t.sessionID && ledger.release(providers[t.agent], t.sessionID, t.id))
+      history();
     t.exited = true;
     t.exitCode = exitCode;
     broadcast({
@@ -301,8 +301,11 @@ const server = net.createServer((socket) => {
           if (!t) throw new Error("Terminal no longer exists");
           t.unwatch?.();
           if (!t.exited) t.pty.kill();
-          if (ledger.rows.get(sessionKey(t))?.state !== "archived")
-            record(t, { terminalId: undefined, state: "saved" });
+          if (
+            t.sessionID &&
+            ledger.release(providers[t.agent], t.sessionID, t.id)
+          )
+            history();
           clearTimeout(t.flush);
           terminals.delete(t.id);
           broadcast({

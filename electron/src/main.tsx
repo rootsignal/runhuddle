@@ -366,6 +366,31 @@ function App() {
       .join(" ")
       .toLowerCase()
       .includes(query.toLowerCase());
+  async function resumeSession(
+    provider: string,
+    sessionID: string,
+    previous?: string,
+  ) {
+    setResuming(true);
+    try {
+      const t = await window.runhuddle.resume(provider, sessionID);
+      if (t) {
+        if (previous && previous !== t.id)
+          setHiddenTabs((old) => [...old, previous]);
+        setSnapshot((old) => ({
+          ...old,
+          terminals: [...old.terminals.filter((x) => x.id !== t.id), t],
+        }));
+        setWorkspace(t.cwd);
+        setHiddenTabs((old) => old.filter((id) => id !== t.id));
+        setSelection("terminal:" + t.id);
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setResuming(false);
+    }
+  }
   function renderTerminal(t: TerminalInfo) {
     return (
       <section
@@ -385,6 +410,28 @@ function App() {
           <div className="pane-heading">
             <AgentIcon agent={t.agent} />
             <span>{terminalTitle(t)}</span>
+            {t.exited && t.sessionID && (
+              <>
+                <small>
+                  {t.exitCode
+                    ? `Exited with code ${t.exitCode}`
+                    : "Session ended"}
+                </small>
+                <button
+                  disabled={resuming}
+                  onClick={() =>
+                    resumeSession(
+                      launchOptions.find((o) => o.id === t.agent)?.name ||
+                        t.agent,
+                      t.sessionID!,
+                      t.id,
+                    )
+                  }
+                >
+                  {resuming ? "Resuming…" : "Resume session"}
+                </button>
+              </>
+            )}
             {t.agent !== "shell" && (
               <button onClick={() => close(t)}>
                 {t.exited ? "Remove session" : "End session"}
@@ -765,33 +812,9 @@ function App() {
                   <button
                     className="primary document-action"
                     disabled={resuming}
-                    onClick={async () => {
-                      setResuming(true);
-                      try {
-                        const t = await window.runhuddle.resume(
-                          session.provider,
-                          session.sessionID,
-                        );
-                        if (t) {
-                          setSnapshot((old) => ({
-                            ...old,
-                            terminals: [
-                              ...old.terminals.filter((x) => x.id !== t.id),
-                              t,
-                            ],
-                          }));
-                          setWorkspace(t.cwd);
-                          setHiddenTabs((old) =>
-                            old.filter((id) => id !== t.id),
-                          );
-                          setSelection("terminal:" + t.id);
-                        }
-                      } catch (e) {
-                        setError(String(e));
-                      } finally {
-                        setResuming(false);
-                      }
-                    }}
+                    onClick={() =>
+                      resumeSession(session.provider, session.sessionID)
+                    }
                   >
                     {resuming ? "Resuming…" : "Resume session"}
                   </button>

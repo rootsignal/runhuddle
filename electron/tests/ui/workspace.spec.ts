@@ -172,8 +172,14 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     );
     await page.getByRole("checkbox", { name: "Blink cursor" }).check();
 
-    await page.getByRole("dialog", { name: "Terminal appearance", exact: true }).evaluate(el => { el.scrollTop = 0; });
-    await page.screenshot({ path: "test-results/preview-realistic-terminal.png" });
+    await page
+      .getByRole("dialog", { name: "Terminal appearance", exact: true })
+      .evaluate((el) => {
+        el.scrollTop = 0;
+      });
+    await page.screenshot({
+      path: "test-results/preview-realistic-terminal.png",
+    });
     await page
       .getByText("Customize colors · text, background and ANSI palette")
       .click();
@@ -552,6 +558,48 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(
       page.getByRole("button", { name: "End session", exact: true }),
     ).toBeVisible();
+    await page
+      .getByRole("button", { name: /Investigate workspace navigation/ })
+      .click();
+    // Exited agent panes expose recovery with the exact provider conversation ID.
+    await app.evaluate(
+      ({ ipcMain }, { id, cwd }) => {
+        ipcMain.removeHandler("create");
+        ipcMain.handle("create", (_e, _cwd, agent) => ({
+          id,
+          cwd,
+          agent,
+          title: "Exited agent",
+          exited: true,
+          exitCode: 1,
+          sessionID: "22222222-2222-4222-8222-222222222222",
+        }));
+        ipcMain.removeHandler("resume");
+        ipcMain.handle("resume", (_e, provider, id) => {
+          throw Error(`Recovery requested ${provider}:${id}`);
+        });
+      },
+      { id: terminalId, cwd: dir },
+    );
+    for (const provider of ["Claude", "Codex", "Copilot"]) {
+      await page
+        .getByRole("button", { name: "New session or terminal", exact: true })
+        .first()
+        .click();
+      await page
+        .getByRole("button", { name: `Start ${provider} session`, exact: true })
+        .click();
+      await expect(
+        page.getByText("Exited with code 1", { exact: true }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Resume session", exact: true })
+        .click();
+      await expect(page.getByRole("alert")).toContainText(
+        `Recovery requested ${provider}:22222222-2222-4222-8222-222222222222`,
+      );
+      await page.getByRole("button", { name: "Dismiss error" }).click();
+    }
     await page
       .getByRole("button", { name: /Investigate workspace navigation/ })
       .click();
