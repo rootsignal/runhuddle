@@ -42,3 +42,30 @@ Build the general workspace capabilities first. Do not import an enterprise-spec
 The macOS arm64 packaged app also passed the restart test locally. A separate, locally ad-hoc-signed `RunHuddle Preview.app` was installed in `/Applications` at the user's request and opened successfully against the existing native store (14 sessions). This is a development preview, not a notarized public release. Production RunHuddle and its release/update feeds were not changed.
 
 Before distribution, verify helper lifetime under AppImage mount/unmount, Windows installer/update file locks, and a versioned helper upgrade strategy. The initial helper survives UI quit/reopen; reboot and update recovery are not yet established.
+
+### Preview session lifecycle (2026-11-17)
+
+New preview agent terminals carry exact provider conversation IDs. Claude and
+Copilot receive explicit UUIDs; Codex allocates and persists a named thread via
+its local app-server protocol, then opens that ID with `resume --no-daemon`.
+No model turn is sent during allocation. This requires current CLI versions
+supporting these commands; initialization errors stay in the launcher.
+
+The terminal helper keeps an atomic local session ledger across UI and helper
+restarts. File events read bounded increments of the specific conversation's
+transcript. Unknown activity stays unknown; terminal exit wins over stale native
+status. Exact provider/ID reconciliation merges native history with owned
+sessions. Resume focuses an already-owned terminal; external last-known active
+sessions require a visible warning. Archive is local RunHuddle organization and
+does not delete or archive the provider's underlying conversation.
+
+The lifecycle helper uses `service-v2`. The UI still connects to a running older
+`service` helper, preserving those terminals. Older agent terminals can be linked
+explicitly from a recorded conversation's page; no title/folder heuristic silently
+assigns identity. Old Codex terminals may use its shared background server, so
+closing their connection is not a guarantee that background work has ended.
+
+Terminal launches discard inherited `NO_COLOR` and helper-only Node/Electron
+variables and advertise xterm-256color/truecolor. The renderer has an explicit
+16-color ANSI palette. Already-running CLIs retain their original environment;
+resume them through the new helper to receive the corrected color environment.

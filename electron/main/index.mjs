@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { mergeSessions } from "./lifecycle.mjs";
 import { Service } from "./service.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 app.setName("RunHuddle Preview");
@@ -15,7 +16,62 @@ app.setPath(
 const nativeStore =
   process.env.RUNHUDDLE_NATIVE_STORE ||
   path.join(app.getPath("appData"), "RunHuddle", "sessions.sqlite");
-const service = new Service(path.join(app.getPath("userData"), "service"));
+const service = new Service(path.join(app.getPath("userData"), "service-v2"));
+const legacy = new Service(path.join(app.getPath("userData"), "service"));
+let legacyConnected = false;
+let managed = [];
+const linksFile = path.join(app.getPath("userData"), "legacy-links.json");
+let links = [];
+try {
+  links = JSON.parse(fs.readFileSync(linksFile, "utf8"));
+  if (!Array.isArray(links)) links = [];
+} catch {}
+let legacySessions = [];
+const merged = () =>
+  mergeSessions(mergeSessions(cached.sessions, managed), legacySessions);
+
+let ownedIds = new Set();
+const allTerminals = async () => {
+  const rows = await service.call("list");
+  ownedIds = new Set(rows.map((t) => t.id));
+  const old = legacyConnected ? await legacy.call("list") : [];
+  legacySessions = links.flatMap((link) => {
+    const t = old.find((t) => t.id === link.terminalId && !t.exited);
+    const row = mergeSessions(cached.sessions, managed).find(
+      (s) => s.provider === link.provider && s.sessionID === link.sessionID,
+    );
+    return t && row
+      ? [{ ...row, terminalId: t.id, state: "disconnected" }]
+      : [];
+  });
+  return [
+    ...rows,
+    ...old.map((t) => ({
+      ...t,
+      sessionID: links.find((l) => l.terminalId === t.id)?.sessionID,
+      legacy: true,
+    })),
+  ];
+};
+const owner = async (id) =>
+  ownedIds.has(id) || !legacyConnected ? service : legacy;
+const publishStore = () =>
+  publish({
+    event: "store",
+    ...cached,
+    sessions: merged(),
+    storeError,
+  });
+async function serviceEvent(event) {
+  if (event.event === "terminals") {
+    publish({ ...event, terminals: await allTerminals() });
+    publishStore();
+  } else if (event.event === "history") {
+    managed = event.sessions;
+    publishStore();
+  } else publish(event);
+}
+
 const documentURL = pathToFileURL(path.join(root, "../dist/index.html")).href;
 let window,
   watcher,
@@ -54,7 +110,7 @@ async function refresh() {
     storeError = error.message;
   } finally {
     refreshing = false;
-    publish({ event: "store", ...cached, storeError });
+    publishStore();
     if (refreshAgain) {
       refreshAgain = false;
       scheduleRefresh();
@@ -113,9 +169,14 @@ else {
   app
     .whenReady()
     .then(async () => {
+      legacyConnected = await legacy.connectExisting();
       await service.connect();
+      managed = await service.call("sessions");
       await refresh();
-      service.on("event", publish);
+      await allTerminals();
+      service.on("event", (event) => serviceEvent(event).catch(() => {}));
+      if (legacyConnected)
+        legacy.on("event", (event) => serviceEvent(event).catch(() => {}));
       service.on("disconnected", () =>
         publish({
           event: "error",
@@ -126,7 +187,8 @@ else {
       handle("snapshot", async () => ({
         ...cached,
         storeError,
-        terminals: await service.call("list"),
+        sessions: merged(),
+        terminals: await allTerminals(),
         home: os.homedir(),
       }));
       handle("choose-folder", async () => {
@@ -137,16 +199,108 @@ else {
         return result.canceled ? null : result.filePaths[0];
       });
       handle("create", (cwd, agent) => service.call("create", { cwd, agent }));
-      handle("replay", (id) => service.call("replay", { id }));
-      handle("write", (id, data) => service.call("write", { id, data }));
-      handle("resize", (id, cols, rows) =>
-        service.call("resize", { id, cols, rows }),
+      handle("resume", async (provider, sessionID) => {
+        const row = merged().find(
+          (s) => s.provider === provider && s.sessionID === sessionID,
+        );
+        if (!row || row.simulated) throw Error("Session not available");
+        const agent = provider.toLowerCase();
+        const existing = (await allTerminals()).find(
+          (t) => t.agent === agent && t.sessionID === sessionID && !t.exited,
+        );
+        if (existing) return existing;
+        if (
+          ["working", "idle", "needsInput"].includes(
+            cached.sessions.find(
+              (s) => s.provider === provider && s.sessionID === sessionID,
+            )?.state || row.state,
+          )
+        ) {
+          const answer = await dialog.showMessageBox(window, {
+            type: "question",
+            message: "Resume a session that may still be open elsewhere?",
+            detail:
+              "The last recorded status says this session was open. Close its other client first to avoid overlapping work.",
+            buttons: ["Cancel", "Resume here"],
+            defaultId: 0,
+            cancelId: 0,
+          });
+          if (answer.response !== 1) return null;
+        }
+        return service.call("create", {
+          cwd: row.cwd,
+          agent,
+          resume: sessionID,
+        });
+      });
+      handle("link", async (provider, sessionID, id) => {
+        const row = cached.sessions.find(
+          (s) =>
+            s.provider === provider &&
+            s.sessionID === sessionID &&
+            !s.simulated,
+        );
+        const terminal = (await allTerminals()).find(
+          (t) => t.id === id && t.legacy && !t.exited,
+        );
+        if (
+          !row ||
+          !terminal ||
+          terminal.agent !== provider.toLowerCase() ||
+          terminal.cwd !== row.cwd
+        )
+          throw Error("Choose an open terminal for this agent and folder");
+        links = links.filter(
+          (l) =>
+            l.terminalId !== id &&
+            !(l.provider === provider && l.sessionID === sessionID),
+        );
+        links.push({ terminalId: id, provider, sessionID });
+        fs.writeFileSync(linksFile, JSON.stringify(links), { mode: 0o600 });
+        await service.call("adopt", { session: row });
+        publish({ event: "terminals", terminals: await allTerminals() });
+        publishStore();
+        return terminal;
+      });
+      handle("title", async (id, title) => {
+        if (ownedIds.has(id)) await service.call("title", { id, title });
+      });
+      handle("archive", async (provider, sessionID, archived) => {
+        if (
+          (await allTerminals()).some(
+            (t) =>
+              t.agent === provider.toLowerCase() &&
+              t.sessionID === sessionID &&
+              !t.exited,
+          )
+        )
+          throw Error("End the session before archiving it");
+        if (
+          !managed.some(
+            (s) => s.provider === provider && s.sessionID === sessionID,
+          )
+        ) {
+          const row = cached.sessions.find(
+            (s) => s.provider === provider && s.sessionID === sessionID,
+          );
+          if (!row || row.simulated) throw Error("Session not available");
+          await service.call("adopt", { session: row });
+        }
+        return service.call("archive", { provider, sessionID, archived });
+      });
+      handle("replay", async (id) => (await owner(id)).call("replay", { id }));
+      handle("write", async (id, data) =>
+        (await owner(id)).call("write", { id, data }),
+      );
+      handle("resize", async (id, cols, rows) =>
+        (await owner(id)).call("resize", { id, cols, rows }),
       );
       handle("close", async (id) => {
-        const terminal = (await service.call("list")).find((t) => t.id === id);
+        const terminal = (await allTerminals()).find((t) => t.id === id);
+        const target = await owner(id);
         if (!terminal) return true;
         if (terminal.exited) {
-          await service.call("close", { id });
+          await target.call("close", { id });
           return true;
         }
         const isAgent = terminal.agent !== "shell";
@@ -154,14 +308,16 @@ else {
           type: "question",
           message: isAgent ? "End this AI session?" : "Close this terminal?",
           detail: isAgent
-            ? "This stops the agent process. To keep it running, cancel and close only its tab."
+            ? terminal.legacy && terminal.agent === "codex"
+              ? "This closes the older terminal connection. Work may continue in the Codex background server."
+              : "This stops the agent process. To keep it running, cancel and close only its tab."
             : "Any process running in this terminal will be stopped.",
           buttons: ["Cancel", isAgent ? "End session" : "Close terminal"],
           defaultId: 0,
           cancelId: 0,
         });
         if (result.response === 1) {
-          await service.call("close", { id });
+          await target.call("close", { id });
           return true;
         }
         return false;
@@ -198,6 +354,7 @@ else {
                   });
                   if (result.response === 1) {
                     await service.call("shutdown");
+                    if (legacyConnected) await legacy.call("shutdown");
                     app.quit();
                   }
                 },
@@ -230,5 +387,6 @@ else {
     watcher?.close();
     clearTimeout(refreshTimer);
     service.disconnect();
+    legacy.disconnect();
   });
 }

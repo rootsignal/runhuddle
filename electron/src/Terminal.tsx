@@ -35,6 +35,22 @@ export function TerminalPane({
         foreground: "#dedee3",
         cursor: "#b6dce0",
         selectionBackground: "#41414b",
+        black: "#20212a",
+        red: "#f0788c",
+        green: "#98d8a0",
+        yellow: "#e8c77a",
+        blue: "#7db5f5",
+        magenta: "#d99ae8",
+        cyan: "#80d5dc",
+        white: "#dce0e9",
+        brightBlack: "#73798b",
+        brightRed: "#ff9bae",
+        brightGreen: "#b0e9b7",
+        brightYellow: "#f6df9c",
+        brightBlue: "#a6ccff",
+        brightMagenta: "#efb6fa",
+        brightCyan: "#a6edf0",
+        brightWhite: "#ffffff",
       },
     });
     const fit = new FitAddon();
@@ -99,11 +115,14 @@ export function TerminalPane({
     };
   }, [id]);
   useEffect(() => {
-    if (visible)
-      requestAnimationFrame(() => {
-        instance.current?.fit.fit();
-        if (focused) instance.current?.term.focus();
-      });
+    if (!visible) return;
+    const previousFocus = document.activeElement;
+    const frame = requestAnimationFrame(() => {
+      instance.current?.fit.fit();
+      if (focused && document.activeElement === previousFocus)
+        instance.current?.term.focus();
+    });
+    return () => cancelAnimationFrame(frame);
   }, [visible, focused]);
   return (
     <div

@@ -38,7 +38,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       JSON.stringify([
         {
           provider: "Claude",
-          sessionID: "fixture",
+          sessionID: "11111111-1111-4111-8111-111111111111",
           title: "Investigate workspace navigation",
           cwd: dir,
           project: "Preview project",
@@ -317,6 +317,34 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await page
       .getByRole("button", { name: /Investigate workspace navigation/ })
       .click();
+    // Archive/restore imports locally, preserving one exact-ID record.
+    await page
+      .getByRole("button", { name: "Archive in RunHuddle", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Archived", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: /Investigate workspace navigation/ }),
+    ).toHaveCount(1);
+    await page
+      .getByRole("button", { name: "Restore from archive", exact: true })
+      .click();
+    await page.getByRole("button", { name: "All", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: /Investigate workspace navigation/ }),
+    ).toHaveCount(1);
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler("resume");
+      ipcMain.handle("resume", (_e, provider, id) => {
+        throw Error(`Resume requested ${provider}:${id}`);
+      });
+    });
+    await page
+      .getByRole("button", { name: "Resume session", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText(
+      "Resume requested Claude:11111111-1111-4111-8111-111111111111",
+    );
+    await page.getByRole("button", { name: "Dismiss error" }).click();
     // Verify each provider choice and failure recovery without launching a paid CLI.
     await app.evaluate(({ ipcMain }) => {
       ipcMain.removeHandler("create");
@@ -350,7 +378,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await page.keyboard.press("Escape");
   } finally {
     console.log("UI: stopping test service");
-    const client = new Service(path.join(dir, "preview", "service"));
+    const client = new Service(path.join(dir, "preview", "service-v2"));
     try {
       await client.connect();
       await client.call("shutdown");

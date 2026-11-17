@@ -5,12 +5,35 @@ import path from "node:path";
 import os from "node:os";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import pty from "node-pty";
+import {
+  SessionLedger,
+  providers,
+  prepareSession,
+  agentArguments,
+  shellLaunch,
+  terminalEnvironment,
+  watchTranscript,
+  validateID,
+} from "./lifecycle.mjs";
 import { address, frames, send, dimensions, PROTOCOL } from "./protocol.mjs";
 const directory = process.argv[2];
 const token = fs.readFileSync(path.join(directory, "service.token"), "utf8");
 const endpoint = address(directory);
 const terminals = new Map();
+const ledger = new SessionLedger(directory);
+const sessionKey = (t) => providers[t.agent] + ":" + t.sessionID;
+const history = () => broadcast({ event: "history", sessions: ledger.list() });
+function record(t, patch) {
+  if (!t.sessionID) return;
+  ledger.update(providers[t.agent], t.sessionID, {
+    cwd: t.cwd,
+    project: path.basename(t.cwd),
+    ...patch,
+  });
+  history();
+}
 const clients = new Set();
+let creationQueue = Promise.resolve();
 let stopping = false;
 let idleTimer;
 const describe = (t) => ({
@@ -20,6 +43,7 @@ const describe = (t) => ({
   agent: t.agent,
   exited: t.exited,
   exitCode: t.exitCode,
+  sessionID: t.sessionID,
 });
 const broadcast = (message) => {
   for (const client of clients) send(client, message);
@@ -39,7 +63,7 @@ function stop() {
   });
   setTimeout(() => process.exit(0), 1000).unref();
 }
-function create({ cwd, agent = "shell", cols = 100, rows = 30 }) {
+async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
   dimensions(cols, rows);
   if (
     typeof cwd !== "string" ||
@@ -49,29 +73,28 @@ function create({ cwd, agent = "shell", cols = 100, rows = 30 }) {
     throw new Error("Choose an existing folder");
   if (!["shell", "claude", "codex", "copilot"].includes(agent))
     throw new Error("Unknown agent");
-  const windows = process.platform === "win32";
-  const shell = windows
-    ? process.env.COMSPEC || "cmd.exe"
-    : os.userInfo().shell || "/bin/sh";
-  const args = windows
-    ? agent === "shell"
-      ? []
-      : ["/d", "/s", "/c", agent]
-    : agent === "shell"
-      ? ["-l"]
-      : ["-lic", "exec " + agent];
-  const env = {
-    ...process.env,
-    TERM: "xterm-256color",
-    COLORTERM: "truecolor",
-  };
-  // Never leak the helper's Electron mode into shells or applications they launch.
-  delete env.ELECTRON_RUN_AS_NODE;
-  delete env.NODE_OPTIONS;
-  if (!windows) {
-    env.LANG = process.platform === "darwin" ? "en_US.UTF-8" : "C.UTF-8";
-    env.LC_ALL = env.LANG;
+  if (resume) {
+    validateID(resume);
+    const existing = [...terminals.values()].find(
+      (t) => t.agent === agent && t.sessionID === resume && !t.exited,
+    );
+    if (existing) return describe(existing);
   }
+  const identity =
+    agent === "shell" ? {} : await prepareSession(agent, cwd, resume);
+  const launch =
+    agent === "shell"
+      ? {
+          file:
+            process.platform === "win32"
+              ? process.env.COMSPEC || "cmd.exe"
+              : os.userInfo().shell || "/bin/sh",
+          args: process.platform === "win32" ? [] : ["-l"],
+        }
+      : shellLaunch(agentArguments(agent, identity.sessionID, !!resume));
+  const shell = launch.file,
+    args = launch.args,
+    env = terminalEnvironment();
   const child = pty.spawn(shell, args, {
     name: "xterm-256color",
     cwd,
@@ -85,12 +108,19 @@ function create({ cwd, agent = "shell", cols = 100, rows = 30 }) {
     cwd,
     agent,
     pty: child,
+    sessionID: identity.sessionID,
     exited: false,
     history: "",
     pending: "",
     sequence: 0,
   };
   terminals.set(t.id, t);
+  if (t.sessionID) {
+    record(t, { terminalId: t.id, state: "disconnected", imported: false });
+    t.unwatch = watchTranscript(identity.transcript, agent, (patch) => {
+      if (ledger.rows.get(sessionKey(t))?.terminalId === t.id) record(t, patch);
+    });
+  }
   child.onData((data) => {
     t.sequence++;
     t.history = (t.history + data).slice(-512 * 1024);
@@ -108,6 +138,9 @@ function create({ cwd, agent = "shell", cols = 100, rows = 30 }) {
       }, 16);
   });
   child.onExit(({ exitCode }) => {
+    t.unwatch?.();
+    if (ledger.rows.get(sessionKey(t))?.terminalId === t.id)
+      record(t, { terminalId: undefined, state: "saved" });
     t.exited = true;
     t.exitCode = exitCode;
     broadcast({
@@ -130,7 +163,7 @@ const server = net.createServer((socket) => {
     clients.delete(socket);
     if (!clients.size && !terminals.size) idleTimer = setTimeout(stop, 10000);
   });
-  frames(socket, (request) => {
+  frames(socket, async (request) => {
     try {
       if (!authenticated) {
         const supplied = Buffer.from(
@@ -160,8 +193,63 @@ const server = net.createServer((socket) => {
           result = [...terminals.values()].map(describe);
           break;
         case "create":
-          result = create(request);
+          {
+            const pending = creationQueue.then(() => create(request));
+            creationQueue = pending.catch(() => {});
+            result = await pending;
+          }
           break;
+        case "title":
+          if (
+            t?.sessionID &&
+            typeof request.title === "string" &&
+            request.title.trim()
+          )
+            record(t, { title: request.title.trim().slice(0, 120) });
+          break;
+        case "adopt": {
+          const row = request.session;
+          if (
+            !row ||
+            !Object.values(providers).includes(row.provider) ||
+            typeof row.cwd !== "string" ||
+            !path.isAbsolute(row.cwd)
+          )
+            throw Error("Invalid session");
+          validateID(row.sessionID);
+          result = ledger.update(row.provider, row.sessionID, {
+            cwd: row.cwd,
+            project: path.basename(row.cwd),
+            title: String(row.title || row.provider + " session").slice(0, 120),
+            preview: String(row.preview || "").slice(0, 4000),
+            state: row.state === "archived" ? "archived" : "saved",
+            imported: true,
+          });
+          history();
+          break;
+        }
+        case "sessions":
+          result = ledger.list();
+          break;
+        case "archive": {
+          const row = ledger.rows.get(
+            request.provider + ":" + validateID(request.sessionID),
+          );
+          if (!row) throw Error("Session not found");
+          if (
+            [...terminals.values()].some(
+              (t) =>
+                sessionKey(t) === request.provider + ":" + request.sessionID &&
+                !t.exited,
+            )
+          )
+            throw Error("End the session before archiving it");
+          ledger.update(request.provider, request.sessionID, {
+            state: request.archived ? "archived" : "saved",
+          });
+          history();
+          break;
+        }
         case "replay":
           if (!t) throw new Error("Terminal no longer exists");
           clearTimeout(t.flush);
@@ -192,7 +280,10 @@ const server = net.createServer((socket) => {
           break;
         case "close":
           if (!t) throw new Error("Terminal no longer exists");
+          t.unwatch?.();
           if (!t.exited) t.pty.kill();
+          if (ledger.rows.get(sessionKey(t))?.state !== "archived")
+            record(t, { terminalId: undefined, state: "saved" });
           clearTimeout(t.flush);
           terminals.delete(t.id);
           broadcast({

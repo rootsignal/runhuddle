@@ -45,6 +45,8 @@ function App() {
     readSetting("folders", []),
   );
   const [selection, setSelection] = useState("");
+  const [linkTarget, setLinkTarget] = useState("");
+  const [resuming, setResuming] = useState(false);
   const [pair, setPair] = useState<string[]>([]);
   const [hiddenTabs, setHiddenTabs] = useState<string[]>(() =>
     readSetting("hiddenTabs", []),
@@ -177,6 +179,15 @@ function App() {
       ? terminal
       : undefined;
   function select(value: string) {
+    if (value.startsWith("session:")) {
+      const row = snapshot.sessions.find((s) => "session:" + key(s) === value);
+      if (
+        row?.terminalId &&
+        snapshot.terminals.some((t) => t.id === row.terminalId && !t.exited)
+      )
+        value = "terminal:" + row.terminalId;
+    }
+
     const id = value.startsWith("terminal:") ? value.slice(9) : "";
     if (id) {
       setHiddenTabs((old) => old.filter((x) => x !== id));
@@ -275,7 +286,17 @@ function App() {
           terminals: old.terminals.filter((x) => x.id !== t.id),
         }));
         if (selection === "terminal:" + t.id)
-          select(next ? "terminal:" + next.id : "");
+          setSelection(
+            t.sessionID
+              ? "session:" +
+                  (launchOptions.find((o) => o.id === t.agent)?.name ||
+                    t.agent) +
+                  ":" +
+                  t.sessionID
+              : next
+                ? "terminal:" + next.id
+                : "",
+          );
       }
     } catch (e) {
       setError(String(e));
@@ -286,6 +307,10 @@ function App() {
   function terminalTitle(t: TerminalInfo) {
     if (t.agent !== "shell")
       return (
+        snapshot.sessions.find(
+          (s) =>
+            s.sessionID === t.sessionID && s.provider.toLowerCase() === t.agent,
+        )?.title ||
         titles[t.id] ||
         `New ${launchOptions.find((o) => o.id === t.agent)?.name || t.agent} session`
       );
@@ -335,6 +360,8 @@ function App() {
             focused={shown?.id === t.id}
             onError={setError}
             onTitle={(title) => {
+              if (t.sessionID && title.trim())
+                window.runhuddle.title(t.id, title).catch(() => {});
               if (t.agent !== "shell" && title.trim())
                 setTitles((old) =>
                   old[t.id] === title
@@ -490,6 +517,15 @@ function App() {
                   <>
                     <div className="section-label">OPEN IN PREVIEW</div>
                     {workspaceTerminals
+                      .filter(
+                        (t) =>
+                          !t.sessionID ||
+                          !snapshot.sessions.some(
+                            (s) =>
+                              s.sessionID === t.sessionID &&
+                              s.provider.toLowerCase() === t.agent,
+                          ),
+                      )
                       .filter((t) =>
                         [terminalTitle(t), t.cwd, t.agent]
                           .join(" ")
@@ -539,13 +575,16 @@ function App() {
                   </>
                 )}
                 <div className="section-label">
-                  RECORDED SESSIONS <span>{sessions.length}</span>
+                  SESSIONS <span>{sessions.length}</span>
                 </div>
                 {sessions.map((s) => (
                   <button
                     className={
                       "session-row " +
-                      (selection === "session:" + key(s) ? "selected" : "")
+                      (selection === "session:" + key(s) ||
+                      (s.terminalId && shown?.id === s.terminalId)
+                        ? "selected"
+                        : "")
                     }
                     key={key(s)}
                     onClick={() => select("session:" + key(s))}
@@ -577,9 +616,9 @@ function App() {
             )}
           </div>
           <footer className="sidebar-foot">
-            Native app snapshot · read only
+            Sessions and local history
             <br />
-            <span>Live agent status is coming next.</span>
+            <span>Imported status may be out of date.</span>
           </footer>
         </aside>
       )}
@@ -698,6 +737,56 @@ function App() {
                 <h1>{session.title}</h1>
                 <p className="muted">{session.cwd}</p>
                 <button
+                  className="primary document-action"
+                  disabled={resuming}
+                  onClick={async () => {
+                    setResuming(true);
+                    try {
+                      const t = await window.runhuddle.resume(
+                        session.provider,
+                        session.sessionID,
+                      );
+                      if (t) {
+                        setSnapshot((old) => ({
+                          ...old,
+                          terminals: [
+                            ...old.terminals.filter((x) => x.id !== t.id),
+                            t,
+                          ],
+                        }));
+                        setWorkspace(t.cwd);
+                        setHiddenTabs((old) => old.filter((id) => id !== t.id));
+                        setSelection("terminal:" + t.id);
+                        setPair([]);
+                      }
+                    } catch (e) {
+                      setError(String(e));
+                    } finally {
+                      setResuming(false);
+                    }
+                  }}
+                >
+                  {resuming ? "Resuming…" : "Resume session"}
+                </button>
+                <button
+                  className="secondary document-action"
+                  onClick={async () => {
+                    try {
+                      await window.runhuddle.archive(
+                        session.provider,
+                        session.sessionID,
+                        session.state !== "archived",
+                      );
+                    } catch (e) {
+                      setError(String(e));
+                    }
+                  }}
+                >
+                  {session.state === "archived"
+                    ? "Restore from archive"
+                    : "Archive in RunHuddle"}
+                </button>
+                <button
                   className="secondary document-action"
                   onClick={() => setLauncher(true)}
                 >
@@ -705,10 +794,65 @@ function App() {
                   New session in this folder
                 </button>
                 <div className="notice">
-                  This is the last saved preview from the native app. Live
-                  monitoring and resuming existing sessions are not connected in
-                  this preview yet.
+                  {session.terminalId
+                    ? "This conversation is open in a preview terminal."
+                    : "Resume continues this conversation with its existing context. Archiving organizes history; it does not delete the provider’s conversation."}
                 </div>
+                {snapshot.terminals.some(
+                  (t) =>
+                    t.legacy &&
+                    !t.exited &&
+                    t.agent === session.provider.toLowerCase() &&
+                    t.cwd === session.cwd,
+                ) && (
+                  <div className="notice">
+                    <p>
+                      Already open in a terminal from the earlier preview? Link
+                      it once so this entry focuses that terminal.
+                    </p>
+                    <select
+                      aria-label="Existing preview terminal"
+                      value={linkTarget}
+                      onChange={(e) => setLinkTarget(e.target.value)}
+                    >
+                      <option value="">Choose its terminal…</option>
+                      {snapshot.terminals
+                        .filter(
+                          (t) =>
+                            t.legacy &&
+                            !t.exited &&
+                            t.agent === session.provider.toLowerCase() &&
+                            t.cwd === session.cwd,
+                        )
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {terminalTitle(t)}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      disabled={!linkTarget}
+                      onClick={async () => {
+                        try {
+                          await window.runhuddle.link(
+                            session.provider,
+                            session.sessionID,
+                            linkTarget,
+                          );
+                          setSelection("terminal:" + linkTarget);
+                          setHiddenTabs((old) =>
+                            old.filter((id) => id !== linkTarget),
+                          );
+                          setLinkTarget("");
+                        } catch (e) {
+                          setError(String(e));
+                        }
+                      }}
+                    >
+                      Link this terminal
+                    </button>
+                  </div>
+                )}
                 <h3>Last recorded message</h3>
                 <p className="preserve">
                   {session.preview || "No recorded message"}

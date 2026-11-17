@@ -13,6 +13,19 @@ export class Service extends EventEmitter {
     this.pending = new Map();
     this.sequence = 0;
   }
+  async connectExisting() {
+    const tokenFile = path.join(this.directory, "service.token");
+    if (!fs.existsSync(tokenFile)) return false;
+    this.token = fs.readFileSync(tokenFile, "utf8");
+    try {
+      await this.open();
+      await this.call("hello", { token: this.token });
+      return true;
+    } catch {
+      this.disconnect();
+      return false;
+    }
+  }
   async connect() {
     fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     const tokenFile = path.join(this.directory, "service.token");
@@ -127,7 +140,7 @@ export class Service extends EventEmitter {
       const timer = setTimeout(() => {
         this.pending.delete(request);
         reject(new Error("Terminal service timed out"));
-      }, 8000);
+      }, 30000);
       this.pending.set(request, { resolve, reject, timer });
       send(this.socket, { ...args, method, request });
     });

@@ -1,4 +1,5 @@
 export interface Session {
+  terminalId?: string;
   provider: string;
   sessionID: string;
   title: string;
@@ -22,6 +23,8 @@ export interface TerminalInfo {
   agent: string;
   exited: boolean;
   exitCode?: number;
+  sessionID?: string;
+  legacy?: boolean;
 }
 export interface Snapshot {
   sessions: Session[];
@@ -41,6 +44,10 @@ export interface API {
   snapshot(): Promise<Snapshot>;
   chooseFolder(): Promise<string | null>;
   create(cwd: string, agent: string): Promise<TerminalInfo>;
+  link(provider: string, id: string, terminal: string): Promise<TerminalInfo>;
+  title(id: string, title: string): Promise<void>;
+  resume(provider: string, id: string): Promise<TerminalInfo | null>;
+  archive(provider: string, id: string, archived: boolean): Promise<void>;
   replay(id: string): Promise<{ data: string; sequence: number }>;
   write(id: string, data: string): Promise<void>;
   resize(id: string, cols: number, rows: number): Promise<void>;
