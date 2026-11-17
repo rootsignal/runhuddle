@@ -50,7 +50,8 @@ export class Service extends EventEmitter {
         ],
         {
           detached: true,
-          stdio: ["ignore", log, log],
+          // Close extra inherited IPC/debug pipes as well as standard input.
+          stdio: ["ignore", log, log, "ignore", "ignore"],
           windowsHide: true,
           env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
         },

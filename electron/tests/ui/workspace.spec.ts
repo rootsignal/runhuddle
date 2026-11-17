@@ -57,7 +57,17 @@ test("workspace navigation, retained search, notes and persistent terminal acros
   };
   let app = await electron.launch(launch);
   console.log("UI: app launched");
-  app.process().stderr?.on("data", data => console.log(String(data)));
+  app
+    .process()
+    .on("exit", (code, signal) =>
+      console.log("UI: app process exit", code, signal),
+    );
+  app
+    .process()
+    .on("close", (code, signal) =>
+      console.log("UI: app process close", code, signal),
+    );
+  app.process().stderr?.on("data", (data) => console.log(String(data)));
   let terminalId = "";
   try {
     let page = await app.firstWindow();
