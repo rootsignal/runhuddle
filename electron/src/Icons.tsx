@@ -4,6 +4,7 @@ export function Icon({
   size = 18,
 }: {
   name:
+    | "changes"
     | "terminal"
     | "plus"
     | "close"
@@ -15,6 +16,14 @@ export function Icon({
   size?: number;
 }) {
   const paths = {
+    changes: (
+      <>
+        <circle cx="6" cy="5" r="2" />
+        <circle cx="6" cy="19" r="2" />
+        <circle cx="18" cy="5" r="2" />
+        <path d="M6 7v10M18 7c0 6-12 4-12 10" />
+      </>
+    ),
     terminal: (
       <>
         <path d="m5 7 4 5-4 5M12 17h6" />

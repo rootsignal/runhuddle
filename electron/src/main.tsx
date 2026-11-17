@@ -5,7 +5,7 @@ import {
   loadAppearance,
   TerminalAppearance,
 } from "./TerminalAppearance";
-import { ChangesPanel } from "./ChangesPanel";
+import { WorkspaceTools } from "./WorkspaceTools";
 import { LaunchMenu } from "./LaunchMenu";
 import { AgentIcon, Icon, launchOptions } from "./Icons";
 import { TerminalWorkspace } from "./TerminalWorkspace";
@@ -54,6 +54,22 @@ function restoredSelection(
       ? "terminal:" + candidates[0].id
       : "";
 }
+function recency(updated: number) {
+  const date = new Date(updated * 1000),
+    today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const week = new Date(today);
+  week.setDate(week.getDate() - 7);
+  return date >= today
+    ? "Today"
+    : date >= yesterday
+      ? "Yesterday"
+      : date >= week
+        ? "Past week"
+        : "Earlier";
+}
 function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     sessions: [],
@@ -68,7 +84,6 @@ function App() {
   const [connection, setConnection] = useState("connected");
   const [error, setError] = useState("");
   const [appearance, setAppearance] = useState(loadAppearance);
-  const [changesOpen, setChangesOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [layoutInfo, setLayoutInfo] = useState<{
     locations: Record<string, string>;
@@ -574,7 +589,7 @@ function App() {
           />
         )}
         {sidebar && (
-          <aside>
+          <aside className="session-sidebar">
             <header className="brand">
               <img className="brand-mark" src={logo} alt="" />
               <strong>RunHuddle</strong>
@@ -725,50 +740,59 @@ function App() {
                   </div>
                   {scope === "all" &&
                     unlinkedAgents.filter(matchesTerminal).map(liveRow)}
-                  {sessions.map((s) => (
-                    <button
-                      className={
-                        "session-row " +
-                        (selection === "session:" + key(s) ||
-                        (s.terminalId && shown?.id === s.terminalId)
-                          ? "selected"
-                          : "")
-                      }
-                      key={key(s)}
-                      onClick={() => select("session:" + key(s))}
-                    >
-                      <div className="row-top">
-                        <span>{s.project || name(s.cwd)}</span>
-                        <span className="provider">{s.provider}</span>
-                      </div>
-                      <strong>{s.title}</strong>
-                      <p>{s.preview || "No recorded preview"}</p>
-                      <small>
-                        <span
-                          className={
-                            "dot " + (s.terminalId ? s.state : "saved")
-                          }
-                        />
-                        {s.terminalId
-                          ? snapshot.terminals.find(
-                              (t) => t.id === s.terminalId,
-                            )?.exited
-                            ? "Previous session"
-                            : labels[s.state] || s.state
-                          : `Recorded · ${labels[s.state] || s.state}`}
-                        {s.terminalId && (
-                          <span className="pane-location">
-                            {location(s.terminalId)}
-                          </span>
-                        )}
-                        <span className="date">
-                          {new Date(s.updated * 1000).toLocaleDateString(
-                            undefined,
-                            { month: "short", day: "numeric" },
+                  {sessions.map((s, index) => (
+                    <React.Fragment key={key(s)}>
+                      {(index === 0 ||
+                        recency(s.updated) !==
+                          recency(sessions[index - 1].updated)) && (
+                        <div className="recency-label">
+                          {recency(s.updated)}
+                        </div>
+                      )}
+                      <button
+                        className={
+                          "session-row " +
+                          (selection === "session:" + key(s) ||
+                          (s.terminalId && shown?.id === s.terminalId)
+                            ? "selected"
+                            : "")
+                        }
+                        key={key(s)}
+                        onClick={() => select("session:" + key(s))}
+                      >
+                        <div className="row-top">
+                          <span>{s.project || name(s.cwd)}</span>
+                          <span className="provider">{s.provider}</span>
+                        </div>
+                        <strong>{s.title}</strong>
+                        <p>{s.preview || "No recorded preview"}</p>
+                        <small>
+                          <span
+                            className={
+                              "dot " + (s.terminalId ? s.state : "saved")
+                            }
+                          />
+                          {s.terminalId
+                            ? snapshot.terminals.find(
+                                (t) => t.id === s.terminalId,
+                              )?.exited
+                              ? "Previous session"
+                              : labels[s.state] || s.state
+                            : `Recorded · ${labels[s.state] || s.state}`}
+                          {s.terminalId && (
+                            <span className="pane-location">
+                              {location(s.terminalId)}
+                            </span>
                           )}
-                        </span>
-                      </small>
-                    </button>
+                          <span className="date">
+                            {new Date(s.updated * 1000).toLocaleDateString(
+                              undefined,
+                              { month: "short", day: "numeric" },
+                            )}
+                          </span>
+                        </small>
+                      </button>
+                    </React.Fragment>
                   ))}
                   {!sessions.length && (
                     <p className="empty-small">
@@ -827,7 +851,6 @@ function App() {
               <Icon name="sidebar" />
             </button>
             <div className="workspace-picker">
-              <small>WORKSPACE</small>
               <select
                 aria-label="Workspace"
                 value={workspace}
@@ -843,12 +866,6 @@ function App() {
                 ))}
               </select>
             </div>
-            <button
-              aria-pressed={changesOpen}
-              onClick={() => setChangesOpen(!changesOpen)}
-            >
-              Changes
-            </button>
             <button className="subtle" onClick={chooseWorkspace}>
               Open folder…
             </button>
@@ -1060,14 +1077,11 @@ function App() {
                   </section>
                 ))}
             </div>
-            {changesOpen && (
-              <ChangesPanel
-                cwd={
-                  workspace || shown?.cwd || session?.cwd || note?.project || ""
-                }
-                onClose={() => setChangesOpen(false)}
-              />
-            )}
+            <WorkspaceTools
+              cwd={
+                workspace || shown?.cwd || session?.cwd || note?.project || ""
+              }
+            />
           </div>
           <footer className="statusbar">
             <button onClick={() => setAppearanceOpen(true)}>

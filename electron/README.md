@@ -19,6 +19,8 @@ npm start
 
 ## Available now
 
+- Compact, recency-grouped session navigation and a slim workspace header. Right-hand tool rail opens Changes in a resizable panel; width and visibility persist. On narrow windows the panel overlays the workspace.
+
 - Workspace Changes panel beside terminals: staged/unstaged/untracked files and colored diffs, explicit refresh, binary/large-file handling. Review only; staging, committing, and discarding changes are not implemented.
 
 - React/TypeScript interface with Recent, Workspaces (project folders), and Notes.

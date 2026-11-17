@@ -1112,3 +1112,189 @@ svg {
 .git-diff .hunk {
   color: #8dbdf2;
 }
+
+/* Compact navigation keeps the work surface dominant. */
+.app {
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+.session-sidebar .brand {
+  padding: 12px;
+  gap: 8px;
+  height: 48px;
+}
+.session-sidebar .brand strong {
+  font-size: 15px;
+  letter-spacing: -0.3px;
+}
+.session-sidebar .brand-mark {
+  width: 23px;
+  height: 23px;
+}
+.session-sidebar .badge {
+  font-size: 8px;
+  padding: 3px;
+}
+.session-sidebar .search {
+  padding: 0 10px 8px;
+}
+.session-sidebar .search input {
+  padding: 7px 9px;
+  font-size: 12px;
+}
+.session-sidebar .modes {
+  padding: 0 10px 8px;
+}
+.session-sidebar .modes button {
+  padding: 5px 3px;
+  font-size: 11px;
+}
+.session-sidebar .filters {
+  padding: 8px 10px 0;
+}
+.session-sidebar .sidebar-list {
+  padding: 4px 7px;
+}
+.session-sidebar .section-label {
+  padding: 9px 6px 5px;
+  letter-spacing: 1px;
+}
+.session-sidebar .session-row,
+.session-sidebar .workspace-row {
+  padding: 7px 8px;
+  margin-bottom: 2px;
+  border-radius: 5px;
+}
+.session-sidebar .session-row strong {
+  margin: 3px 0 2px;
+  line-height: 1.35;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.session-sidebar .session-row p {
+  margin: 2px 0 5px;
+  font-size: 10px;
+}
+.session-sidebar .session-row small {
+  font-size: 9px;
+  gap: 3px;
+}
+.session-sidebar .row-top {
+  font-size: 10px;
+}
+.session-sidebar .provider {
+  border: 0;
+  padding: 0;
+  color: #a1a1aa;
+}
+.session-sidebar .sidebar-foot {
+  padding: 8px 12px;
+  font-size: 10px;
+}
+.recency-label {
+  color: #93939f;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin: 10px 8px 4px;
+}
+.workspace-header {
+  height: 48px;
+  padding: 6px 12px;
+  gap: 8px;
+}
+.workspace-header .workspace-picker {
+  max-width: 420px;
+}
+.workspace-header .workspace-picker select {
+  font-size: 12px;
+  padding: 4px;
+}
+.workspace-header .new-button {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+.workspace-header .workspace-picker small {
+  display: none;
+}
+.review-layout {
+  position: relative;
+}
+.tools-rail {
+  width: 38px;
+  flex: 0 0 38px;
+  padding: 5px 3px;
+  border-left: 1px solid #36363d;
+  background: #202023;
+}
+.tools-rail button {
+  width: 31px;
+  height: 34px;
+  padding: 6px;
+  border-radius: 4px;
+  color: #a1a1aa;
+}
+.tools-rail button[aria-pressed="true"] {
+  color: #8fcbd0;
+  background: #30383c;
+  box-shadow: inset -2px 0 #8fcbd0;
+}
+.workspace-tool {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 260px;
+  max-width: calc(100% - 240px);
+  display: flex;
+}
+.workspace-tool .changes-panel {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  border-right: 0;
+}
+.workspace-tool .changes-panel > header {
+  padding: 8px 10px;
+  gap: 6px;
+  height: 43px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.workspace-tool .changes-panel > header button {
+  font-size: 11px;
+}
+.tool-resizer {
+  position: absolute;
+  left: -3px;
+  width: 7px;
+  top: 0;
+  bottom: 0;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+.tool-resizer:hover,
+.tool-resizer:focus-visible {
+  background: #8fcbd066;
+  outline: none;
+}
+@media (max-width: 1000px) {
+  .app {
+    grid-template-columns: 230px minmax(0, 1fr);
+  }
+  .app.collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-tool {
+    position: absolute;
+    right: 38px;
+    top: 0;
+    bottom: 0;
+    z-index: 10;
+    max-width: calc(100% - 38px);
+    box-shadow: -8px 0 24px #0005;
+  }
+  .tools-rail {
+    z-index: 11;
+  }
+}

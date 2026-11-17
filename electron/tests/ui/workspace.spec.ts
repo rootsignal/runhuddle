@@ -284,7 +284,64 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(page.getByLabel("File diff", { exact: true })).toContainText(
       "+Updated Git review content",
     );
+    const toolDivider = page.getByRole("separator", {
+      name: "Resize tools panel",
+      exact: true,
+    });
+    await toolDivider.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await expect(toolDivider).toHaveAttribute("aria-valuenow", "400");
+    const dividerBox = await toolDivider.boundingBox();
+    await page.mouse.move(
+      dividerBox!.x + dividerBox!.width / 2,
+      dividerBox!.y + 80,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      dividerBox!.x + dividerBox!.width / 2 - 30,
+      dividerBox!.y + 80,
+      { steps: 4 },
+    );
+    await page.mouse.up();
+    await expect(toolDivider).toHaveAttribute("aria-valuenow", "430");
+    await toolDivider.dblclick();
+    await expect(toolDivider).toHaveAttribute("aria-valuenow", "360");
+    await toolDivider.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+
+    const beforeToolsRestart = await page.evaluate(async () =>
+      (await (window as any).runhuddle.snapshot()).terminals.map(
+        (t: any) => t.id,
+      ),
+    );
+    await closeUI(app);
+    app = await electron.launch(launch);
+    page = await app.firstWindow();
+    await expect(
+      page.getByRole("button", { name: "Changes", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("separator", { name: "Resize tools panel", exact: true }),
+    ).toHaveAttribute("aria-valuenow", "400");
+    expect(
+      await page.evaluate(async () =>
+        (await (window as any).runhuddle.snapshot()).terminals.map(
+          (t: any) => t.id,
+        ),
+      ),
+    ).toEqual(beforeToolsRestart);
+    await expect(page.getByLabel("File diff", { exact: true })).toContainText(
+      "+Updated Git review content",
+    );
     await page.screenshot({ path: "test-results/preview-git-review.png" });
+    await page.setViewportSize({ width: 800, height: 600 });
+    await expect(
+      page.getByRole("button", { name: "Close changes", exact: true }),
+    ).toBeInViewport();
+    await page.screenshot({ path: "test-results/preview-tools-narrow.png" });
+    await page.setViewportSize({ width: 1280, height: 840 });
     await page
       .getByRole("button", { name: "Close changes", exact: true })
       .click();
