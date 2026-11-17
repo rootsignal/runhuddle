@@ -29,6 +29,30 @@ function readSetting<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
+function restoredSelection(
+  data: Snapshot,
+  folder: string,
+  previous: string,
+  hidden: string[],
+) {
+  if (
+    data.sessions.some(
+      (s) => "session:" + key(s) === previous && (!folder || s.cwd === folder),
+    ) ||
+    data.notes.some(
+      (n) => "note:" + n.id === previous && (!folder || n.project === folder),
+    )
+  )
+    return previous;
+  const candidates = data.terminals.filter(
+    (t) => (!folder || t.cwd === folder) && !hidden.includes(t.id),
+  );
+  return candidates.some((t) => "terminal:" + t.id === previous)
+    ? previous
+    : candidates[0]
+      ? "terminal:" + candidates[0].id
+      : "";
+}
 function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     sessions: [],
@@ -39,6 +63,8 @@ function App() {
     terminals: [],
     home: "",
   });
+  const [loaded, setLoaded] = useState(false);
+  const [connection, setConnection] = useState("connected");
   const [error, setError] = useState("");
   const [appearance, setAppearance] = useState(loadAppearance);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
@@ -50,7 +76,9 @@ function App() {
     localStorage.setItem("terminalAppearance", JSON.stringify(appearance));
   }, [appearance]);
   const [launchKind, setLaunchKind] = useState<"all" | "ai" | "shell">("all");
-  const [mode, setMode] = useState<"recent" | "workspaces" | "notes">("recent");
+  const [mode, setMode] = useState<"recent" | "workspaces" | "notes">(() =>
+    readSetting("sidebarMode", "recent"),
+  );
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState("all");
   const [workspace, setWorkspace] = useState(() =>
@@ -82,24 +110,36 @@ function App() {
   const [workspaceSelections, setWorkspaceSelections] = useState<
     Record<string, string>
   >(() => readSetting("workspaceSelections", {}));
-  const [sidebar, setSidebar] = useState(true);
+  const [sidebar, setSidebar] = useState(() =>
+    readSetting("sidebarVisible", true),
+  );
+  useEffect(() => {
+    localStorage.setItem("sidebarMode", JSON.stringify(mode));
+  }, [mode]);
+  useEffect(() => {
+    localStorage.setItem("sidebarVisible", JSON.stringify(sidebar));
+  }, [sidebar]);
+  useEffect(() => {
+    if (loaded)
+      setWorkspaceSelections((old) =>
+        old[workspace] === selection ? old : { ...old, [workspace]: selection },
+      );
+  }, [loaded, workspace, selection]);
   useEffect(() => {
     window.runhuddle
       .snapshot()
       .then((data) => {
         setSnapshot(data);
-        const candidates = data.terminals.filter(
-          (t) =>
-            (!workspace || t.cwd === workspace) && !hiddenTabs.includes(t.id),
-        );
-        const previous = workspaceSelections[workspace];
+        setConnection(data.connection || "connected");
         setSelection(
-          candidates.some((t) => "terminal:" + t.id === previous)
-            ? previous
-            : candidates[0]
-              ? "terminal:" + candidates[0].id
-              : "",
+          restoredSelection(
+            data,
+            workspace,
+            workspaceSelections[workspace],
+            hiddenTabs,
+          ),
         );
+        setLoaded(true);
       })
       .catch((e) => setError(String(e)));
     return window.runhuddle.onEvent((event) => {
@@ -110,6 +150,7 @@ function App() {
         }));
       if (event.event === "store")
         setSnapshot((previous) => ({ ...previous, ...event }));
+      if (event.event === "connection") setConnection(event.state);
       if (event.event === "error") setError(event.message);
     });
   }, []);
@@ -212,17 +253,14 @@ function App() {
     setWorkspaceSelections((old) => ({ ...old, [workspace]: value }));
   }
   function switchWorkspace(folder: string) {
-    const candidates = snapshot.terminals.filter(
-      (t) => (!folder || t.cwd === folder) && !hiddenTabs.includes(t.id),
-    );
-    const previous = workspaceSelections[folder];
     setWorkspace(folder);
     setSelection(
-      candidates.some((t) => "terminal:" + t.id === previous)
-        ? previous
-        : candidates[0]
-          ? "terminal:" + candidates[0].id
-          : "",
+      restoredSelection(
+        snapshot,
+        folder,
+        workspaceSelections[folder],
+        hiddenTabs,
+      ),
     );
   }
   async function chooseWorkspace() {
@@ -337,11 +375,13 @@ function App() {
           </div>
           <strong>{terminalTitle(t)}</strong>
           <small>
-            {t.exited
-              ? "Exited"
-              : t.agent === "shell"
-                ? "Shell open"
-                : "Session open · Status unknown"}
+            {t.unavailable
+              ? "Unavailable"
+              : t.exited
+                ? "Exited"
+                : t.agent === "shell"
+                  ? "Shell open"
+                  : "Session open · Status unknown"}
           </small>
           <small className="pane-location">{location(t.id)}</small>
         </button>
@@ -381,7 +421,6 @@ function App() {
           ...old,
           terminals: [...old.terminals.filter((x) => x.id !== t.id), t],
         }));
-        setWorkspace(t.cwd);
         setHiddenTabs((old) => old.filter((id) => id !== t.id));
         setSelection("terminal:" + t.id);
       }
@@ -413,9 +452,11 @@ function App() {
             {t.exited && t.sessionID && (
               <>
                 <small>
-                  {t.exitCode
-                    ? `Exited with code ${t.exitCode}`
-                    : "Session ended"}
+                  {t.unavailable
+                    ? "Terminal unavailable"
+                    : t.exitCode
+                      ? `Exited with code ${t.exitCode}`
+                      : "Session ended"}
                 </small>
                 <button
                   disabled={resuming}
@@ -440,22 +481,68 @@ function App() {
           </div>
         )}
         <div className="pane-body">
-          <TerminalPane
-            id={t.id}
-            visible={true}
-            focused={shown?.id === t.id}
-            onError={setError}
-            onTitle={(title) => {
-              if (t.sessionID && title.trim())
-                window.runhuddle.title(t.id, title).catch(() => {});
-              if (t.agent !== "shell" && title.trim())
-                setTitles((old) =>
-                  old[t.id] === title
-                    ? old
-                    : { ...old, [t.id]: title.slice(0, 120) },
-                );
-            }}
-          />
+          {t.unavailable ? (
+            <div className="document" role="status">
+              <h2>Terminal unavailable</h2>
+              <p>
+                The terminal process is no longer connected. Its pane position
+                has been kept.
+              </p>
+              {t.agent === "shell" ? (
+                <button
+                  onClick={async () => {
+                    try {
+                      const replacement = await window.runhuddle.create(
+                        t.cwd,
+                        "shell",
+                      );
+                      setSnapshot((old) => ({
+                        ...old,
+                        terminals: [
+                          ...old.terminals.filter(
+                            (x) => x.id !== replacement.id,
+                          ),
+                          replacement,
+                        ],
+                      }));
+                      setSelection("terminal:" + replacement.id);
+                      await window.runhuddle.close(t.id);
+                    } catch (e) {
+                      setError(String(e));
+                    }
+                  }}
+                >
+                  Open new terminal here
+                </button>
+              ) : (
+                <p>
+                  Use Resume session above to reopen the recorded conversation.
+                </p>
+              )}
+              <button onClick={() => close(t)}>Remove unavailable tab</button>
+            </div>
+          ) : connection !== "connected" ? (
+            <div className="document" role="status">
+              Terminal connection interrupted. Reconnecting…
+            </div>
+          ) : (
+            <TerminalPane
+              id={t.id}
+              visible={true}
+              focused={shown?.id === t.id}
+              onError={setError}
+              onTitle={(title) => {
+                if (t.sessionID && title.trim())
+                  window.runhuddle.title(t.id, title).catch(() => {});
+                if (t.agent !== "shell" && title.trim())
+                  setTitles((old) =>
+                    old[t.id] === title
+                      ? old
+                      : { ...old, [t.id]: title.slice(0, 120) },
+                  );
+              }}
+            />
+          )}
         </div>
       </section>
     );
@@ -767,6 +854,24 @@ function App() {
               <Icon name="chevron" size={14} />
             </button>
           </header>
+          {connection !== "connected" && (
+            <div className="error" role="status">
+              {connection === "reconnecting"
+                ? "Reconnecting to terminals…"
+                : "Terminal connection unavailable."}
+              {connection === "disconnected" && (
+                <button
+                  onClick={() =>
+                    window.runhuddle
+                      .reconnect()
+                      .catch((e) => setError(String(e)))
+                  }
+                >
+                  Retry connection
+                </button>
+              )}
+            </div>
+          )}
           {(error || snapshot.storeError) && (
             <div role="alert" className="error">
               {error || snapshot.storeError}

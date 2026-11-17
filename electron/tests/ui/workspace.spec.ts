@@ -228,6 +228,16 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(
       page.getByText("Keep the terminal service independent of the window."),
     ).toBeVisible();
+    await closeUI(app);
+    app = await electron.launch(launch);
+    page = await app.firstWindow();
+    await expect(
+      page.getByRole("heading", { name: "Workspace decisions", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Workspace decisions/ }),
+    ).toHaveClass(/selected/);
+
     await page
       .getByRole("combobox", { name: "Workspace", exact: true })
       .selectOption(dir);
@@ -420,6 +430,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await page
       .getByRole("combobox", { name: "Workspace", exact: true })
       .selectOption("");
+    await page.locator(".live-row").first().locator(".session-row").click();
     await page.getByRole("tab").nth(1).click();
     await page
       .getByRole("combobox", { name: "Workspace", exact: true })
@@ -486,10 +497,13 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await page.getByRole("button", { name: "Done", exact: true }).click();
     expect(
       await page.evaluate(
-        async () =>
-          (await (window as any).runhuddle.snapshot()).terminals[0].id,
+        async (id) =>
+          (await (window as any).runhuddle.snapshot()).terminals.some(
+            (t: any) => t.id === id && !t.unavailable && !t.exited,
+          ),
+        terminalId,
       ),
-    ).toBe(terminalId);
+    ).toBe(true);
     await expect
       .poll(() =>
         page.evaluate(
@@ -663,6 +677,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await page.screenshot({ path: "test-results/preview-launcher-narrow.png" });
     await page.keyboard.press("Escape");
   } finally {
+    await closeUI(app);
     console.log("UI: stopping test service");
     const client = new Service(path.join(dir, "preview", "service-v2"));
     try {
@@ -671,7 +686,95 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     } finally {
       client.disconnect();
     }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("helper crash preserves panes and recovers without restarting the app", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-recovery-ui-"));
+  const env = {
+    ...process.env,
+    RUNHUDDLE_PREVIEW_DATA: path.join(dir, "preview"),
+    RUNHUDDLE_NATIVE_STORE: path.join(dir, "absent.sqlite"),
+  };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const launch = {
+    args: process.env.RUNHUDDLE_TEST_EXECUTABLE ? [] : [path.resolve(".")],
+    env,
+    executablePath: process.env.RUNHUDDLE_TEST_EXECUTABLE,
+  };
+  let app = await electron.launch(launch);
+  let client = new Service(path.join(dir, "preview", "service-v2"));
+  try {
+    let page = await app.firstWindow();
+    await page.evaluate(async (cwd) => {
+      const api = (window as any).runhuddle;
+      await api.create(cwd, "shell");
+      await api.create(cwd, "shell");
+    }, dir);
+    await page.locator(".live-row").first().locator(".session-row").click();
+    await page.getByRole("tab").nth(1).click();
+    await page
+      .getByRole("button", { name: "Arrange pane 1", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Move tab right", exact: true })
+      .click();
+    await expect(page.getByRole("tablist")).toHaveCount(2);
+    const layout = await page.evaluate(() =>
+      localStorage.getItem("pane-layout:"),
+    );
+    await client.connect();
+    const hello = client.hello;
+    // Kill only the isolated test helper, never a user's process.
+    process.kill(hello.pid, "SIGKILL");
+    client.disconnect();
+    await expect(
+      page.getByRole("heading", { name: "Terminal unavailable", exact: true }),
+    ).toHaveCount(2);
+    await expect(page.getByRole("tablist")).toHaveCount(2);
+    expect(
+      await page.evaluate(() => localStorage.getItem("pane-layout:")),
+    ).toBe(layout);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async () => (await (window as any).runhuddle.snapshot()).connection,
+        ),
+      )
+      .toBe("connected");
+    // Unavailable panes and selection also survive an app restart.
     await closeUI(app);
+    app = await electron.launch(launch);
+    page = await app.firstWindow();
+    await expect(
+      page.getByRole("heading", { name: "Terminal unavailable", exact: true }),
+    ).toHaveCount(2);
+    await expect(page.locator(".live-row .selected")).toHaveCount(1);
+    await page
+      .getByRole("button", { name: "Open new terminal here", exact: true })
+      .last()
+      .click();
+    await expect(page.locator(".terminal-host")).toHaveCount(1);
+    await expect(
+      page.getByRole("heading", { name: "Terminal unavailable", exact: true }),
+    ).toHaveCount(1);
+    const data = await page.evaluate(
+      async () => (await (window as any).runhuddle.snapshot()).terminals,
+    );
+    expect(data.filter((t: any) => !t.unavailable && !t.exited)).toHaveLength(
+      1,
+    );
+    await page
+      .getByRole("button", { name: "Remove unavailable tab", exact: true })
+      .click();
+    await expect(page.getByRole("tablist")).toHaveCount(1);
+    await expect(page.getByRole("tab")).toHaveCount(1);
+  } finally {
+    await closeUI(app);
+    client = new Service(path.join(dir, "preview", "service-v2"));
+    if (await client.connectExisting()) await client.call("shutdown");
+    client.disconnect();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

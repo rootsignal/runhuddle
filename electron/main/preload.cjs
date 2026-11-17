@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const invoke = (method, ...args) => ipcRenderer.invoke(method, ...args);
 contextBridge.exposeInMainWorld("runhuddle", {
+  reconnect: () => invoke("reconnect"),
   snapshot: () => invoke("snapshot"),
   chooseFolder: () => invoke("choose-folder"),
   create: (cwd, agent) => invoke("create", cwd, agent),

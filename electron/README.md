@@ -27,7 +27,9 @@ npm start
 - Read-only import of native `sessions.sqlite`, including saved notes and pins. WAL-aware reads run off the UI process; filesystem changes trigger debounced refreshes.
 - Separate `RunHuddle Preview` settings; existing native terminals and data remain untouched.
 
-The sidebar is a native-app snapshot, not live provider monitoring. Imported conversations cannot yet be resumed here. Notes are read-only. Project folders are not yet named saved workspace layouts. Splits, tab rearrangement, Git, MCP, note editing, and live hooks are tracked in [the migration plan](../docs/electron-migration.md).
+Owned agent sessions use exact conversation IDs and transcript events; native history is imported separately. Recorded sessions can be resumed. Notes remain read-only. Pane groups support horizontal/vertical splits, drag/reorder, resizing, and per-workspace layout and selection restoration.
+
+If the helper disconnects, the app retries automatically and offers a manual retry after repeated failures. Missing PTYs remain as unavailable panes, with explicit shell replacement or agent resume actions. This preserves layout metadata, not running processes or lost scrollback; a new helper never silently reruns commands.
 
 ## Terminal service
 
@@ -47,3 +49,7 @@ For isolated tests, `RUNHUDDLE_PREVIEW_DATA` overrides preview settings and `RUN
 - `RUNHUDDLE_TEST_EXECUTABLE` can point UI tests at a packaged executable to verify the bundled helper and native module.
 
 The icon is generated from RunHuddle's existing native icon source (`Sources/SessionManager/RunHuddleIcon.swift` and `scripts/icon/main.swift`). No Proactive source code or assets are included.
+
+## Planned investigation: repository code graphs
+
+Evaluate Graphify and inspect how Proactive integrates it before selecting an implementation. Desired workflow: an agent queries a repository code graph to locate relevant files before reading them, and users can browse the graph in RunHuddle. Storage location (repository, app data, or elsewhere), incremental indexing, query interface, and token/runtime costs are unverified. Local storage was a user interpretation, not a confirmed Proactive capability. The current working assumption is a repo-level graph; verify whether its generated files should be committed or ignored.

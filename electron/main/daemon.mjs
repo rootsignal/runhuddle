@@ -195,7 +195,7 @@ const server = net.createServer((socket) => {
         clients.add(socket);
         send(socket, {
           request: request.request,
-          result: { protocol: PROTOCOL },
+          result: { protocol: PROTOCOL, pid: process.pid },
         });
         return;
       }

@@ -25,6 +25,7 @@ export interface TerminalInfo {
   exitCode?: number;
   sessionID?: string;
   legacy?: boolean;
+  unavailable?: boolean;
 }
 export interface Snapshot {
   sessions: Session[];
@@ -34,13 +35,19 @@ export interface Snapshot {
   storeError: string | null;
   terminals: TerminalInfo[];
   home: string;
+  connection?: "connected" | "reconnecting" | "disconnected";
 }
 export type AppEvent =
   | { event: "output"; id: string; data: string; sequence: number }
   | { event: "terminals"; terminals: TerminalInfo[] }
   | ({ event: "store" } & Omit<Snapshot, "home" | "terminals">)
+  | {
+      event: "connection";
+      state: "connected" | "reconnecting" | "disconnected";
+    }
   | { event: "error"; message: string };
 export interface API {
+  reconnect(): Promise<void>;
   snapshot(): Promise<Snapshot>;
   chooseFolder(): Promise<string | null>;
   create(cwd: string, agent: string): Promise<TerminalInfo>;

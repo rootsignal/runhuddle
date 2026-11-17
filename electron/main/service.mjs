@@ -93,6 +93,7 @@ export class Service extends EventEmitter {
         );
     }
     const hello = await this.call("hello", { token: this.token });
+    this.hello = hello;
     if (hello.protocol !== PROTOCOL) {
       this.disconnect();
       throw new Error("Terminal service needs a compatible app version");
@@ -107,6 +108,7 @@ export class Service extends EventEmitter {
         this.socket = socket;
         socket.on("error", () => {});
         socket.on("close", () => {
+          if (this.socket !== socket) return;
           for (const { reject, timer } of this.pending.values()) {
             clearTimeout(timer);
             reject(new Error("Terminal service disconnected"));

@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { mergeSessions } from "./lifecycle.mjs";
+import { TerminalInventory } from "./terminal-inventory.mjs";
 import { Service } from "./service.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 app.setName("RunHuddle Preview");
@@ -18,6 +19,12 @@ const nativeStore =
   path.join(app.getPath("appData"), "RunHuddle", "sessions.sqlite");
 const service = new Service(path.join(app.getPath("userData"), "service-v2"));
 const legacy = new Service(path.join(app.getPath("userData"), "service"));
+const inventory = new TerminalInventory(
+  path.join(app.getPath("userData"), "terminal-inventory.json"),
+);
+let connection = "connected",
+  quitting = false,
+  recovering;
 let legacyConnected = false;
 let managed = [];
 const linksFile = path.join(app.getPath("userData"), "legacy-links.json");
@@ -44,14 +51,14 @@ const allTerminals = async () => {
       ? [{ ...row, terminalId: t.id, state: "disconnected" }]
       : [];
   });
-  return [
+  return inventory.reconcile([
     ...rows,
     ...old.map((t) => ({
       ...t,
       sessionID: links.find((l) => l.terminalId === t.id)?.sessionID,
       legacy: true,
     })),
-  ];
+  ]);
 };
 const owner = async (id) =>
   ownedIds.has(id) || !legacyConnected ? service : legacy;
@@ -188,18 +195,57 @@ else {
       service.on("event", (event) => serviceEvent(event).catch(() => {}));
       if (legacyConnected)
         legacy.on("event", (event) => serviceEvent(event).catch(() => {}));
-      service.on("disconnected", () =>
-        publish({
-          event: "error",
-          message:
-            "Terminal service disconnected. Reopen the preview to reconnect.",
-        }),
-      );
+      async function recover() {
+        if (quitting) return;
+        if (recovering) return recovering;
+        connection = "reconnecting";
+        publish({ event: "connection", state: connection });
+        recovering = (async () => {
+          for (let attempt = 0; attempt < 3 && !quitting; attempt++) {
+            await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+            try {
+              await service.connect();
+              if (quitting) {
+                service.disconnect();
+                return;
+              }
+              managed = await service.call("sessions");
+              const terminals = await allTerminals();
+              publishStore();
+              publish({ event: "terminals", terminals });
+              connection = "connected";
+              publish({ event: "connection", state: connection });
+              return;
+            } catch {}
+          }
+          if (!quitting) {
+            connection = "disconnected";
+            publish({ event: "connection", state: connection });
+          }
+        })().finally(() => {
+          recovering = undefined;
+        });
+        return recovering;
+      }
+      service.on("disconnected", recover);
+      legacy.on("disconnected", () => {
+        legacyConnected = false;
+        if (!quitting && connection === "connected")
+          allTerminals()
+            .then((terminals) => {
+              publish({ event: "terminals", terminals });
+              publishStore();
+            })
+            .catch(() => {});
+      });
+      handle("reconnect", recover);
       handle("snapshot", async () => ({
         ...cached,
         storeError,
         sessions: merged(),
-        terminals: await allTerminals(),
+        terminals:
+          connection === "connected" ? await allTerminals() : inventory.rows,
+        connection,
         home: os.homedir(),
       }));
       handle("choose-folder", async () => {
@@ -310,7 +356,13 @@ else {
         const terminal = (await allTerminals()).find((t) => t.id === id);
         const target = await owner(id);
         if (!terminal) return true;
+        if (terminal.unavailable) {
+          inventory.forget(id);
+          publish({ event: "terminals", terminals: inventory.rows });
+          return true;
+        }
         if (terminal.exited) {
+          inventory.forget(id);
           await target.call("close", { id });
           return true;
         }
@@ -328,6 +380,7 @@ else {
           cancelId: 0,
         });
         if (result.response === 1) {
+          inventory.forget(id);
           await target.call("close", { id });
           return true;
         }
@@ -364,6 +417,7 @@ else {
                     cancelId: 0,
                   });
                   if (result.response === 1) {
+                    quitting = true;
                     await service.call("shutdown");
                     if (legacyConnected) await legacy.call("shutdown");
                     app.quit();
@@ -395,6 +449,7 @@ else {
     });
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", () => {
+    quitting = true;
     watcher?.close();
     clearTimeout(refreshTimer);
     service.disconnect();

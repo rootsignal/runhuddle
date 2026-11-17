@@ -291,7 +291,11 @@ export function TerminalWorkspace({
                     <AgentIcon agent={t.agent} />
                     <span className="tab-title">
                       {title(t)}
-                      {t.exited ? " · Exited" : ""}
+                      {t.unavailable
+                        ? " · Unavailable"
+                        : t.exited
+                          ? " · Ended"
+                          : ""}
                     </span>
                   </button>
                   <button
