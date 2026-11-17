@@ -202,3 +202,31 @@ test("helper persists imported archive state across a full service restart", asy
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("first user prompt supplies a bounded title suggestion for each provider", () => {
+  for (const [agent, event] of [
+    [
+      "codex",
+      {
+        type: "event_msg",
+        payload: { type: "user_message", message: "Fix the sidebar\nDetails" },
+      },
+    ],
+    [
+      "claude",
+      { type: "user", message: { content: "Fix the sidebar\nDetails" } },
+    ],
+    [
+      "copilot",
+      { type: "user.message", data: { content: "Fix the sidebar\nDetails" } },
+    ],
+  ])
+    assert.equal(transcriptEvent(agent, event).promptTitle, "Fix the sidebar");
+  assert.equal(
+    transcriptEvent("codex", {
+      type: "event_msg",
+      payload: { type: "agent_message", message: "Do not rename from replies" },
+    }).promptTitle,
+    undefined,
+  );
+});

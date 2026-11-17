@@ -123,7 +123,15 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
       hasUserTitle: !!resume,
     });
     t.unwatch = watchTranscript(identity.transcript, agent, (patch) => {
-      if (ledger.rows.get(sessionKey(t))?.terminalId === t.id) record(t, patch);
+      const row = ledger.rows.get(sessionKey(t));
+      if (row?.terminalId === t.id) {
+        const { promptTitle, ...changes } = patch;
+        if (promptTitle && !row.hasUserTitle) {
+          changes.title = promptTitle;
+          changes.hasUserTitle = true;
+        }
+        record(t, changes);
+      }
     });
   }
   child.onData((data) => {
@@ -208,6 +216,12 @@ const server = net.createServer((socket) => {
           if (
             t?.sessionID &&
             typeof request.title === "string" &&
+            !(
+              ledger.rows.get(sessionKey(t))?.hasUserTitle &&
+              /^(Codex|Claude|Copilot)( session| Code)?(?:[ |·-].*)?$/i.test(
+                request.title,
+              )
+            ) &&
             request.title.trim()
           )
             record(t, { title: request.title.trim().slice(0, 120) });
