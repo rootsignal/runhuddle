@@ -84,6 +84,14 @@
       {
         "from": "assets/fonts/README.md",
         "to": "licenses/nerd-fonts-README.md"
+      },
+      {
+        "from": "assets/themes/LICENSE",
+        "to": "licenses/terminal-themes-LICENSE"
+      },
+      {
+        "from": "assets/themes/SOURCE.txt",
+        "to": "licenses/terminal-themes-SOURCE.txt"
       }
     ]
   }

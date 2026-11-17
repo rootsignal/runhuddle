@@ -20,3 +20,7 @@ The Electron preview bundles Symbols Nerd Font Mono from Nerd Fonts v3.5.1.
 Upstream: https://github.com/ryanoasis/nerd-fonts
 The upstream LICENSE and glyph attribution README are included under
 Resources/licenses (and electron/assets/fonts in this source tree).
+
+The Electron preview bundles terminal palettes from iTerm2-Color-Schemes,
+release-20261116-150709-494b809, https://github.com/mbadolato/iTerm2-Color-Schemes.
+The upstream collection license and source notice ship under Resources/licenses.

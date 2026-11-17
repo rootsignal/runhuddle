@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
+import catalog from "../assets/themes/catalog.json";
+import { FontPicker } from "./FontPicker";
 import { FitAddon } from "@xterm/addon-fit";
 
 export const colorKeys = [
@@ -48,6 +50,7 @@ const dark: Colors = {
   brightWhite: "#ffffff",
 };
 export const presets: Record<string, Colors> = {
+  ...catalog,
   "RunHuddle Dark": dark,
   Midnight: {
     ...dark,
@@ -167,6 +170,7 @@ function Preview({ value }: { value: Appearance }) {
         term = new Terminal({
           ...terminalOptions(value),
           disableStdin: true,
+          cursorInactiveStyle: value.cursorStyle,
           rows: 7,
           scrollback: 0,
         });
@@ -174,16 +178,15 @@ function Preview({ value }: { value: Appearance }) {
         term.loadAddon(fit);
         term.open(host.current!);
         fit.fit();
-        term.write("\x1b[1mTerminal preview\x1b[0m\r\n");
-        for (let i = 0; i < 8; i++)
-          term.write(
-            `\x1b[${30 + i}m ${["Black", "Red", "Green", "Yellow", "Blue", "Pink", "Cyan", "White"][i]} \x1b[0m`,
-          );
-        term.write("\r\n");
-        for (let i = 0; i < 8; i++)
-          term.write(`\x1b[${90 + i}m Bright \x1b[0m`);
         term.write(
-          "\r\n\x1b[3mItalic\x1b[0m  \x1b[1mBold\x1b[0m  \x1b[4mUnderline\x1b[0m\r\n\x1b[36m\ue0b0 \ue0a0 \uf115 \uf017\x1b[0m  Prompt symbols   ✓\r\n$ ",
+          "\x1b[?1049h\x1b[?25h" +
+            "\x1b[36m~/Projects/my-app\x1b[0m \x1b[35m\ue0a0 main\x1b[0m\r\n" +
+            '$ agent "Add a dark mode toggle"\r\n\r\n' +
+            "\x1b[1mAgent\x1b[0m  Added the toggle and saved your preference.\r\n" +
+            "\x1b[31m- theme: 'light'\x1b[0m\r\n" +
+            "\x1b[32m+ theme: savedPreference ?? 'system'\x1b[0m\r\n" +
+            "\x1b[32m✓ 12 tests passed\x1b[0m  \x1b[3mReady for review.\x1b[0m\r\n\r\n" +
+            "\x1b[36m❯\x1b[0m ",
         );
         observer = new ResizeObserver(() => fit.fit());
         observer.observe(host.current!);
@@ -196,7 +199,9 @@ function Preview({ value }: { value: Appearance }) {
   }, [value]);
   return (
     <div
-      className="appearance-preview"
+      className={
+        "appearance-preview " + (value.cursorBlink ? "preview-blink" : "")
+      }
       aria-label="Terminal appearance preview"
       ref={host}
     />
@@ -252,6 +257,11 @@ export function TerminalAppearance({
   onDismiss: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [themeSearch, setThemeSearch] = useState("");
+  const themeNames = Object.keys(presets).sort((a, b) => a.localeCompare(b));
+  const matchingThemes = themeNames.filter((n) =>
+    n.toLowerCase().includes(themeSearch.toLowerCase()),
+  );
   useEffect(() => {
     dialog.current!.showModal();
     return () => dialog.current?.close();
@@ -282,6 +292,13 @@ export function TerminalAppearance({
       <div className="appearance-fields">
         <label>
           Theme
+          <input
+            type="search"
+            aria-label="Search terminal themes"
+            placeholder="Search themes…"
+            value={themeSearch}
+            onChange={(e) => setThemeSearch(e.target.value)}
+          />
           <select
             aria-label="Terminal theme"
             value={value.preset}
@@ -293,30 +310,24 @@ export function TerminalAppearance({
               })
             }
           >
-            {Object.keys(presets).map((p) => (
+            {presets[value.preset] &&
+              !matchingThemes.includes(value.preset) && (
+                <option>{value.preset}</option>
+              )}
+            {matchingThemes.map((p) => (
               <option key={p}>{p}</option>
             ))}
             {!presets[value.preset] && <option>Custom</option>}
           </select>
+          <small>
+            {matchingThemes.length} themes · bundled for offline use
+          </small>
         </label>
-        <label>
-          Font family
-          <input
-            aria-label="Terminal font family"
-            list="terminal-fonts"
-            value={value.fontFamily}
-            onChange={(e) => change("fontFamily", e.target.value)}
-          />
-          <datalist id="terminal-fonts">
-            <option value={defaults.fontFamily} />
-            <option value="Menlo" />
-            <option value="Consolas" />
-            <option value="JetBrains Mono" />
-            <option value="Fira Code" />
-            <option value="monospace" />
-          </datalist>
-          <small>Uses installed fonts; prompt symbols are included.</small>
-        </label>
+        <FontPicker
+          value={value.fontFamily}
+          systemFont={defaults.fontFamily}
+          onChange={(font) => change("fontFamily", font)}
+        />
         <label>
           Font size
           <input

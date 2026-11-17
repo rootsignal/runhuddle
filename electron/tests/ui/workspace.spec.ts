@@ -105,6 +105,37 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await page
       .getByRole("button", { name: "Terminal appearance…", exact: true })
       .click();
+    await expect
+      .poll(() =>
+        page
+          .getByRole("combobox", { name: "Terminal theme" })
+          .locator("option")
+          .count(),
+      )
+      .toBeGreaterThan(500);
+    await page
+      .getByRole("searchbox", { name: "Search terminal themes" })
+      .fill("Dracula");
+    await page
+      .getByRole("combobox", { name: "Terminal theme" })
+      .selectOption("Dracula");
+    await expect(
+      page.getByLabel("Background hex", { exact: true }),
+    ).toHaveValue("#282a36");
+    await page
+      .getByRole("searchbox", { name: "Search terminal themes" })
+      .fill("");
+    await expect
+      .poll(() =>
+        page
+          .getByRole("combobox", { name: "Terminal font family" })
+          .locator("option")
+          .count(),
+      )
+      .toBeGreaterThan(2);
+    await page
+      .getByRole("combobox", { name: "Terminal font family" })
+      .selectOption({ index: 1 });
     await page
       .getByRole("combobox", { name: "Terminal theme" })
       .selectOption("Light");
@@ -122,6 +153,27 @@ test("workspace navigation, retained search, notes and persistent terminal acros
         page.evaluate(() => document.fonts.check('14px "RunHuddle Symbols"')),
       )
       .toBe(true);
+    for (const style of ["block", "underline", "bar"]) {
+      await page
+        .getByRole("combobox", { name: "Terminal cursor style" })
+        .selectOption(style);
+      await expect(
+        page.locator(`.appearance-preview .xterm-cursor-${style}`),
+      ).toHaveCount(1);
+    }
+    await expect(page.locator(".appearance-preview .xterm-cursor")).toHaveCSS(
+      "animation-name",
+      "preview-cursor-blink",
+    );
+    await page.getByRole("checkbox", { name: "Blink cursor" }).uncheck();
+    await expect(page.locator(".appearance-preview .xterm-cursor")).toHaveCSS(
+      "animation-name",
+      "none",
+    );
+    await page.getByRole("checkbox", { name: "Blink cursor" }).check();
+
+    await page.getByRole("dialog", { name: "Terminal appearance", exact: true }).evaluate(el => { el.scrollTop = 0; });
+    await page.screenshot({ path: "test-results/preview-realistic-terminal.png" });
     await page
       .getByText("Customize colors · text, background and ANSI palette")
       .click();
@@ -153,14 +205,18 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       page.getByRole("button", { name: "Start Codex session", exact: true }),
     ).toHaveCount(0);
     await page.getByRole("button", { name: "Close launcher" }).click();
-    await page.getByRole("searchbox").fill("Investigate");
+    await page
+      .getByRole("searchbox", { name: "Search sessions and notes" })
+      .fill("Investigate");
     await page.getByRole("button", { name: "Pinned", exact: true }).click();
     await expect(
       page.getByText("No sessions match these filters."),
     ).toBeVisible();
     await page.getByRole("button", { name: "All", exact: true }).click();
     await expect(page.getByRole("searchbox")).toHaveValue("Investigate");
-    await page.getByRole("searchbox").fill("");
+    await page
+      .getByRole("searchbox", { name: "Search sessions and notes" })
+      .fill("");
     await page.getByRole("button", { name: "Notes", exact: true }).click();
     await page.getByRole("button", { name: /Workspace decisions/ }).click();
     await expect(

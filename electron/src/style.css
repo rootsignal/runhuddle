@@ -963,3 +963,39 @@ svg {
   padding: 5px;
   font-family: monospace;
 }
+.font-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.appearance-fields .font-filter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.appearance-fields .font-filter input {
+  width: auto;
+}
+.refresh-fonts {
+  font-size: 11px;
+  padding: 2px 0;
+  text-align: left;
+  align-self: start;
+}
+.appearance-preview {
+  height: 240px;
+}
+.appearance-preview.preview-blink .xterm-cursor {
+  animation: preview-cursor-blink 1.1s steps(1, end) infinite;
+}
+@keyframes preview-cursor-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}

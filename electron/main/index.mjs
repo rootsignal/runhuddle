@@ -150,9 +150,20 @@ function createWindow() {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
-  window.webContents.session.setPermissionRequestHandler(
-    (_contents, _permission, callback) => callback(false),
+  // Only the packaged app frame can enumerate fonts for its appearance picker.
+  const canReadFonts = (contents, permission, url) =>
+    permission === "local-fonts" &&
+    contents === window?.webContents &&
+    url === documentURL;
+  window.webContents.session.setPermissionCheckHandler(
+    (contents, permission, _origin, details) =>
+      canReadFonts(contents, permission, details.requestingUrl),
   );
+  window.webContents.session.setPermissionRequestHandler(
+    (contents, permission, callback, details) =>
+      callback(canReadFonts(contents, permission, details.requestingUrl)),
+  );
+
   window.on("closed", () => {
     window = undefined;
   });

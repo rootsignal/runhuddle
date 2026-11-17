@@ -1,0 +1,9 @@
+Terminal theme catalog from https://github.com/mbadolato/iTerm2-Color-Schemes
+Release: release-20261116-150709-494b809
+Asset: windowsterminal-themes.tgz
+https://github.com/mbadolato/iTerm2-Color-Schemes/releases/tag/release-20261116-150709-494b809
+
+Converted to xterm theme keys: purple -> magenta, brightPurple -> brightMagenta,
+cursorColor -> cursor. Other colors are unchanged. The catalog is bundled and
+requires no network access at runtime. Original theme names are preserved.
+The upstream collection license is included alongside this notice.
