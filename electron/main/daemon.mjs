@@ -59,7 +59,7 @@ function create({ cwd, agent = "shell", cols = 100, rows = 30 }) {
       : ["/d", "/s", "/c", agent]
     : agent === "shell"
       ? ["-l"]
-      : ["-lc", "exec " + agent];
+      : ["-lic", "exec " + agent];
   const env = {
     ...process.env,
     TERM: "xterm-256color",
