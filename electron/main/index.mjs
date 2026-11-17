@@ -6,6 +6,7 @@ import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { mergeSessions } from "./lifecycle.mjs";
 import { TerminalInventory } from "./terminal-inventory.mjs";
+import { gitChanges, gitDiff } from "./git.mjs";
 import { Service } from "./service.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 app.setName("RunHuddle Preview");
@@ -248,6 +249,8 @@ else {
         connection,
         home: os.homedir(),
       }));
+      handle("git-changes", gitChanges);
+      handle("git-diff", gitDiff);
       handle("choose-folder", async () => {
         const result = await dialog.showOpenDialog(window, {
           properties: ["openDirectory"],

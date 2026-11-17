@@ -19,6 +19,8 @@ npm start
 
 ## Available now
 
+- Workspace Changes panel beside terminals: staged/unstaged/untracked files and colored diffs, explicit refresh, binary/large-file handling. Review only; staging, committing, and discarding changes are not implemented.
+
 - React/TypeScript interface with Recent, Workspaces (project folders), and Notes.
 - Search retained across sidebar filters; selected session and content use the same state.
 - Workspace-filtered terminal tabs with xterm.js and node-pty.

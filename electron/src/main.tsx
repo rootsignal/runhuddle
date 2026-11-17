@@ -5,6 +5,7 @@ import {
   loadAppearance,
   TerminalAppearance,
 } from "./TerminalAppearance";
+import { ChangesPanel } from "./ChangesPanel";
 import { LaunchMenu } from "./LaunchMenu";
 import { AgentIcon, Icon, launchOptions } from "./Icons";
 import { TerminalWorkspace } from "./TerminalWorkspace";
@@ -67,6 +68,7 @@ function App() {
   const [connection, setConnection] = useState("connected");
   const [error, setError] = useState("");
   const [appearance, setAppearance] = useState(loadAppearance);
+  const [changesOpen, setChangesOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [layoutInfo, setLayoutInfo] = useState<{
     locations: Record<string, string>;
@@ -841,6 +843,12 @@ function App() {
                 ))}
               </select>
             </div>
+            <button
+              aria-pressed={changesOpen}
+              onClick={() => setChangesOpen(!changesOpen)}
+            >
+              Changes
+            </button>
             <button className="subtle" onClick={chooseWorkspace}>
               Open folder…
             </button>
@@ -886,170 +894,180 @@ function App() {
               </button>
             </div>
           )}
-          <div className="stage">
-            {terminals.length > 0 && (
-              <div
-                className="workspace-surface"
-                style={{ display: shown ? "flex" : "none" }}
-              >
-                <TerminalWorkspace
-                  key={workspace}
-                  workspace={workspace}
-                  terminals={terminals}
-                  selected={shown?.id || ""}
-                  title={terminalTitle}
-                  onSelect={(id) => select("terminal:" + id)}
-                  onClose={hideTab}
-                  onEnd={close}
-                  onLayout={setLayoutInfo}
-                  render={renderTerminal}
-                />
-              </div>
-            )}
-            {!shown &&
-              (session ? (
-                <article className="document">
-                  <small className="eyebrow">
-                    RECORDED SESSION · {session.provider}
-                  </small>
-                  <h1>{session.title}</h1>
-                  <p className="muted">{session.cwd}</p>
-                  <button
-                    className="primary document-action"
-                    disabled={resuming}
-                    onClick={() =>
-                      resumeSession(session.provider, session.sessionID)
-                    }
-                  >
-                    {resuming ? "Resuming…" : "Resume session"}
-                  </button>
-                  <button
-                    className="secondary document-action"
-                    onClick={async () => {
-                      try {
-                        await window.runhuddle.archive(
-                          session.provider,
-                          session.sessionID,
-                          session.state !== "archived",
-                        );
-                      } catch (e) {
-                        setError(String(e));
+          <div className="review-layout">
+            <div className="stage">
+              {terminals.length > 0 && (
+                <div
+                  className="workspace-surface"
+                  style={{ display: shown ? "flex" : "none" }}
+                >
+                  <TerminalWorkspace
+                    key={workspace}
+                    workspace={workspace}
+                    terminals={terminals}
+                    selected={shown?.id || ""}
+                    title={terminalTitle}
+                    onSelect={(id) => select("terminal:" + id)}
+                    onClose={hideTab}
+                    onEnd={close}
+                    onLayout={setLayoutInfo}
+                    render={renderTerminal}
+                  />
+                </div>
+              )}
+              {!shown &&
+                (session ? (
+                  <article className="document">
+                    <small className="eyebrow">
+                      RECORDED SESSION · {session.provider}
+                    </small>
+                    <h1>{session.title}</h1>
+                    <p className="muted">{session.cwd}</p>
+                    <button
+                      className="primary document-action"
+                      disabled={resuming}
+                      onClick={() =>
+                        resumeSession(session.provider, session.sessionID)
                       }
-                    }}
-                  >
-                    {session.state === "archived"
-                      ? "Restore from archive"
-                      : "Archive in RunHuddle"}
-                  </button>
-                  <button
-                    className="secondary document-action"
-                    onClick={() => setLauncher(true)}
-                  >
-                    <Icon name="plus" size={15} />
-                    New session in this folder
-                  </button>
-                  <div className="notice">
-                    {session.terminalId
-                      ? "This conversation is open in a preview terminal."
-                      : "Resume continues this conversation with its existing context. Archiving organizes history; it does not delete the provider’s conversation."}
-                  </div>
-                  {snapshot.terminals.some(
-                    (t) =>
-                      t.legacy &&
-                      !t.exited &&
-                      t.agent === session.provider.toLowerCase() &&
-                      t.cwd === session.cwd,
-                  ) && (
+                    >
+                      {resuming ? "Resuming…" : "Resume session"}
+                    </button>
+                    <button
+                      className="secondary document-action"
+                      onClick={async () => {
+                        try {
+                          await window.runhuddle.archive(
+                            session.provider,
+                            session.sessionID,
+                            session.state !== "archived",
+                          );
+                        } catch (e) {
+                          setError(String(e));
+                        }
+                      }}
+                    >
+                      {session.state === "archived"
+                        ? "Restore from archive"
+                        : "Archive in RunHuddle"}
+                    </button>
+                    <button
+                      className="secondary document-action"
+                      onClick={() => setLauncher(true)}
+                    >
+                      <Icon name="plus" size={15} />
+                      New session in this folder
+                    </button>
                     <div className="notice">
-                      <p>
-                        Already open in a terminal from the earlier preview?
-                        Link it once so this entry focuses that terminal.
-                      </p>
-                      <select
-                        aria-label="Existing preview terminal"
-                        value={linkTarget}
-                        onChange={(e) => setLinkTarget(e.target.value)}
-                      >
-                        <option value="">Choose its terminal…</option>
-                        {snapshot.terminals
-                          .filter(
-                            (t) =>
-                              t.legacy &&
-                              !t.exited &&
-                              t.agent === session.provider.toLowerCase() &&
-                              t.cwd === session.cwd,
-                          )
-                          .map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {terminalTitle(t)}
-                            </option>
-                          ))}
-                      </select>
-                      <button
-                        disabled={!linkTarget}
-                        onClick={async () => {
-                          try {
-                            await window.runhuddle.link(
-                              session.provider,
-                              session.sessionID,
-                              linkTarget,
-                            );
-                            setSelection("terminal:" + linkTarget);
-                            setHiddenTabs((old) =>
-                              old.filter((id) => id !== linkTarget),
-                            );
-                            setLinkTarget("");
-                          } catch (e) {
-                            setError(String(e));
-                          }
-                        }}
-                      >
-                        Link this terminal
-                      </button>
+                      {session.terminalId
+                        ? "This conversation is open in a preview terminal."
+                        : "Resume continues this conversation with its existing context. Archiving organizes history; it does not delete the provider’s conversation."}
                     </div>
-                  )}
-                  <h3>Last recorded message</h3>
-                  <p className="preserve">
-                    {session.preview || "No recorded message"}
-                  </p>
-                </article>
-              ) : note ? (
-                <article className="document">
-                  <small className="eyebrow">
-                    SAVED NOTE · {note.sourceProvider}
-                  </small>
-                  <h1>{note.title}</h1>
-                  <p className="muted">{note.project}</p>
-                  <div className="preserve">{note.text}</div>
-                </article>
-              ) : (
-                <section className="welcome">
-                  <img className="hero-mark" src={logo} alt="" />
-                  <small className="eyebrow">
-                    {workspace ? "WORKSPACE" : "WELCOME BACK"}
-                  </small>
-                  <h1>
-                    {workspace
-                      ? name(workspace)
-                      : "Pick up where you left off."}
-                  </h1>
-                  <p>
-                    Browse recent sessions, open a workspace,
-                    <br />
-                    or start a new AI session or terminal.
-                  </p>
-                  <button
-                    className="primary new-button"
-                    onClick={() => setLauncher(true)}
-                  >
-                    <Icon name="plus" size={16} />
-                    New session or terminal
-                  </button>
-                  <div className="welcome-details">
-                    <span>⌘T / Ctrl+Shift+T to start something new</span>
-                  </div>
-                </section>
-              ))}
+                    {snapshot.terminals.some(
+                      (t) =>
+                        t.legacy &&
+                        !t.exited &&
+                        t.agent === session.provider.toLowerCase() &&
+                        t.cwd === session.cwd,
+                    ) && (
+                      <div className="notice">
+                        <p>
+                          Already open in a terminal from the earlier preview?
+                          Link it once so this entry focuses that terminal.
+                        </p>
+                        <select
+                          aria-label="Existing preview terminal"
+                          value={linkTarget}
+                          onChange={(e) => setLinkTarget(e.target.value)}
+                        >
+                          <option value="">Choose its terminal…</option>
+                          {snapshot.terminals
+                            .filter(
+                              (t) =>
+                                t.legacy &&
+                                !t.exited &&
+                                t.agent === session.provider.toLowerCase() &&
+                                t.cwd === session.cwd,
+                            )
+                            .map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {terminalTitle(t)}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          disabled={!linkTarget}
+                          onClick={async () => {
+                            try {
+                              await window.runhuddle.link(
+                                session.provider,
+                                session.sessionID,
+                                linkTarget,
+                              );
+                              setSelection("terminal:" + linkTarget);
+                              setHiddenTabs((old) =>
+                                old.filter((id) => id !== linkTarget),
+                              );
+                              setLinkTarget("");
+                            } catch (e) {
+                              setError(String(e));
+                            }
+                          }}
+                        >
+                          Link this terminal
+                        </button>
+                      </div>
+                    )}
+                    <h3>Last recorded message</h3>
+                    <p className="preserve">
+                      {session.preview || "No recorded message"}
+                    </p>
+                  </article>
+                ) : note ? (
+                  <article className="document">
+                    <small className="eyebrow">
+                      SAVED NOTE · {note.sourceProvider}
+                    </small>
+                    <h1>{note.title}</h1>
+                    <p className="muted">{note.project}</p>
+                    <div className="preserve">{note.text}</div>
+                  </article>
+                ) : (
+                  <section className="welcome">
+                    <img className="hero-mark" src={logo} alt="" />
+                    <small className="eyebrow">
+                      {workspace ? "WORKSPACE" : "WELCOME BACK"}
+                    </small>
+                    <h1>
+                      {workspace
+                        ? name(workspace)
+                        : "Pick up where you left off."}
+                    </h1>
+                    <p>
+                      Browse recent sessions, open a workspace,
+                      <br />
+                      or start a new AI session or terminal.
+                    </p>
+                    <button
+                      className="primary new-button"
+                      onClick={() => setLauncher(true)}
+                    >
+                      <Icon name="plus" size={16} />
+                      New session or terminal
+                    </button>
+                    <div className="welcome-details">
+                      <span>⌘T / Ctrl+Shift+T to start something new</span>
+                    </div>
+                  </section>
+                ))}
+            </div>
+            {changesOpen && (
+              <ChangesPanel
+                cwd={
+                  workspace || shown?.cwd || session?.cwd || note?.project || ""
+                }
+                onClose={() => setChangesOpen(false)}
+              />
+            )}
           </div>
           <footer className="statusbar">
             <button onClick={() => setAppearanceOpen(true)}>

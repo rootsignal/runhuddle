@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -28,6 +29,15 @@ async function closeUI(
 }
 test("workspace navigation, retained search, notes and persistent terminal across full app quit", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-ui-"));
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  fs.writeFileSync(
+    path.join(dir, ".git", "info", "exclude"),
+    "preview/\nsessions.sqlite*\n",
+  );
+  fs.writeFileSync(
+    path.join(dir, "review-fixture.txt"),
+    "Visible Git review content\n",
+  );
   const dbFile = path.join(dir, "sessions.sqlite");
   const db = new DatabaseSync(dbFile);
   db.exec("CREATE TABLE records(key TEXT PRIMARY KEY,value BLOB)");
@@ -255,6 +265,33 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByRole("tab")).toHaveCount(1);
     console.log("UI: terminal tab ready");
+    await page.getByRole("button", { name: "Changes", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Changed files" })
+      .getByRole("button", { name: /review-fixture.txt/ })
+      .click();
+    await expect(page.getByLabel("File diff", { exact: true })).toContainText(
+      "+Visible Git review content",
+    );
+    await expect(page.locator(".terminal-host")).toBeVisible();
+    fs.writeFileSync(
+      path.join(dir, "review-fixture.txt"),
+      "Updated Git review content\n",
+    );
+    await page
+      .getByRole("button", { name: "Refresh changes", exact: true })
+      .click();
+    await expect(page.getByLabel("File diff", { exact: true })).toContainText(
+      "+Updated Git review content",
+    );
+    await page.screenshot({ path: "test-results/preview-git-review.png" });
+    await page
+      .getByRole("button", { name: "Close changes", exact: true })
+      .click();
+    await expect(
+      page.getByRole("complementary", { name: "Workspace changes" }),
+    ).toHaveCount(0);
+
     terminalId = await page.evaluate(
       async () => (await (window as any).runhuddle.snapshot()).terminals[0].id,
     );
