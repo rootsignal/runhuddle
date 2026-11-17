@@ -6,20 +6,24 @@ import { createRequire } from "node:module";
 import { Service } from "../../main/service.mjs";
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite");
-// Playwright waits for ChildProcess "close", including every diagnostic pipe.
-// A detached helper can outlive those pipe handles on Linux/Windows. Only close
-// the runner's pipes AFTER observing the UI process really exit; never kill the
-// helper or bypass the exit assertion to make the restart test pass.
+// Request a normal app quit asynchronously, so the test is not awaiting a
+// debugger evaluation in the process being terminated. Detached helpers may
+// retain Playwright diagnostic handles on Linux/Windows. Verify actual process
+// exit before releasing those runner handles; never stop the terminal helper.
 async function closeUI(
   application: Awaited<ReturnType<typeof electron.launch>>,
 ) {
   const child = application.process();
-  const releasePipes = () => {
-    for (const stream of child.stdio) stream?.destroy();
-  };
-  if (child.exitCode !== null) releasePipes();
-  else child.once("exit", releasePipes);
-  await application.close();
+  if (child.exitCode === null) {
+    const exited = new Promise<void>((resolve) =>
+      child.once("exit", () => resolve()),
+    );
+    await application.evaluate(({ app }) => {
+      setTimeout(() => app.quit(), 25);
+    });
+    await exited;
+  }
+  for (const stream of child.stdio) stream?.destroy();
   expect(child.exitCode).toBe(0);
 }
 test("workspace navigation, retained search, notes and persistent terminal across full app quit", async () => {
