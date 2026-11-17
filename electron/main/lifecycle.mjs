@@ -274,6 +274,18 @@ export function transcriptEvent(agent, event) {
     if (event.type === "session.title_changed") title = p.title;
   }
   const patch = {};
+  if (
+    (agent === "codex" &&
+      event.type === "event_msg" &&
+      p.type === "user_message") ||
+    (agent === "claude" &&
+      event.type === "user" &&
+      typeof event.message?.content === "string") ||
+    (agent === "copilot" && event.type === "user.message")
+  ) {
+    if (typeof preview === "string" && preview.trim())
+      patch.promptTitle = preview.trim().split("\n")[0].slice(0, 120);
+  }
   if (state) patch.state = state;
   if (typeof preview === "string" && preview.trim())
     patch.preview = preview.slice(0, 4000);

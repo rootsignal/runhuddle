@@ -116,7 +116,12 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
   };
   terminals.set(t.id, t);
   if (t.sessionID) {
-    record(t, { terminalId: t.id, state: "disconnected", imported: false });
+    record(t, {
+      terminalId: t.id,
+      state: "disconnected",
+      imported: false,
+      hasUserTitle: !!resume,
+    });
     t.unwatch = watchTranscript(identity.transcript, agent, (patch) => {
       if (ledger.rows.get(sessionKey(t))?.terminalId === t.id) record(t, patch);
     });
