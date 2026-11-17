@@ -717,3 +717,123 @@ svg {
   color: #8bcdd2;
   font-size: 11px;
 }
+
+.workspace-surface,
+.terminal-workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+.terminal-workspace > * {
+  flex: 1;
+}
+.pane-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.group-tabs {
+  display: flex;
+  min-width: 0;
+  border-bottom: 1px solid #34363d;
+  background: #202023;
+}
+.group-tabs .tabbar {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 5px;
+  gap: 4px;
+}
+.group-tabs .terminal-tab {
+  min-width: 70px;
+  max-width: 260px;
+}
+.pane-menu {
+  position: relative;
+  align-self: center;
+}
+.pane-actions {
+  position: fixed;
+  z-index: 30;
+  width: 230px;
+  padding: 8px;
+  border: 1px solid #51515b;
+  border-radius: 8px;
+  background: #27272c;
+  box-shadow: 0 8px 32px #0008;
+}
+.pane-actions button,
+.pane-actions small,
+.pane-actions strong {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+}
+.pane-actions small {
+  color: #a4a6b2;
+  font-size: 11px;
+}
+.group-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+.group-content > .terminal-pane {
+  flex: 1;
+  min-width: 0;
+}
+.split-down {
+  grid-template-columns: minmax(0, 1fr);
+}
+.split-down > .split-divider {
+  cursor: row-resize;
+}
+.drop-targets {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  z-index: 20;
+  padding: 12px;
+  gap: 8px;
+  background: #18181b88;
+}
+.drop-zone {
+  display: grid;
+  place-items: center;
+  border: 2px dashed #8bcdd2;
+  background: #263e45bb;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+}
+.drop-down {
+  grid-column: 1 / 3;
+}
+.drop-zone.over {
+  background: #38747edd;
+  border-style: solid;
+}
+.pane-group:not(.active-group) .terminal-tab.selected {
+  box-shadow: inset 0 -2px #666671;
+}
+.active-group > .group-tabs {
+  box-shadow: inset 0 2px #8fcbd0;
+}
+.pane-menu > button {
+  white-space: nowrap;
+  font-size: 11px;
+}
+.pane-actions {
+  max-height: 280px;
+  overflow-y: auto;
+}

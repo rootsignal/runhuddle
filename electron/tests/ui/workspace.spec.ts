@@ -166,45 +166,124 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       "true",
     );
     await page
-      .getByRole("combobox", { name: "Split view with" })
-      .selectOption(terminalId);
+      .getByRole("button", { name: "Arrange pane 1", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Move tab right", exact: true })
+      .click();
+    await expect(page.getByRole("tablist")).toHaveCount(2);
     await expect(page.getByRole("tab")).toHaveCount(2);
-    await expect(page.getByText("Side by side · 2 panes")).toBeVisible();
-    await expect(
-      page.getByRole("separator", { name: "Resize panes" }),
-    ).toBeVisible();
     await expect(page.locator(".terminal-host")).toHaveCount(2);
     const splitter = page.getByRole("separator", { name: "Resize panes" });
+    await expect(splitter).toHaveAttribute("aria-orientation", "vertical");
     await splitter.focus();
     await page.keyboard.press("ArrowRight");
     await expect(splitter).toHaveAttribute("aria-valuenow", "55");
-    const dividerBox = await splitter.boundingBox();
-    await page.mouse.move(dividerBox!.x + 4, dividerBox!.y + 80);
-    await page.mouse.down();
-    await page.mouse.move(dividerBox!.x - 80, dividerBox!.y + 80);
-    await page.mouse.up();
-    expect(Number(await splitter.getAttribute("aria-valuenow"))).toBeLessThan(
-      55,
-    );
-    await page.locator(".terminal-host").first().click();
-    await expect(page.getByRole("tab").nth(1)).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    await page.screenshot({ path: "test-results/preview-split.png" });
     await page
-      .getByRole("button", { name: "Show only this", exact: true })
+      .getByRole("tablist", { name: "Pane 2 tabs" })
+      .getByRole("tab")
+      .click();
+    await page
+      .getByRole("button", { name: "New session or terminal", exact: true })
       .first()
       .click();
-    await expect(page.getByRole("separator")).toHaveCount(0);
-    await expect(page.locator(".terminal-host")).toHaveCount(1);
     await page
-      .getByRole("combobox", { name: "Split view with" })
-      .selectOption(terminalId);
+      .getByRole("button", { name: "Start Terminal", exact: true })
+      .click();
+    await expect(
+      page.getByRole("tablist", { name: "Pane 2 tabs" }).getByRole("tab"),
+    ).toHaveCount(2);
+    await page
+      .getByRole("tablist", { name: "Pane 2 tabs" })
+      .getByRole("tab")
+      .first()
+      .click();
+    await expect(page.getByRole("tablist")).toHaveCount(2);
     await expect(page.locator(".terminal-host")).toHaveCount(2);
-    await page.getByRole("tab").first().click();
-    await expect(page.locator(".terminal-host")).toHaveCount(1);
+    await page
+      .getByRole("button", { name: "Arrange pane 2", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Move tab down", exact: true })
+      .click();
+    await expect(page.getByRole("tablist")).toHaveCount(3);
+    await expect(page.getByRole("separator")).toHaveCount(2);
+    const horizontal = page.locator(
+      '[role="separator"][aria-orientation="horizontal"]',
+    );
+    await horizontal.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(horizontal).toHaveAttribute("aria-valuenow", "55");
+    // Sidebar focuses an existing pane without making duplicate tabs or collapsing layout.
+    await page.locator(".live-row").first().locator(".session-row").click();
+    await expect(page.getByRole("tablist")).toHaveCount(3);
+    await expect(page.getByRole("tab")).toHaveCount(3);
+    await page.screenshot({ path: "test-results/preview-split.png" });
+    await closeUI(app);
+    app = await electron.launch(launch);
+    page = await app.firstWindow();
+    await expect(page.getByRole("tablist")).toHaveCount(3);
+    await expect(
+      page.locator('[role="separator"][aria-orientation="horizontal"]'),
+    ).toHaveAttribute("aria-valuenow", "55");
+    await page
+      .getByRole("tablist", { name: "Pane 3 tabs" })
+      .locator(".terminal-tab")
+      .dragTo(page.getByRole("tablist", { name: "Pane 1 tabs" }));
+    await expect(page.getByRole("tablist")).toHaveCount(2);
+    await expect(
+      page.getByRole("tablist", { name: "Pane 1 tabs" }).getByRole("tab"),
+    ).toHaveCount(2);
+    await page
+      .getByRole("button", { name: "Arrange pane 1", exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: "Combine all tabs into one pane",
+        exact: true,
+      })
+      .click();
+    await expect(page.getByRole("tablist")).toHaveCount(1);
+    await expect(page.getByRole("tab")).toHaveCount(3);
+    // Put the original shell first again before the close/reopen checks.
+    await page
+      .locator(".terminal-tab")
+      .filter({ hasText: path.basename(dir) + " · 1" })
+      .dragTo(page.locator(".terminal-tab").first());
+    // Drag a tab to the highlighted right edge, then move it back with the menu.
+    const dragBox = await page.locator(".terminal-tab").last().boundingBox();
+    await page.mouse.move(dragBox!.x + 40, dragBox!.y + 15);
+    await page.mouse.down();
+    await page.mouse.move(dragBox!.x + 40, dragBox!.y + 100, { steps: 5 });
+    await expect(page.locator(".drop-right")).toBeVisible();
+    const zone = await page.locator(".drop-right").boundingBox();
+    await page.mouse.move(
+      zone!.x + zone!.width / 2,
+      zone!.y + zone!.height / 2,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    await expect(page.getByRole("tablist")).toHaveCount(2);
+    await expect(page.getByRole("tab")).toHaveCount(3);
+    await page
+      .getByRole("button", { name: "Arrange pane 2", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Move to pane 1", exact: true })
+      .click();
+    await expect(page.getByRole("tablist")).toHaveCount(1);
+    await app.evaluate(({ dialog }) => {
+      dialog.showMessageBox = async () => ({
+        response: 1,
+        checkboxChecked: false,
+      });
+    });
+    await page
+      .getByRole("button", { name: /^Close / })
+      .last()
+      .click();
     await expect(page.getByRole("tab")).toHaveCount(2);
+    await page.getByRole("tab").first().click();
     await page
       .getByRole("combobox", { name: "Workspace", exact: true })
       .selectOption("");

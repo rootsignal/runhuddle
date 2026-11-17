@@ -69,3 +69,9 @@ Terminal launches discard inherited `NO_COLOR` and helper-only Node/Electron
 variables and advertise xterm-256color/truecolor. The renderer has an explicit
 16-color ANSI palette. Already-running CLIs retain their original environment;
 resume them through the new helper to receive the corrected color environment.
+
+### Pane groups
+
+The Electron workspace now uses a persisted split tree per workspace. Each leaf owns an ordered tab list and active tab; branches store right/down orientation and divider ratio. Sidebar selection focuses an existing tab without moving it. New terminals enter the focused group. Arrange offers move right/down, move to another pane, and combine all tabs; drag targets support moving, reordering, and right/bottom splits. Empty groups collapse without stopping the underlying terminal. Closing an AI tab still hides its view; End session remains explicit.
+
+UI regression coverage exercises nested right/down splits, keyboard resizing, independent tab selection, creation in the focused pane, sidebar focus, restart restoration, tab drag/reorder and edge drops, merging empty panes, and terminal output surviving app restart. Legacy global split controls are removed.

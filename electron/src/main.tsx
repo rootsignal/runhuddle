@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LaunchMenu } from "./LaunchMenu";
 import { AgentIcon, Icon, launchOptions } from "./Icons";
-import { SplitView } from "./SplitView";
+import { TerminalWorkspace } from "./TerminalWorkspace";
 import { TerminalPane } from "./Terminal";
 import type { Snapshot, Session, TerminalInfo } from "./types";
 import "./style.css";
@@ -47,7 +47,7 @@ function App() {
   const [selection, setSelection] = useState("");
   const [linkTarget, setLinkTarget] = useState("");
   const [resuming, setResuming] = useState(false);
-  const [pair, setPair] = useState<string[]>([]);
+
   const [hiddenTabs, setHiddenTabs] = useState<string[]>(() =>
     readSetting("hiddenTabs", []),
   );
@@ -178,7 +178,7 @@ function App() {
     terminal && (!workspace || terminal.cwd === workspace)
       ? terminal
       : undefined;
-  function select(value: string, preserveSplit = false) {
+  function select(value: string) {
     if (value.startsWith("session:")) {
       const row = snapshot.sessions.find((s) => "session:" + key(s) === value);
       if (
@@ -192,12 +192,11 @@ function App() {
     if (id) {
       setHiddenTabs((old) => old.filter((x) => x !== id));
     }
-    if (!preserveSplit) setPair([]);
+
     setSelection(value);
     setWorkspaceSelections((old) => ({ ...old, [workspace]: value }));
   }
   function switchWorkspace(folder: string) {
-    setPair([]);
     const candidates = snapshot.terminals.filter(
       (t) => (!folder || t.cwd === folder) && !hiddenTabs.includes(t.id),
     );
@@ -232,7 +231,7 @@ function App() {
     setMode("recent");
     setScope("all");
     setQuery("");
-    setPair([]);
+
     setSelection("terminal:" + t.id);
     setWorkspaceSelections((old) => ({ ...old, [cwd]: "terminal:" + t.id }));
     setLastUsed(agent);
@@ -240,36 +239,28 @@ function App() {
     localStorage.setItem("lastLaunchType", JSON.stringify(agent));
     localStorage.setItem("lastLaunchFolder", JSON.stringify(cwd));
   }
-  function openBeside(t: TerminalInfo) {
-    setHiddenTabs((old) => old.filter((id) => id !== t.id));
-    if (!shown || shown.id === t.id) return;
-    setPair([shown.id, t.id]);
-    setSelection("terminal:" + t.id);
-    setWorkspaceSelections((old) => ({
-      ...old,
-      [workspace]: "terminal:" + t.id,
-    }));
-  }
-  function hideTab(t: TerminalInfo) {
+  function hideTab(t: TerminalInfo, next?: string) {
     const remaining = terminals.filter((x) => x.id !== t.id);
-    const other = pair.find((id) => id !== t.id);
+
     setHiddenTabs((old) => [...old, t.id]);
-    setPair([]);
+
     if (shown?.id === t.id)
       select(
-        other
-          ? "terminal:" + other
+        next
+          ? "terminal:" + next
           : remaining[0]
             ? "terminal:" + remaining[0].id
             : "",
       );
   }
-  async function close(t: TerminalInfo) {
+  async function close(t: TerminalInfo, preferred?: string) {
     try {
       if (await window.runhuddle.close(t.id)) {
-        setPair([]);
         const index = terminals.findIndex((x) => x.id === t.id);
-        const next = terminals[index + 1] || terminals[index - 1];
+        const next =
+          terminals.find((x) => x.id === preferred) ||
+          terminals[index + 1] ||
+          terminals[index - 1];
         setSnapshot((old) => ({
           ...old,
           terminals: old.terminals.filter((x) => x.id !== t.id),
@@ -317,38 +308,23 @@ function App() {
         }
         aria-label={`${terminalTitle(t)} pane`}
         onPointerDown={() => {
-          if (shown?.id !== t.id) select("terminal:" + t.id, true);
+          if (shown?.id !== t.id) select("terminal:" + t.id);
         }}
         onFocusCapture={() => {
-          if (shown?.id !== t.id) select("terminal:" + t.id, true);
+          if (shown?.id !== t.id) select("terminal:" + t.id);
         }}
       >
-        <div className="pane-heading">
-          <AgentIcon agent={t.agent} />
-          <span>
-            {pair.length === 2
-              ? pair[0] === t.id
-                ? "Left · "
-                : "Right · "
-              : ""}
-            {terminalTitle(t)}
-          </span>
-          {pair.length === 2 && (
-            <button
-              onClick={() => {
-                select("terminal:" + t.id);
-                setPair([]);
-              }}
-            >
-              Show only this
-            </button>
-          )}
-          {t.agent !== "shell" && (
-            <button onClick={() => close(t)}>
-              {t.exited ? "Remove session" : "End session"}
-            </button>
-          )}
-        </div>
+        {t.agent !== "shell" && (
+          <div className="pane-heading">
+            <AgentIcon agent={t.agent} />
+            <span>{terminalTitle(t)}</span>
+            {t.agent !== "shell" && (
+              <button onClick={() => close(t)}>
+                {t.exited ? "Remove session" : "End session"}
+              </button>
+            )}
+          </div>
+        )}
         <div className="pane-body">
           <TerminalPane
             id={t.id}
@@ -646,78 +622,6 @@ function App() {
             <Icon name="chevron" size={14} />
           </button>
         </header>
-        {shown && (
-          <div className="layout-controls">
-            <span>
-              {pair.length === 2 ? "Side by side · 2 panes" : "Single view"}
-            </span>
-            {pair.length === 2 && (
-              <button onClick={() => setPair([])}>Single view</button>
-            )}
-            <select
-              aria-label="Split view with"
-              value=""
-              disabled={workspaceTerminals.filter((t) => !t.exited).length < 2}
-              onChange={(e) => {
-                const target = workspaceTerminals.find(
-                  (t) => t.id === e.target.value,
-                );
-                if (target) openBeside(target);
-              }}
-            >
-              <option value="">
-                {pair.length === 2 ? "Compare with…" : "Split view…"}
-              </option>
-              {workspaceTerminals
-                .filter((t) => t.id !== shown.id && !t.exited)
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.agent === "shell" ? "Terminal" : t.agent} ·{" "}
-                    {terminalTitle(t)}
-                  </option>
-                ))}
-            </select>
-          </div>
-        )}
-        <div className="tabbar" role="tablist" aria-label="Open tabs">
-          {terminals.map((t) => (
-            <div
-              key={t.id}
-              className={
-                "terminal-tab " + (shown?.id === t.id ? "selected" : "")
-              }
-            >
-              <button
-                role="tab"
-                aria-selected={shown?.id === t.id}
-                title={`${t.agent === "shell" ? "Terminal" : t.agent} · ${t.cwd}`}
-                onClick={() => select("terminal:" + t.id)}
-              >
-                <AgentIcon agent={t.agent} />
-                <span className="tab-title">
-                  {pair.includes(t.id) && (
-                    <span className="pane-badge">
-                      {pair[0] === t.id ? "Left" : "Right"}
-                    </span>
-                  )}
-                  {terminalTitle(t)}
-                  {t.exited ? " · Exited" : ""}
-                </span>
-              </button>
-              <button
-                aria-label={`Close ${terminalTitle(t)}`}
-                onClick={() => (t.agent === "shell" ? close(t) : hideTab(t))}
-              >
-                <Icon name="close" size={14} />
-              </button>
-            </div>
-          ))}
-          {!terminals.length && (
-            <span className="tab-empty">
-              Your open sessions and terminals appear here
-            </span>
-          )}
-        </div>
         {(error || snapshot.storeError) && (
           <div role="alert" className="error">
             {error || snapshot.storeError}
@@ -733,17 +637,25 @@ function App() {
           </div>
         )}
         <div className="stage">
-          {shown &&
-            (pair.length === 2 &&
-            pair.every((id) => terminals.some((t) => t.id === id)) ? (
-              <SplitView>
-                {pair.map((id) =>
-                  renderTerminal(terminals.find((t) => t.id === id)!),
-                )}
-              </SplitView>
-            ) : (
-              renderTerminal(shown)
-            ))}
+          {terminals.length > 0 && (
+            <div
+              className="workspace-surface"
+              style={{ display: shown ? "flex" : "none" }}
+            >
+              <TerminalWorkspace
+                key={workspace}
+                workspace={workspace}
+                terminals={terminals}
+                selected={shown?.id || ""}
+                title={terminalTitle}
+                onSelect={(id) => select("terminal:" + id)}
+                onClose={(t, next) =>
+                  t.agent === "shell" ? close(t, next) : hideTab(t, next)
+                }
+                render={renderTerminal}
+              />
+            </div>
+          )}
           {!shown &&
             (session ? (
               <article className="document">
@@ -773,7 +685,6 @@ function App() {
                         setWorkspace(t.cwd);
                         setHiddenTabs((old) => old.filter((id) => id !== t.id));
                         setSelection("terminal:" + t.id);
-                        setPair([]);
                       }
                     } catch (e) {
                       setError(String(e));
