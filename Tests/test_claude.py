@@ -190,6 +190,37 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual(self.row(live=False)['state'], 'saved')
         self.assertEqual(self.row(live=True)['state'], 'disconnected')
 
+    def test_newer_hook_beats_unchanged_busy_listing_then_new_work_wins(self):
+        entry = self.listed('busy')
+        entry[1]['updated'] = 100
+        with bridge.database() as db:
+            db.execute('INSERT INTO discovered VALUES (?,?)', ('example', json.dumps(entry[1])))
+        bridge.record('Stop', {'session_id': 'example'}, self.identity, stamp=200)
+        entry[1]['updated'] = 300  # query time is not a new state transition
+        with patch.object(bridge, 'cli_sessions', return_value=[{}]), patch.object(bridge, 'listed_session', return_value=entry):
+            for _ in range(2):
+                row = bridge.snapshot()[0]
+                self.assertEqual(row['state'], 'idle')
+                self.assertEqual(row['reason'], 'Claude: Stop')
+        # A real listing transition can supersede the older idle hook.
+        idle = self.listed('idle')
+        idle[1]['updated'] = 400
+        with patch.object(bridge, 'cli_sessions', return_value=[{}]), patch.object(bridge, 'listed_session', return_value=idle):
+            self.assertEqual(bridge.snapshot()[0]['state'], 'idle')
+        busy = self.listed('busy')
+        busy[1]['updated'] = 500
+        with patch.object(bridge, 'cli_sessions', return_value=[{}]), patch.object(bridge, 'listed_session', return_value=busy):
+            self.assertEqual(bridge.snapshot()[0]['state'], 'working')
+
+    def test_hook_does_not_override_different_process_or_uncertain_listing(self):
+        bridge.record('Stop', {'session_id': 'example'}, self.identity, stamp=200)
+        for state, identity in [('working', dict(self.identity, start='new process')),
+                                ('disconnected', self.identity)]:
+            entry = self.listed('busy')
+            entry[1].update(state=state, identity=identity, updated=100)
+            with patch.object(bridge, 'cli_sessions', return_value=[{}]), patch.object(bridge, 'listed_session', return_value=entry):
+                self.assertEqual(bridge.snapshot()[0]['state'], state)
+
     def test_discovers_session_without_history_or_hooks(self):
         entry = self.listed('idle')
         with patch.object(bridge, 'cli_sessions', return_value=[{}]), patch.object(bridge, 'listed_session', return_value=entry):

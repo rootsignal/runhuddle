@@ -295,6 +295,15 @@ def snapshot():
             data.update(listing[sid])
             data['updated'] = max(updated, data['updated'])
             state, reason = data['state'], data['reason']
+            hook = hooks.get(sid, {})
+            # Re-reading an unchanged CLI status is not a new activity event.
+            # Prefer a newer hook only for the exact same verified live process;
+            # a new listing transition or process identity still takes priority.
+            if (data.get('identity') and hook.get('identity') == data['identity']
+                    and state in ('idle', 'working', 'needsInput')
+                    and hook.get('state') in ('idle', 'working', 'needsInput')
+                    and hook.get('updated', 0) > listing[sid].get('updated', 0)):
+                state, reason = hook['state'], hook.get('reason', 'Claude tracking hook')
         elif data.get('state') == 'saved':
             state, reason = 'saved', 'Claude session ended.'
         elif live(data.get('identity')):
