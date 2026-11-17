@@ -4,7 +4,7 @@ Decision: build the replacement alongside the native app, prove session/terminal
 
 ## Milestones and acceptance gates
 
-1. **Foundation (implemented in `electron/`).** Original React workspace UI, searchable native data snapshot, read-only notes, bundled node-pty helper, xterm tabs, reconnect across full UI quit. Validate package runtime separately from development launch. macOS locally tested; Windows/Linux need CI and hands-on validation.
+1. **Foundation (implemented in `electron/`).** Original React workspace UI, searchable native data snapshot, read-only notes, bundled node-pty helper, xterm tabs, reconnect across full UI quit. Validate package runtime separately from development launch. macOS locally tested, including the packaged app. macOS, Windows, and Linux now pass CI build, real terminal-service integration, UI quit/relaunch, and unpacked packaging checks; hands-on Windows/Linux installer validation remains a release gate.
 2. **Live provider parity.** Reuse existing Codex/Claude/Copilot bridge behavior behind typed service adapters. Associate CLI sessions with terminal IDs; deduplicate shell-launched agents. Separate lifecycle from work state. Verify missed Stop/End hooks, desktop/external sessions, stale PIDs, offline recovery, forced takeover, selection updates and truthful counts. Do not equate terminal output or a quiet timeout with working/idle. Bundle any retained Python bridge runtime.
 3. **Workspace layouts.** Named collections of project folders and tabs, reopen without duplicate agents, companion shells, draggable/resizable splits, tab ordering, shortcut navigation. No automatic startup commands without a reviewable action. Keep project folder identity distinct from a saved layout.
 4. **Project knowledge.** Implement the notes model below; preserve existing note IDs/text/source metadata in a tested migration with backup and rollback. Render Markdown safely. No inferred completion or verification claims.
@@ -34,3 +34,11 @@ Proactive 0.14.3 was statically inspected from a user-supplied DMG. These are ob
 - Changes panel supports review and commit; adjacent repository/branch context and editor actions are relevant to RunHuddle. Evaluate staged changes, review, worktrees and explicit mutations against our existing native implementation before porting.
 
 Build the general workspace capabilities first. Do not import an enterprise-specific Azure/ServiceNow/Jira integration suite merely because the reference app includes one.
+
+## Foundation validation (2026-11-17)
+
+[Cross-platform check run](https://github.com/rootsignal/runhuddle/actions/runs/44135121437) passed on macOS, Ubuntu, and Windows. UI tests type through xterm, preserve search across filters, read imported notes, request a normal app quit, assert process exit code 0, and reconnect to the original terminal after relaunch. The test runner releases diagnostic pipes only after the UI process exits; it never kills the helper to make the restart test pass.
+
+The macOS arm64 packaged app also passed the restart test locally. A separate, locally ad-hoc-signed `RunHuddle Preview.app` was installed in `/Applications` at the user's request and opened successfully against the existing native store (14 sessions). This is a development preview, not a notarized public release. Production RunHuddle and its release/update feeds were not changed.
+
+Before distribution, verify helper lifetime under AppImage mount/unmount, Windows installer/update file locks, and a versioned helper upgrade strategy. The initial helper survives UI quit/reopen; reboot and update recovery are not yet established.
