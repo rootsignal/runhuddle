@@ -20,3 +20,8 @@ dist/
 *.keychain-db
 *.mobileprovision
 AuthKey_*
+
+# Electron development
+node_modules/
+electron/test-results/
+electron/playwright-report/

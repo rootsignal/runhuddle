@@ -49,3 +49,12 @@ redistribution requirements. Previously granted MIT permissions are not revoked.
 Third-party dependencies and theme palettes retain their respective licenses.
 Their notices are included in the app’s `Contents/Resources/ThirdPartyNotices`
 directory; theme notices are also available in [docs/theme-licenses](docs/theme-licenses/).
+
+## Electron preview development
+
+A cross-platform replacement is being developed alongside the native app in
+[`electron/`](electron/README.md). It currently provides a workspace interface,
+read-only native session/note snapshots, and persistent terminals through a
+bundled background service. It is not yet a replacement for the native release.
+See the [migration plan](docs/electron-migration.md) for feature parity, notes,
+Git, MCP, and release gates.

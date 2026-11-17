@@ -1,0 +1,82 @@
+{
+  "name": "runhuddle-electron",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "main": "main/index.mjs",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "start": "npm run build && electron .",
+    "test": "node tests/run.mjs",
+    "postinstall": "electron-rebuild -f -w node-pty",
+    "test:ui": "playwright test",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "4.2.1",
+    "@playwright/test": "1.65.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "45.3.3",
+    "electron-builder": "26.18.0",
+    "prettier": "3.10.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  },
+  "description": "RunHuddle cross-platform workspace preview",
+  "author": "RootSignal",
+  "build": {
+    "appId": "io.rootsignal.runhuddle.preview",
+    "productName": "RunHuddle Preview",
+    "directories": {
+      "output": "dist/package"
+    },
+    "files": [
+      "main/**",
+      "dist/assets/**",
+      "dist/index.html",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    },
+    "icon": "assets/icon.png",
+    "extraResources": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.runhuddle"
+      },
+      {
+        "from": "../NOTICE",
+        "to": "NOTICE.runhuddle"
+      }
+    ]
+  }
+}
