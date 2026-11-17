@@ -837,3 +837,129 @@ svg {
   max-height: 280px;
   overflow-y: auto;
 }
+
+@font-face {
+  font-family: "RunHuddle Symbols";
+  src: url("../assets/fonts/SymbolsNerdFontMono-Regular.ttf") format("truetype");
+  font-display: block;
+}
+.appearance-dialog {
+  width: min(760px, 94vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: #202023;
+  color: #dedee3;
+  border: 1px solid #51515b;
+  border-radius: 12px;
+  padding: 22px;
+}
+.appearance-dialog::backdrop {
+  background: #0009;
+}
+.appearance-dialog header,
+.appearance-dialog footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+}
+.appearance-dialog h2 {
+  margin: 0;
+}
+.appearance-dialog p,
+.appearance-dialog small,
+.appearance-dialog footer span {
+  color: #a4a6b2;
+  font-size: 12px;
+}
+.appearance-preview {
+  height: 190px;
+  margin: 16px 0;
+  overflow: hidden;
+}
+.appearance-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.appearance-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.appearance-fields input,
+.appearance-fields select {
+  width: 100%;
+  padding: 7px;
+}
+.appearance-fields .cursor-check {
+  flex-direction: row;
+  align-items: center;
+}
+.appearance-fields input[type="checkbox"] {
+  width: auto;
+}
+.appearance-dialog details {
+  margin: 20px 0;
+}
+.appearance-dialog summary {
+  cursor: pointer;
+}
+.appearance-colors {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+.appearance-colors label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.appearance-colors input {
+  width: 30px;
+  height: 30px;
+  padding: 1px;
+}
+.pane-location {
+  color: #8fcbd0;
+  display: block;
+  margin-top: 5px;
+}
+.stop-action {
+  margin: 0 14px 12px;
+  font-size: 11px;
+}
+.statusbar > button {
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 2px 6px;
+}
+.statusbar > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.appearance-colors {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.color-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.color-control label {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 8px;
+}
+.color-control input[type="text"],
+.color-control input:not([type]) {
+  width: 78px;
+  height: auto;
+  padding: 5px;
+  font-family: monospace;
+}

@@ -5,12 +5,16 @@ export function LaunchMenu({
   cwd,
   projects,
   lastUsed,
+  kind = "all",
+  pane = "Pane 1",
   onLaunch,
   onDismiss,
 }: {
   cwd: string;
   projects: string[];
   lastUsed: string;
+  kind?: "all" | "ai" | "shell";
+  pane?: string;
   onLaunch: (agent: string, cwd: string) => Promise<void>;
   onDismiss: () => void;
 }) {
@@ -22,10 +26,12 @@ export function LaunchMenu({
     const node = dialog.current!;
     node.showModal();
     node
-      .querySelector<HTMLButtonElement>(`[data-agent="${lastUsed || "codex"}"]`)
+      .querySelector<HTMLButtonElement>(
+        `[data-agent="${kind === "shell" ? "shell" : kind === "ai" && lastUsed === "shell" ? "codex" : lastUsed || "codex"}"]`,
+      )
       ?.focus();
     return () => node.close();
-  }, [lastUsed]);
+  }, [lastUsed, kind]);
   async function chooseFolder() {
     try {
       const result = await window.runhuddle.chooseFolder();
@@ -65,8 +71,18 @@ export function LaunchMenu({
     >
       <div className="launch-heading">
         <div>
-          <h2>Start something new</h2>
-          <p>An AI conversation or a plain terminal.</p>
+          <h2>
+            {kind === "shell"
+              ? "New terminal"
+              : kind === "ai"
+                ? "New AI session"
+                : "Start something new"}
+          </h2>
+          <p>
+            {folder === cwd
+              ? `Opens a tab in ${pane.toLowerCase()}.`
+              : "Opens in the selected workspace."}
+          </p>
         </div>
         <button aria-label="Close launcher" disabled={busy} onClick={onDismiss}>
           <Icon name="close" />
@@ -97,26 +113,32 @@ export function LaunchMenu({
         <p title={folder}>{folder || "Choose a folder before starting."}</p>
       </div>
       <div className="launch-choices">
-        {launchOptions.map((option) => (
-          <button
-            key={option.id}
-            data-agent={option.id}
-            className="launch-choice"
-            aria-label={`Start ${option.label}`}
-            disabled={busy}
-            onClick={() => launch(option.id)}
-          >
-            <AgentIcon agent={option.id} />
-            <span>
-              <strong>{option.label}</strong>
-              <small>{option.detail}</small>
-            </span>
-            {lastUsed === option.id && (
-              <span className="last-used">Last used</span>
-            )}
-            <Icon name="arrow" size={16} />
-          </button>
-        ))}
+        {launchOptions
+          .filter(
+            (o) =>
+              kind === "all" ||
+              (kind === "shell" ? o.id === "shell" : o.id !== "shell"),
+          )
+          .map((option) => (
+            <button
+              key={option.id}
+              data-agent={option.id}
+              className="launch-choice"
+              aria-label={`Start ${option.label}`}
+              disabled={busy}
+              onClick={() => launch(option.id)}
+            >
+              <AgentIcon agent={option.id} />
+              <span>
+                <strong>{option.label}</strong>
+                <small>{option.detail}</small>
+              </span>
+              {lastUsed === option.id && (
+                <span className="last-used">Last used</span>
+              )}
+              <Icon name="arrow" size={16} />
+            </button>
+          ))}
       </div>
       {error && (
         <p className="launch-error" role="alert">

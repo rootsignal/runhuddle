@@ -75,3 +75,9 @@ resume them through the new helper to receive the corrected color environment.
 The Electron workspace now uses a persisted split tree per workspace. Each leaf owns an ordered tab list and active tab; branches store right/down orientation and divider ratio. Sidebar selection focuses an existing tab without moving it. New terminals enter the focused group. Arrange offers move right/down, move to another pane, and combine all tabs; drag targets support moving, reordering, and right/bottom splits. Empty groups collapse without stopping the underlying terminal. Closing an AI tab still hides its view; End session remains explicit.
 
 UI regression coverage exercises nested right/down splits, keyboard resizing, independent tab selection, creation in the focused pane, sidebar focus, restart restoration, tab drag/reorder and edge drops, merging empty panes, and terminal output surviving app restart. Legacy global split controls are removed.
+
+### Terminal appearance and workspace navigation
+
+AI sessions and shell terminals have separate sidebar sections and creation controls, with pane locations reported from the layout tree. Imported session status is explicitly labeled recorded. Closing either type of tab hides its view and leaves the process running; Arrange → Close terminal / End session performs explicit termination with the existing confirmation. Hidden shell rows can reopen or stop the process.
+
+Terminal appearance is stored locally and applied live through xterm options: theme presets, all 16 ANSI colors, background/foreground/cursor/selection colors, installed font stack, size, line height, and cursor shape/blink. Explicit RGB escape sequences remain provider-controlled. The preview exercises ANSI, bold, italic, underline, and prompt glyphs. Symbols Nerd Font Mono v3.5.1 is bundled as a fallback; the upstream LICENSE and attribution README ship in Resources/licenses. It does not install a system font or modify shell configuration.

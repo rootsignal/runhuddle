@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { useAppearance, terminalOptions } from "./TerminalAppearance";
 import type { AppEvent } from "./types";
 export function TerminalPane({
   id,
@@ -16,6 +17,20 @@ export function TerminalPane({
   onError: (error: string) => void;
   onTitle: (title: string) => void;
 }) {
+  const appearance = useAppearance();
+  const [fontsReady, setFontsReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    document.fonts
+      .load('14px "RunHuddle Symbols"')
+      .catch(() => {})
+      .then(() => {
+        if (active) setFontsReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const host = useRef<HTMLDivElement>(null);
   const instance = useRef<{ term: Terminal; fit: FitAddon } | undefined>(
     undefined,
@@ -25,33 +40,10 @@ export function TerminalPane({
   const errorHandler = useRef(onError);
   errorHandler.current = onError;
   useEffect(() => {
+    if (!fontsReady) return;
     const term = new Terminal({
-      fontSize: 14,
-      fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-      cursorBlink: true,
+      ...terminalOptions(appearance),
       scrollback: 10000,
-      theme: {
-        background: "#18181b",
-        foreground: "#dedee3",
-        cursor: "#b6dce0",
-        selectionBackground: "#41414b",
-        black: "#20212a",
-        red: "#f0788c",
-        green: "#98d8a0",
-        yellow: "#e8c77a",
-        blue: "#7db5f5",
-        magenta: "#d99ae8",
-        cyan: "#80d5dc",
-        white: "#dce0e9",
-        brightBlack: "#73798b",
-        brightRed: "#ff9bae",
-        brightGreen: "#b0e9b7",
-        brightYellow: "#f6df9c",
-        brightBlue: "#a6ccff",
-        brightMagenta: "#efb6fa",
-        brightCyan: "#a6edf0",
-        brightWhite: "#ffffff",
-      },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -113,7 +105,19 @@ export function TerminalPane({
       term.dispose();
       instance.current = undefined;
     };
-  }, [id]);
+  }, [id, fontsReady]);
+  useEffect(() => {
+    if (!instance.current) return;
+    const { term, fit } = instance.current;
+    term.options = terminalOptions(appearance);
+    if (host.current?.clientWidth && host.current.clientHeight) {
+      fit.fit();
+      window.runhuddle
+        .resize(id, term.cols, term.rows)
+        .catch((e) => errorHandler.current(String(e)));
+      term.refresh(0, term.rows - 1);
+    }
+  }, [appearance, fontsReady, id]);
   useEffect(() => {
     if (!visible) return;
     const previousFocus = document.activeElement;
@@ -123,7 +127,7 @@ export function TerminalPane({
         instance.current?.term.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [visible, focused]);
+  }, [visible, focused, fontsReady]);
   return (
     <div
       className="terminal-host"

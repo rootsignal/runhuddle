@@ -80,6 +80,8 @@ export function TerminalWorkspace({
   title,
   onSelect,
   onClose,
+  onEnd,
+  onLayout,
   render,
 }: {
   workspace: string;
@@ -88,6 +90,11 @@ export function TerminalWorkspace({
   title: (t: TerminalInfo) => string;
   onSelect: (id: string) => void;
   onClose: (t: TerminalInfo, next?: string) => void;
+  onEnd: (t: TerminalInfo) => void;
+  onLayout: (info: {
+    locations: Record<string, string>;
+    focused: string;
+  }) => void;
   render: (t: TerminalInfo) => ReactNode;
 }) {
   const storageKey = "pane-layout:" + workspace;
@@ -134,6 +141,18 @@ export function TerminalWorkspace({
     localStorage.setItem(storageKey, JSON.stringify(tree));
   }, [tree, storageKey]);
   const leaves = groups(tree);
+  useEffect(() => {
+    const locations: Record<string, string> = {};
+    groups(tree).forEach((g, i) =>
+      g.tabs.forEach((id) => {
+        locations[id] = `Pane ${i + 1}` + (g.active === id ? " · Visible" : "");
+      }),
+    );
+    onLayout({
+      locations,
+      focused: locations[selected]?.split(" · ")[0] || "Pane 1",
+    });
+  }, [tree, selected, onLayout]);
   function move(
     id: string,
     targetId: string,
@@ -276,6 +295,7 @@ export function TerminalWorkspace({
                     </span>
                   </button>
                   <button
+                    title="Close tab · keeps running"
                     aria-label={`Close ${title(t)}`}
                     onClick={() =>
                       onClose(
@@ -351,6 +371,14 @@ export function TerminalWorkspace({
                     Combine all tabs into one pane
                   </button>
                 )}
+                <button
+                  onClick={() => {
+                    setMenu("");
+                    onEnd(active);
+                  }}
+                >
+                  {active.agent === "shell" ? "Close terminal" : "End session"}
+                </button>
                 <button onClick={() => setMenu("")}>Done</button>
               </div>
             )}

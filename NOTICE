@@ -15,3 +15,8 @@ Source and build instructions: https://github.com/rootsignal/runhuddle
 Use the source revision identified by the release for a matching build.
 Third-party components retain their own licenses and copyright notices.
 See ThirdPartyNotices in the app and docs/LICENSING.md in the repository.
+
+The Electron preview bundles Symbols Nerd Font Mono from Nerd Fonts v3.5.1.
+Upstream: https://github.com/ryanoasis/nerd-fonts
+The upstream LICENSE and glyph attribution README are included under
+Resources/licenses (and electron/assets/fonts in this source tree).

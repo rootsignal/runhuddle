@@ -102,6 +102,57 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(
       page.getByRole("heading", { name: "Investigate workspace navigation" }),
     ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Terminal appearance…", exact: true })
+      .click();
+    await page
+      .getByRole("combobox", { name: "Terminal theme" })
+      .selectOption("Light");
+    await page
+      .getByRole("spinbutton", { name: "Terminal font size" })
+      .fill("16");
+    await page
+      .getByRole("spinbutton", { name: "Terminal line spacing" })
+      .fill("1.15");
+    await page
+      .getByRole("combobox", { name: "Terminal cursor style" })
+      .selectOption("bar");
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.fonts.check('14px "RunHuddle Symbols"')),
+      )
+      .toBe(true);
+    await page
+      .getByText("Customize colors · text, background and ANSI palette")
+      .click();
+    await page
+      .getByRole("textbox", { name: "Blue hex", exact: true })
+      .fill("#123abc");
+    await expect(
+      page.getByRole("combobox", { name: "Terminal theme" }),
+    ).toHaveValue("Custom");
+    await page.screenshot({ path: "test-results/preview-appearance.png" });
+    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page
+      .getByRole("button", { name: "New AI session", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Start Codex session", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Start Terminal", exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Close launcher" }).click();
+    await page
+      .getByRole("button", { name: "New terminal", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Start Terminal", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Start Codex session", exact: true }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Close launcher" }).click();
     await page.getByRole("searchbox").fill("Investigate");
     await page.getByRole("button", { name: "Pinned", exact: true }).click();
     await expect(
@@ -152,6 +203,25 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       )
       .toContain("RH_UI_TEST");
     await page.screenshot({ path: "test-results/preview-terminal.png" });
+    await page
+      .locator(".terminal-tab")
+      .getByRole("button", { name: /^Close / })
+      .click();
+    await expect(page.getByRole("tab")).toHaveCount(0);
+    await expect(page.locator(".live-row")).toContainText("Tab closed");
+    expect(
+      await page.evaluate(
+        async (id) =>
+          (await (window as any).runhuddle.snapshot()).terminals.some(
+            (t: any) => t.id === id,
+          ),
+        terminalId,
+      ),
+    ).toBe(true);
+    await page.locator(".live-row").locator(".session-row").click();
+    await expect(page.getByRole("tab")).toHaveCount(1);
+    await expect(page.locator(".live-row")).toContainText("Pane 1");
+
     // Creating another tab selects it; workspace switches restore the first tab.
     await page
       .getByRole("button", { name: "New session or terminal", exact: true })
@@ -279,6 +349,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       });
     });
     await page
+      .locator(".terminal-tab")
       .getByRole("button", { name: /^Close / })
       .last()
       .click();
@@ -303,8 +374,11 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       });
     });
     await page
-      .getByRole("button", { name: /^Close / })
-      .last()
+      .getByRole("button", { name: "Arrange pane 1", exact: true })
+      .click();
+    await page
+      .locator(".pane-actions")
+      .getByRole("button", { name: "Close terminal", exact: true })
       .click();
     await expect(page.getByRole("tab")).toHaveCount(2);
     await app.evaluate(({ dialog }) => {
@@ -314,8 +388,11 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       });
     });
     await page
-      .getByRole("button", { name: /^Close / })
-      .last()
+      .getByRole("button", { name: "Arrange pane 1", exact: true })
+      .click();
+    await page
+      .locator(".pane-actions")
+      .getByRole("button", { name: "Close terminal", exact: true })
       .click();
     await expect(page.getByRole("tab")).toHaveCount(1);
     await expect(page.getByRole("tab")).toHaveAttribute(
@@ -329,6 +406,22 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     page = await app.firstWindow();
     await expect(page.getByRole("tab")).toHaveCount(1);
     console.log("UI: terminal tab ready");
+    await page
+      .getByRole("button", { name: "Terminal appearance…", exact: true })
+      .click();
+    await expect(
+      page.getByRole("spinbutton", { name: "Terminal font size" }),
+    ).toHaveValue("16");
+    await expect(
+      page.getByRole("combobox", { name: "Terminal theme" }),
+    ).toHaveValue("Custom");
+    await page
+      .getByRole("button", { name: "Restore defaults", exact: true })
+      .click();
+    await expect(
+      page.getByRole("spinbutton", { name: "Terminal font size" }),
+    ).toHaveValue("14");
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     expect(
       await page.evaluate(
         async () =>
@@ -382,7 +475,10 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       .click();
     const liveRow = page.locator(".live-row").filter({ hasText: "Codex" });
     await expect(liveRow).toHaveCount(1);
-    await page.getByRole("button", { name: /^Close / }).click();
+    await page
+      .locator(".terminal-tab")
+      .getByRole("button", { name: /^Close / })
+      .click();
     await expect(page.getByRole("tab")).toHaveCount(0);
     await expect(liveRow).toContainText("Tab closed");
     expect(

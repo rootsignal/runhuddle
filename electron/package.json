@@ -76,6 +76,14 @@
       {
         "from": "../NOTICE",
         "to": "NOTICE.runhuddle"
+      },
+      {
+        "from": "assets/fonts/LICENSE",
+        "to": "licenses/nerd-fonts-LICENSE"
+      },
+      {
+        "from": "assets/fonts/README.md",
+        "to": "licenses/nerd-fonts-README.md"
       }
     ]
   }
