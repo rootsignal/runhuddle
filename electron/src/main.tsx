@@ -8,6 +8,7 @@ import {
 import { WorkspaceTools } from "./WorkspaceTools";
 import { LaunchMenu } from "./LaunchMenu";
 import { AgentIcon, Icon, launchOptions } from "./Icons";
+import { TerminalContext } from "./TerminalContext";
 import { TerminalWorkspace } from "./TerminalWorkspace";
 import { TerminalPane } from "./Terminal";
 import type { Snapshot, Session, TerminalInfo } from "./types";
@@ -462,10 +463,9 @@ function App() {
           if (shown?.id !== t.id) select("terminal:" + t.id);
         }}
       >
-        {t.agent !== "shell" && (
+        {
           <div className="pane-heading">
-            <AgentIcon agent={t.agent} />
-            <span>{terminalTitle(t)}</span>
+            <TerminalContext cwd={t.cwd} />
             {t.exited && t.sessionID && (
               <>
                 <small>
@@ -496,7 +496,7 @@ function App() {
               </button>
             )}
           </div>
-        )}
+        }
         <div className="pane-body">
           {t.unavailable ? (
             <div className="document" role="status">

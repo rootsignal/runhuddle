@@ -335,6 +335,30 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(page.getByLabel("File diff", { exact: true })).toContainText(
       "+Updated Git review content",
     );
+    execFileSync("git", ["config", "user.name", "UI Test"], { cwd: dir });
+    execFileSync("git", ["config", "user.email", "test@example.invalid"], {
+      cwd: dir,
+    });
+    execFileSync("git", ["add", "review-fixture.txt"], { cwd: dir });
+    execFileSync("git", ["commit", "-qm", "Completed UI work"], { cwd: dir });
+    await page
+      .getByRole("button", { name: "Refresh changes", exact: true })
+      .click();
+    await expect(
+      page.getByText(
+        "No uncommitted changes. See Recent commits for completed work.",
+      ),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Recent commits", exact: true })
+      .click();
+    await expect(
+      page.getByRole("combobox", { name: "Commit to review" }),
+    ).toContainText("Completed UI work");
+    await expect(page.getByLabel("File diff", { exact: true })).toContainText(
+      "+Updated Git review content",
+    );
+    await expect(page.locator(".context-branch")).toContainText("0 changed");
     await page.screenshot({ path: "test-results/preview-git-review.png" });
     await page.setViewportSize({ width: 800, height: 600 });
     await expect(

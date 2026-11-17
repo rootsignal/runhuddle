@@ -64,3 +64,50 @@ test("new repositories and folders without Git have clear review states", async 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("clean repositories expose recent commits and committed branch changes separately", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-review-"));
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+  try {
+    git("init", "-q", "-b", "main");
+    git("config", "user.name", "Test");
+    git("config", "user.email", "test@example.invalid");
+    fs.writeFileSync(path.join(dir, "file.txt"), "initial\n");
+    git("add", ".");
+    git("commit", "-qm", "Initial fixture");
+    const initial = git("rev-parse", "HEAD");
+    git("checkout", "-qb", "feature");
+    fs.writeFileSync(path.join(dir, "file.txt"), "completed work\n");
+    git("add", ".");
+    git("commit", "-qm", "Complete feature");
+    assert.equal((await gitChanges(dir)).files.length, 0);
+    const recent = await gitChanges(dir, "recent");
+    assert.equal(recent.commits[0].title, "Complete feature");
+    assert.equal(recent.files[0].path, "file.txt");
+    assert.match(
+      await gitDiff(dir, "file.txt", "committed", "recent", recent.revision),
+      /\+completed work/,
+    );
+    assert.match(
+      await gitDiff(dir, "file.txt", "committed", "recent", initial),
+      /\+initial/,
+    );
+    const compare = await gitChanges(dir, "compare");
+    assert.equal(compare.base, initial);
+    assert.match(
+      await gitDiff(dir, "file.txt", "committed", "compare", compare.revision),
+      /\+completed work/,
+    );
+    fs.writeFileSync(path.join(dir, "file.txt"), "not committed\n");
+    assert.doesNotMatch(
+      await gitDiff(dir, "file.txt", "committed", "compare", compare.revision),
+      /not committed/,
+    );
+    await assert.rejects(gitChanges(dir, "recent", "--all"), /Invalid commit/);
+    git("branch", "-D", "main");
+    await assert.rejects(gitChanges(dir, "compare"), /No main branch/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

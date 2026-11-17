@@ -1298,3 +1298,129 @@ svg {
     z-index: 11;
   }
 }
+
+/* Connected tab strips and repository context belong to each terminal group. */
+.group-tabs {
+  min-height: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  background: #202023;
+  border-bottom: 1px solid #36363d;
+  gap: 0;
+}
+.group-tabs .tabbar {
+  padding: 0;
+  gap: 0;
+  height: 32px;
+  border: 0;
+}
+.group-tabs .terminal-tab {
+  border-radius: 0;
+  margin: 0;
+  height: 32px;
+  max-width: 250px;
+  min-width: 80px;
+  border-right: 1px solid #36363d;
+  background: transparent;
+}
+.group-tabs .terminal-tab.selected {
+  box-shadow: inset 0 2px #8fcbd0;
+  background: #18181b;
+}
+.group-tabs .terminal-tab > button:first-child {
+  padding: 5px 9px;
+  gap: 6px;
+  font-size: 11px;
+}
+.group-tabs .terminal-tab > button:last-child {
+  padding: 5px 6px;
+}
+.group-tabs .terminal-tab .agent-icon {
+  width: 17px;
+  height: 17px;
+  padding: 1px;
+}
+.group-tabs .pane-menu > button {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+.active-group > .group-tabs {
+  box-shadow: none;
+}
+.pane-heading {
+  min-height: 28px;
+  padding: 2px 8px;
+  gap: 6px;
+  border-bottom: 1px solid #303038;
+  background: #202023;
+}
+.pane-heading button {
+  padding: 3px 6px;
+  font-size: 10px;
+}
+.terminal-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  color: #a1a1aa;
+}
+.context-path {
+  min-width: 30px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.context-branch {
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b9c5c7;
+}
+.terminal-context button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.terminal-host {
+  inset: 5px 6px 3px;
+}
+.review-modes {
+  display: flex;
+  gap: 3px;
+  padding: 7px;
+  border-bottom: 1px solid #36363d;
+}
+.review-modes button {
+  flex: 1;
+  font-size: 10px;
+  padding: 5px 3px;
+  white-space: nowrap;
+}
+.review-modes button[aria-pressed="true"] {
+  background: #343439;
+  color: #8fcbd0;
+}
+.changes-panel > select {
+  margin: 8px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.review-explanation {
+  padding: 7px 12px;
+  font-size: 10px;
+  color: #a1a1aa;
+}
+.pane-heading {
+  height: 28px;
+  flex-shrink: 0;
+}
+.focused-pane .pane-heading {
+  box-shadow: none;
+}
+.pane-heading button {
+  background: transparent;
+  color: #b8b8c2;
+}

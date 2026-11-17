@@ -50,16 +50,29 @@ export interface GitFile {
   path: string;
   previous?: string;
   status: string;
-  area: "staged" | "unstaged" | "untracked";
+  area: "staged" | "unstaged" | "untracked" | "committed";
 }
 export interface GitChanges {
+  commits?: { id: string; title: string }[];
+  revision?: string;
+  base?: string;
   root: string;
   branch: string;
   files: GitFile[];
 }
 export interface API {
-  gitChanges(cwd: string): Promise<GitChanges>;
-  gitDiff(cwd: string, file: string, area: string): Promise<string>;
+  gitChanges(
+    cwd: string,
+    mode?: string,
+    revision?: string,
+  ): Promise<GitChanges>;
+  gitDiff(
+    cwd: string,
+    file: string,
+    area: string,
+    mode?: string,
+    revision?: string,
+  ): Promise<string>;
   reconnect(): Promise<void>;
   snapshot(): Promise<Snapshot>;
   chooseFolder(): Promise<string | null>;

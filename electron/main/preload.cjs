@@ -1,8 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const invoke = (method, ...args) => ipcRenderer.invoke(method, ...args);
 contextBridge.exposeInMainWorld("runhuddle", {
-  gitChanges: (cwd) => invoke("git-changes", cwd),
-  gitDiff: (cwd, file, area) => invoke("git-diff", cwd, file, area),
+  gitChanges: (cwd, mode, revision) =>
+    invoke("git-changes", cwd, mode, revision),
+  gitDiff: (cwd, file, area, mode, revision) =>
+    invoke("git-diff", cwd, file, area, mode, revision),
   reconnect: () => invoke("reconnect"),
   snapshot: () => invoke("snapshot"),
   chooseFolder: () => invoke("choose-folder"),
