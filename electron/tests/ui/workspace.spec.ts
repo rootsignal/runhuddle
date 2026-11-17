@@ -6,6 +6,22 @@ import { createRequire } from "node:module";
 import { Service } from "../../main/service.mjs";
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite");
+// Playwright waits for ChildProcess "close", including every diagnostic pipe.
+// A detached helper can outlive those pipe handles on Linux/Windows. Only close
+// the runner's pipes AFTER observing the UI process really exit; never kill the
+// helper or bypass the exit assertion to make the restart test pass.
+async function closeUI(
+  application: Awaited<ReturnType<typeof electron.launch>>,
+) {
+  const child = application.process();
+  const releasePipes = () => {
+    for (const stream of child.stdio) stream?.destroy();
+  };
+  if (child.exitCode !== null) releasePipes();
+  else child.once("exit", releasePipes);
+  await application.close();
+  expect(child.exitCode).toBe(0);
+}
 test("workspace navigation, retained search, notes and persistent terminal across full app quit", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-ui-"));
   const dbFile = path.join(dir, "sessions.sqlite");
@@ -124,7 +140,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       .toContain("RH_UI_TEST");
     await page.screenshot({ path: "test-results/preview-terminal.png" });
     console.log("UI: quitting app with live terminal");
-    await app.close();
+    await closeUI(app);
     console.log("UI: app quit, relaunching");
     app = await electron.launch(launch);
     page = await app.firstWindow();
@@ -158,7 +174,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     } finally {
       client.disconnect();
     }
-    await app.close();
+    await closeUI(app);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
