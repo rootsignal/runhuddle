@@ -6,11 +6,13 @@ import type { AppEvent } from "./types";
 export function TerminalPane({
   id,
   visible,
+  focused,
   onError,
   onTitle,
 }: {
   id: string;
   visible: boolean;
+  focused: boolean;
   onError: (error: string) => void;
   onTitle: (title: string) => void;
 }) {
@@ -100,9 +102,9 @@ export function TerminalPane({
     if (visible)
       requestAnimationFrame(() => {
         instance.current?.fit.fit();
-        instance.current?.term.focus();
+        if (focused) instance.current?.term.focus();
       });
-  }, [visible]);
+  }, [visible, focused]);
   return (
     <div
       className="terminal-host"

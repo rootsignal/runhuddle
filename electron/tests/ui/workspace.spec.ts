@@ -165,6 +165,38 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       "aria-selected",
       "true",
     );
+    await page
+      .getByRole("button", { name: /^Split / })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("separator", { name: "Resize panes" }),
+    ).toBeVisible();
+    await expect(page.locator(".terminal-host")).toHaveCount(2);
+    const splitter = page.getByRole("separator", { name: "Resize panes" });
+    await splitter.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(splitter).toHaveAttribute("aria-valuenow", "55");
+    const dividerBox = await splitter.boundingBox();
+    await page.mouse.move(dividerBox!.x + 4, dividerBox!.y + 80);
+    await page.mouse.down();
+    await page.mouse.move(dividerBox!.x - 80, dividerBox!.y + 80);
+    await page.mouse.up();
+    expect(Number(await splitter.getAttribute("aria-valuenow"))).toBeLessThan(
+      55,
+    );
+    await page.locator(".terminal-host").first().click();
+    await expect(page.getByRole("tab").nth(1)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await page.screenshot({ path: "test-results/preview-split.png" });
+    await page
+      .getByRole("button", { name: "Show only this", exact: true })
+      .first()
+      .click();
+    await expect(page.getByRole("separator")).toHaveCount(0);
+    await expect(page.locator(".terminal-host")).toHaveCount(1);
     await page.getByRole("tab").first().click();
     await page
       .getByRole("combobox", { name: "Workspace", exact: true })
@@ -242,6 +274,49 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       .getByRole("button", { name: /Investigate workspace navigation/ })
       .click();
     await page.screenshot({ path: "test-results/preview-session.png" });
+    // A shell-backed fixture exercises AI view lifecycle without launching an agent.
+    await app.evaluate(
+      ({ ipcMain }, { id, cwd }) => {
+        ipcMain.removeHandler("create");
+        ipcMain.handle("create", () => ({
+          id,
+          cwd,
+          agent: "codex",
+          title: "Fixture agent",
+          exited: false,
+        }));
+      },
+      { id: terminalId, cwd: dir },
+    );
+    await page
+      .getByRole("button", { name: "New session in this folder" })
+      .click();
+    await page
+      .getByRole("button", { name: "Start Codex session", exact: true })
+      .click();
+    const liveRow = page.locator(".live-row").filter({ hasText: "Codex" });
+    await expect(liveRow).toHaveCount(1);
+    await page.getByRole("button", { name: /^Close / }).click();
+    await expect(page.getByRole("tab")).toHaveCount(0);
+    await expect(liveRow).toContainText("Tab closed");
+    expect(
+      await page.evaluate(
+        async (id) =>
+          (await (window as any).runhuddle.snapshot()).terminals.some(
+            (t: any) => t.id === id,
+          ),
+        terminalId,
+      ),
+    ).toBe(true);
+    await liveRow.locator(".session-row").click();
+    await expect(page.getByRole("tab")).toHaveCount(1);
+    await expect(liveRow.locator(".session-row")).toHaveClass(/selected/);
+    await expect(
+      page.getByRole("button", { name: "End session", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: /Investigate workspace navigation/ })
+      .click();
     // Verify each provider choice and failure recovery without launching a paid CLI.
     await app.evaluate(({ ipcMain }) => {
       ipcMain.removeHandler("create");

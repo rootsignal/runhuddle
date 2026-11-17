@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LaunchMenu } from "./LaunchMenu";
 import { AgentIcon, Icon, launchOptions } from "./Icons";
+import { SplitView } from "./SplitView";
 import { TerminalPane } from "./Terminal";
 import type { Snapshot, Session, TerminalInfo } from "./types";
 import "./style.css";
@@ -44,6 +45,13 @@ function App() {
     readSetting("folders", []),
   );
   const [selection, setSelection] = useState("");
+  const [pair, setPair] = useState<string[]>([]);
+  const [hiddenTabs, setHiddenTabs] = useState<string[]>(() =>
+    readSetting("hiddenTabs", []),
+  );
+  useEffect(() => {
+    localStorage.setItem("hiddenTabs", JSON.stringify(hiddenTabs));
+  }, [hiddenTabs]);
   const [launcher, setLauncher] = useState(false);
   const [lastUsed, setLastUsed] = useState(() =>
     readSetting("lastLaunchType", ""),
@@ -64,7 +72,8 @@ function App() {
       .then((data) => {
         setSnapshot(data);
         const candidates = data.terminals.filter(
-          (t) => !workspace || t.cwd === workspace,
+          (t) =>
+            (!workspace || t.cwd === workspace) && !hiddenTabs.includes(t.id),
         );
         const previous = workspaceSelections[workspace];
         setSelection(
@@ -150,8 +159,11 @@ function App() {
         .sort((a, b) => b.updated - a.updated),
     [snapshot.sessions, snapshot.pinned, workspace, scope, query],
   );
-  const terminals = snapshot.terminals.filter(
+  const workspaceTerminals = snapshot.terminals.filter(
     (t) => !workspace || t.cwd === workspace,
+  );
+  const terminals = workspaceTerminals.filter(
+    (t) => !hiddenTabs.includes(t.id),
   );
   const session = snapshot.sessions.find(
     (s) => "session:" + key(s) === selection,
@@ -165,12 +177,19 @@ function App() {
       ? terminal
       : undefined;
   function select(value: string) {
+    const id = value.startsWith("terminal:") ? value.slice(9) : "";
+    if (id) {
+      setHiddenTabs((old) => old.filter((x) => x !== id));
+      if (pair.length === 2 && !pair.includes(id))
+        setPair((old) => old.map((x) => (x === shown?.id ? id : x)));
+    } else setPair([]);
     setSelection(value);
     setWorkspaceSelections((old) => ({ ...old, [workspace]: value }));
   }
   function switchWorkspace(folder: string) {
+    setPair([]);
     const candidates = snapshot.terminals.filter(
-      (t) => !folder || t.cwd === folder,
+      (t) => (!folder || t.cwd === folder) && !hiddenTabs.includes(t.id),
     );
     const previous = workspaceSelections[folder];
     setWorkspace(folder);
@@ -200,6 +219,12 @@ function App() {
       terminals: [...old.terminals.filter((x) => x.id !== t.id), t],
     }));
     setWorkspace(cwd);
+    setMode("recent");
+    setScope("all");
+    setQuery("");
+    if (cwd === workspace && pair.length === 2)
+      setPair((old) => old.map((id) => (id === shown?.id ? t.id : id)));
+    else setPair([]);
     setSelection("terminal:" + t.id);
     setWorkspaceSelections((old) => ({ ...old, [cwd]: "terminal:" + t.id }));
     setLastUsed(agent);
@@ -207,9 +232,42 @@ function App() {
     localStorage.setItem("lastLaunchType", JSON.stringify(agent));
     localStorage.setItem("lastLaunchFolder", JSON.stringify(cwd));
   }
+  function openBeside(t: TerminalInfo) {
+    setHiddenTabs((old) => old.filter((id) => id !== t.id));
+    const other =
+      shown && shown.id !== t.id
+        ? shown
+        : workspaceTerminals.find((x) => x.id !== t.id);
+    if (other) {
+      setHiddenTabs((old) =>
+        old.filter((id) => id !== t.id && id !== other.id),
+      );
+      setPair([other.id, t.id]);
+      setSelection("terminal:" + t.id);
+      setWorkspaceSelections((old) => ({
+        ...old,
+        [workspace]: "terminal:" + t.id,
+      }));
+    } else select("terminal:" + t.id);
+  }
+  function hideTab(t: TerminalInfo) {
+    const remaining = terminals.filter((x) => x.id !== t.id);
+    const other = pair.find((id) => id !== t.id);
+    setHiddenTabs((old) => [...old, t.id]);
+    setPair([]);
+    if (shown?.id === t.id)
+      select(
+        other
+          ? "terminal:" + other
+          : remaining[0]
+            ? "terminal:" + remaining[0].id
+            : "",
+      );
+  }
   async function close(t: TerminalInfo) {
     try {
       if (await window.runhuddle.close(t.id)) {
+        setPair([]);
         const index = terminals.findIndex((x) => x.id === t.id);
         const next = terminals[index + 1] || terminals[index - 1];
         setSnapshot((old) => ({
@@ -235,6 +293,59 @@ function App() {
       (x) => x.agent === "shell" && x.cwd === t.cwd,
     );
     return name(t.cwd) + (peers.length > 1 ? ` · ${peers.indexOf(t) + 1}` : "");
+  }
+  function renderTerminal(t: TerminalInfo) {
+    return (
+      <section
+        key={t.id}
+        className={
+          "terminal-pane " + (shown?.id === t.id ? "focused-pane" : "")
+        }
+        aria-label={`${terminalTitle(t)} pane`}
+        onPointerDown={() => {
+          if (shown?.id !== t.id) select("terminal:" + t.id);
+        }}
+        onFocusCapture={() => {
+          if (shown?.id !== t.id) select("terminal:" + t.id);
+        }}
+      >
+        <div className="pane-heading">
+          <AgentIcon agent={t.agent} />
+          <span>{terminalTitle(t)}</span>
+          {pair.length === 2 && (
+            <button
+              onClick={() => {
+                select("terminal:" + t.id);
+                setPair([]);
+              }}
+            >
+              Show only this
+            </button>
+          )}
+          {t.agent !== "shell" && (
+            <button onClick={() => close(t)}>
+              {t.exited ? "Remove session" : "End session"}
+            </button>
+          )}
+        </div>
+        <div className="pane-body">
+          <TerminalPane
+            id={t.id}
+            visible={true}
+            focused={shown?.id === t.id}
+            onError={setError}
+            onTitle={(title) => {
+              if (t.agent !== "shell" && title.trim())
+                setTitles((old) =>
+                  old[t.id] === title
+                    ? old
+                    : { ...old, [t.id]: title.slice(0, 120) },
+                );
+            }}
+          />
+        </div>
+      </section>
+    );
   }
   return (
     <div className={"app " + (!sidebar ? "collapsed" : "")}>
@@ -375,8 +486,60 @@ function App() {
               </>
             ) : (
               <>
+                {scope === "all" && (
+                  <>
+                    <div className="section-label">OPEN IN PREVIEW</div>
+                    {workspaceTerminals
+                      .filter((t) =>
+                        [terminalTitle(t), t.cwd, t.agent]
+                          .join(" ")
+                          .toLowerCase()
+                          .includes(query.toLowerCase()),
+                      )
+                      .map((t) => (
+                        <div key={t.id} className="live-row">
+                          <button
+                            className={
+                              "session-row " +
+                              (shown?.id === t.id ? "selected" : "")
+                            }
+                            onClick={() => select("terminal:" + t.id)}
+                          >
+                            <div className="row-top">
+                              <span>{name(t.cwd)}</span>
+                              <span className="provider">
+                                {t.agent === "shell"
+                                  ? "Terminal"
+                                  : launchOptions.find((o) => o.id === t.agent)
+                                      ?.name}
+                              </span>
+                            </div>
+                            <strong>{terminalTitle(t)}</strong>
+                            <small>
+                              {t.exited
+                                ? "Exited"
+                                : t.agent === "shell"
+                                  ? "Shell open"
+                                  : "Session open"}
+                              {hiddenTabs.includes(t.id) ? " · Tab closed" : ""}
+                            </small>
+                          </button>
+                          <button
+                            className="beside-action"
+                            aria-label={`Open ${terminalTitle(t)} beside`}
+                            disabled={
+                              !workspaceTerminals.some((x) => x.id !== t.id)
+                            }
+                            onClick={() => openBeside(t)}
+                          >
+                            Open beside
+                          </button>
+                        </div>
+                      ))}
+                  </>
+                )}
                 <div className="section-label">
-                  RECENT SESSIONS <span>{sessions.length}</span>
+                  RECORDED SESSIONS <span>{sessions.length}</span>
                 </div>
                 {sessions.map((s) => (
                   <button
@@ -479,8 +642,16 @@ function App() {
                 </span>
               </button>
               <button
+                title="Open beside"
+                aria-label={`Split ${terminalTitle(t)}`}
+                disabled={terminals.length < 2}
+                onClick={() => openBeside(t)}
+              >
+                <Icon name="sidebar" size={14} />
+              </button>
+              <button
                 aria-label={`Close ${terminalTitle(t)}`}
-                onClick={() => close(t)}
+                onClick={() => (t.agent === "shell" ? close(t) : hideTab(t))}
               >
                 <Icon name="close" size={14} />
               </button>
@@ -507,22 +678,17 @@ function App() {
           </div>
         )}
         <div className="stage">
-          {shown && (
-            <TerminalPane
-              key={shown.id}
-              id={shown.id}
-              visible={true}
-              onError={setError}
-              onTitle={(title) => {
-                if (shown.agent !== "shell" && title.trim())
-                  setTitles((old) =>
-                    old[shown.id] === title
-                      ? old
-                      : { ...old, [shown.id]: title.slice(0, 120) },
-                  );
-              }}
-            />
-          )}
+          {shown &&
+            (pair.length === 2 &&
+            pair.every((id) => terminals.some((t) => t.id === id)) ? (
+              <SplitView>
+                {pair.map((id) =>
+                  renderTerminal(terminals.find((t) => t.id === id)!),
+                )}
+              </SplitView>
+            ) : (
+              renderTerminal(shown)
+            ))}
           {!shown &&
             (session ? (
               <article className="document">

@@ -143,11 +143,20 @@ else {
         service.call("resize", { id, cols, rows }),
       );
       handle("close", async (id) => {
+        const terminal = (await service.call("list")).find((t) => t.id === id);
+        if (!terminal) return true;
+        if (terminal.exited) {
+          await service.call("close", { id });
+          return true;
+        }
+        const isAgent = terminal.agent !== "shell";
         const result = await dialog.showMessageBox(window, {
           type: "question",
-          message: "Close this terminal?",
-          detail: "Any process running in this terminal will be stopped.",
-          buttons: ["Cancel", "Close terminal"],
+          message: isAgent ? "End this AI session?" : "Close this terminal?",
+          detail: isAgent
+            ? "This stops the agent process. To keep it running, cancel and close only its tab."
+            : "Any process running in this terminal will be stopped.",
+          buttons: ["Cancel", isAgent ? "End session" : "Close terminal"],
           defaultId: 0,
           cancelId: 0,
         });
