@@ -7,15 +7,19 @@ export function TerminalPane({
   id,
   visible,
   onError,
+  onTitle,
 }: {
   id: string;
   visible: boolean;
   onError: (error: string) => void;
+  onTitle: (title: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const instance = useRef<{ term: Terminal; fit: FitAddon } | undefined>(
     undefined,
   );
+  const titleHandler = useRef(onTitle);
+  titleHandler.current = onTitle;
   const errorHandler = useRef(onError);
   errorHandler.current = onError;
   useEffect(() => {
@@ -25,10 +29,10 @@ export function TerminalPane({
       cursorBlink: true,
       scrollback: 10000,
       theme: {
-        background: "#0e131b",
-        foreground: "#d8e1ee",
-        cursor: "#5ed9e9",
-        selectionBackground: "#355470",
+        background: "#18181b",
+        foreground: "#dedee3",
+        cursor: "#b6dce0",
+        selectionBackground: "#41414b",
       },
     });
     const fit = new FitAddon();
@@ -65,6 +69,9 @@ export function TerminalPane({
         ready = true;
       })
       .catch(fail);
+    const titleSubscription = term.onTitleChange((title) =>
+      titleHandler.current(title),
+    );
     const input = term.onData((data) => {
       window.runhuddle.write(id, data).catch(fail);
     });
@@ -83,6 +90,7 @@ export function TerminalPane({
       clearTimeout(timer);
       observer.disconnect();
       input.dispose();
+      titleSubscription.dispose();
       off();
       term.dispose();
       instance.current = undefined;
