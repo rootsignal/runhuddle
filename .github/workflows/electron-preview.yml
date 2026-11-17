@@ -38,6 +38,13 @@ jobs:
       - run: npm run package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Upload UI test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-ui-tests-${{ matrix.os }}
+          path: electron/test-results/
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
           name: electron-preview-${{ matrix.os }}

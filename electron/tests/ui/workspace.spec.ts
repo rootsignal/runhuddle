@@ -56,9 +56,12 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     executablePath: process.env.RUNHUDDLE_TEST_EXECUTABLE,
   };
   let app = await electron.launch(launch);
+  console.log("UI: app launched");
+  app.process().stderr?.on("data", data => console.log(String(data)));
   let terminalId = "";
   try {
     let page = await app.firstWindow();
+    console.log("UI: window ready");
     await page.waitForLoadState("domcontentloaded");
     await expect(
       page.getByRole("button", { name: /Investigate workspace navigation/ }),
@@ -89,6 +92,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       .getByRole("button", { name: "New terminal", exact: false })
       .click();
     await expect(page.getByRole("tab")).toHaveCount(1);
+    console.log("UI: terminal tab ready");
     terminalId = await page.evaluate(
       async () => (await (window as any).runhuddle.snapshot()).terminals[0].id,
     );
@@ -109,10 +113,13 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       )
       .toContain("RH_UI_TEST");
     await page.screenshot({ path: "test-results/preview-terminal.png" });
+    console.log("UI: quitting app with live terminal");
     await app.close();
+    console.log("UI: app quit, relaunching");
     app = await electron.launch(launch);
     page = await app.firstWindow();
     await expect(page.getByRole("tab")).toHaveCount(1);
+    console.log("UI: terminal tab ready");
     expect(
       await page.evaluate(
         async () =>
@@ -133,6 +140,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       .click();
     await page.screenshot({ path: "test-results/preview-session.png" });
   } finally {
+    console.log("UI: stopping test service");
     const client = new Service(path.join(dir, "preview", "service"));
     try {
       await client.connect();
