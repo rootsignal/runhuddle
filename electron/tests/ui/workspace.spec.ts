@@ -94,7 +94,11 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     );
     await page
       .locator(".xterm-helper-textarea")
-      .pressSequentially("printf 'RH_%s\\n' UI_TEST");
+      .pressSequentially(
+        process.platform === "win32"
+          ? "echo RH_UI^_TEST"
+          : "printf 'RH_%s\\n' UI_TEST",
+      );
     await page.locator(".xterm-helper-textarea").press("Enter");
     await expect
       .poll(() =>

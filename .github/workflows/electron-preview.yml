@@ -29,6 +29,12 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - name: Test Electron UI (macOS and Windows)
+        if: runner.os != 'Linux'
+        run: npm run test:ui
+      - name: Test Electron UI (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:ui
       - run: npm run package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

@@ -69,8 +69,8 @@ function create({ cwd, agent = "shell", cols = 100, rows = 30 }) {
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.NODE_OPTIONS;
   if (!windows) {
-    env.LANG = "en_US.UTF-8";
-    env.LC_ALL = "en_US.UTF-8";
+    env.LANG = process.platform === "darwin" ? "en_US.UTF-8" : "C.UTF-8";
+    env.LC_ALL = env.LANG;
   }
   const child = pty.spawn(shell, args, {
     name: "xterm-256color",
