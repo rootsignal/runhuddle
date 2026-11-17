@@ -53,7 +53,12 @@ test("owned history survives helper restart, clears dead ownership, and retains 
     restored.update("Claude", id, { state: "saved" });
     assert.equal(new SessionLedger(dir).list()[0].state, "saved");
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 100,
+    });
   }
 });
 test("resume uses exact IDs and rejects command injection; color disabling does not leak into PTYs", () => {
@@ -154,7 +159,12 @@ test("transcript observer consumes appended events including partial lines witho
     assert.equal(patches.length, count);
   } finally {
     stop();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 100,
+    });
   }
 });
 
@@ -199,7 +209,12 @@ test("helper persists imported archive state across a full service restart", asy
       await client.call("shutdown");
     } catch {}
     client.disconnect();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 100,
+    });
   }
 });
 
