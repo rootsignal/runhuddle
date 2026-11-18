@@ -499,6 +499,26 @@ else {
       updateBrowserService();
       if (updatingBrowserService) await updatingBrowserService;
       handle("reconnect", recover);
+      handle("open-terminal-link", async (value) => {
+        const url = typeof value === "string" && !/[\x00-\x1f\x7f]/.test(value)
+          ? URL.parse(value) : null;
+        if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password)
+          throw Error("This terminal link isn’t a supported web address.");
+        const { response } = await dialog.showMessageBox(window, {
+          type: "warning",
+          message: "Open this link in your default browser?",
+          detail: url.href + "\n\nOnly open links from terminal output if you trust the destination.",
+          buttons: ["Cancel", "Open Link"],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        if (response !== 1) return;
+        try {
+          await shell.openExternal(url.href);
+        } catch {
+          throw Error("Couldn’t open the link in your default browser.");
+        }
+      });
       handle("set-app-accent", setAppAccent);
       handle("viewed-terminal", (id) => {
         const next = typeof id === "string" && id.length < 128 ? id : null;

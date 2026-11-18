@@ -58,22 +58,27 @@ export function TerminalPane({
   errorHandler.current = onError;
   useEffect(() => {
     if (!fontsReady) return;
+    let disposed = false;
+    const fail = (e: unknown) => {
+      if (!disposed) errorHandler.current(String(e));
+    };
     const term = new Terminal({
       ...terminalOptions(appearance),
       scrollback: 10000,
       disableStdin: readOnly,
+      linkHandler: {
+        activate: (_event, url) => {
+          void window.runhuddle.openTerminalLink(url).catch(fail);
+        },
+      },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current!);
     instance.current = { term, fit };
-    let disposed = false,
-      ready = false,
+    let ready = false,
       lastSequence = 0;
     const queued: Extract<AppEvent, { event: "output" }>[] = [];
-    const fail = (e: unknown) => {
-      if (!disposed) errorHandler.current(String(e));
-    };
     const off = window.runhuddle.onEvent((event) => {
       if (event.event !== "output" || event.id !== id) return;
       if (!ready) queued.push(event);

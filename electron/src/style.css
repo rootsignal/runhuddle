@@ -2153,8 +2153,16 @@ body:has(.usage-warning) .screenshot-popup { bottom: auto; top: 84px; }
   color: var(--app-secondary);
 }
 .screenshot-popup p { margin: 8px 0 0; color: var(--app-error-text); }
+.screenshot-attachment-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--app-secondary);
+}
+.screenshot-attachment-hint[data-blocked="true"] { color: var(--app-warning-text); }
 .screenshot-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 12px; }
 .screenshot-actions button { padding: 7px 10px; }
+.screenshot-actions button:disabled { cursor: default; }
 .session-alert-banner {
   display: flex;
   align-items: center;

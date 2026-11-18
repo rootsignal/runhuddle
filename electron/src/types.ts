@@ -102,7 +102,7 @@ export interface BrowserPreviewState {
   forward: boolean;
   error: string;
 }
-export type AttachmentTarget = { id: string; title: string; busy: boolean; locked?: boolean; canResume?: boolean; browserTools?: boolean };
+export type AttachmentTarget = { id: string; title: string; busy: boolean; locked?: boolean; needsInput?: boolean; canResume?: boolean; browserTools?: boolean };
 export interface EditorChoice { id: string; name: string; application: string }
 export interface Editors { editors: EditorChoice[]; preferred: string }
 export type AppEvent =
@@ -159,6 +159,7 @@ export interface API {
   cancelHistorySearch(): Promise<void>;
   inboxAction(id: string, action: "open" | "dismiss"): Promise<boolean>;
   reopenBrowserSession(id: string): Promise<TerminalInfo | null>;
+  openTerminalLink(url: string): Promise<void>;
   setAppAccent(accent: string): Promise<void>;
   locateCodexSession(id: string): Promise<void>;
   viewedTerminal(id: string | null): Promise<void>;

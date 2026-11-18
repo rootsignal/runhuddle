@@ -422,6 +422,7 @@ function App() {
   const attachmentTarget = shown && shown.agent !== "shell" && !shown.exited && connection === "connected"
     ? {
         id: shown.id, title: terminalTitle(shown), browserTools: shown.browserTools, locked: conversationLocked, canResume: !!shown.sessionID,
+        needsInput: shownSession?.state === "needsInput",
         busy: conversationLocked || ["working", "needsInput"].includes(shownSession?.state || ""),
       }
     : undefined;

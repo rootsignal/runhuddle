@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("runhuddle", {
   setAppAccent: (accent) => invoke("set-app-accent", accent),
   snapshot: () => invoke("snapshot"),
   reopenBrowserSession: (id) => invoke("reopen-browser-session", id),
+  openTerminalLink: (url) => invoke("open-terminal-link", url),
   locateCodexSession: (id) => invoke("locate-codex-session", id),
   viewedTerminal: (id) => invoke("viewed-terminal", id),
   inboxAction: (id, action) => invoke("inbox-action", id, action),

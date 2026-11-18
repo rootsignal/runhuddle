@@ -1721,6 +1721,70 @@ test("companion shell follows its session through project focus and app restart"
   }
 });
 
+test("terminal hyperlinks open in the default browser only after confirmation", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "rh-terminal-link-ui-")));
+  const profile = path.join(dir, "profile");
+  const env = { ...process.env, RUNHUDDLE_DATA: profile };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const app = await electron.launch({
+    args: process.env.RUNHUDDLE_TEST_EXECUTABLE ? [] : [path.resolve(".")],
+    executablePath: process.env.RUNHUDDLE_TEST_EXECUTABLE, env,
+  });
+  const client = new Service(path.join(profile, "service-v2"));
+  try {
+    const page = await workspacePage(app);
+    await page.evaluate((cwd) => window.runhuddle.create(cwd, "shell"), dir);
+    const url = "https://example.test/project?q=runhuddle#details";
+    await app.evaluate(({ ipcMain, dialog, shell }, destination) => {
+      const fixture = { approve: false, fail: false, confirmations: [] as object[], opened: [] as string[] };
+      (globalThis as any).linkFixture = fixture;
+      dialog.showMessageBox = (async (_, options) => {
+        fixture.confirmations.push(options);
+        return { response: fixture.approve ? 1 : 0, checkboxChecked: false };
+      }) as typeof dialog.showMessageBox;
+      shell.openExternal = async (href) => {
+        if (fixture.fail) throw Error("Browser unavailable");
+        fixture.opened.push(href);
+      };
+      ipcMain.removeHandler("replay");
+      ipcMain.handle("replay", () => ({
+        data: "\x1b]8;;" + destination + "\x1b\\RunHuddle link\x1b]8;;\x1b\\",
+        sequence: 1000000,
+      }));
+    }, url);
+    await page.locator(".live-row .session-row").getByText(path.basename(dir), { exact: true }).click();
+    const screen = page.locator(".xterm-screen");
+    await expect(screen).toContainText("RunHuddle link");
+    const clickLink = async () => {
+      const position = { x: 12, y: 6 };
+      await screen.hover({ position });
+      await screen.click({ position, modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+    };
+    await clickLink();
+    const state = () => app.evaluate(() => (globalThis as any).linkFixture);
+    await expect.poll(async () => (await state()).confirmations.length).toBe(1);
+    expect((await state()).confirmations[0]).toMatchObject({
+      defaultId: 0, cancelId: 0, detail: expect.stringContaining(url),
+    });
+    expect((await state()).opened).toEqual([]);
+    await app.evaluate(() => { (globalThis as any).linkFixture.approve = true; });
+    await clickLink();
+    await expect.poll(async () => (await state()).opened).toEqual([url]);
+    await expect(page.evaluate(() => window.runhuddle.openTerminalLink("file:///tmp/local-file")))
+      .rejects.toThrow("isn’t a supported web address");
+    expect((await state()).confirmations).toHaveLength(2);
+    expect(await app.windows()).toHaveLength(1);
+    await app.evaluate(() => { (globalThis as any).linkFixture.fail = true; });
+    await clickLink();
+    await expect(page.getByRole("alert")).toContainText("Couldn’t open the link in your default browser.");
+  } finally {
+    await closeUI(app);
+    if (await client.connectExisting()) await client.call("shutdown");
+    client.disconnect();
+    removeFixture(dir);
+  }
+});
+
 test("new screenshots offer a thumbnail, copy, dismiss, and attachment without submission", async () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "rh-screenshot-ui-")));
   const image = Buffer.from(
@@ -1760,7 +1824,8 @@ test("new screenshots offer a thumbnail, copy, dismiss, and attachment without s
     await expect(popup).toBeVisible();
     await expect(popup).toContainText(path.basename(first));
     await expect.poll(() => popup.getByRole("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
-    await expect(popup.getByRole("button", { name: "Attach to current session" })).toBeDisabled();
+    await expect(popup.getByRole("button", { name: "Select a session to attach" })).toBeDisabled();
+    await expect(popup).toContainText("Select an open AI session");
     await popup.getByRole("button", { name: "Copy path" }).click();
     await expect(popup.getByRole("button", { name: "Path copied" })).toBeVisible();
     expect(await app.evaluate(() => (globalThis as any).copiedScreenshot)).toBe(first);
@@ -1780,9 +1845,26 @@ test("new screenshots offer a thumbnail, copy, dismiss, and attachment without s
     }, shell);
     await page.locator(".live-row").getByRole("button", { name: /New Claude session/ }).click();
     await expect(page.locator(".xterm-helper-textarea")).toBeAttached();
+    const setSessionState = (state: string) => app.evaluate(({ BrowserWindow }, session) => {
+      BrowserWindow.getAllWindows()[0].webContents.send("event", { event: "store", sessions: [session] });
+    }, {
+      state, terminalId: shell.id, provider: "Claude", sessionID: "attachment-fixture",
+      title: "Attachment fixture", cwd: dir, project: path.basename(dir), preview: "", updated: Date.now() / 1000,
+    });
+    await setSessionState("working");
     const second = capture("Screenshot Rick's capture.png");
     await expect(popup).toContainText(path.basename(second));
-    await popup.getByRole("button", { name: "Attach to current session" }).click();
+    const waiting = popup.getByRole("button", { name: "Waiting for session" });
+    await expect(waiting).toBeDisabled();
+    await expect(waiting).toHaveAccessibleDescription(/The agent is working.*when the session is idle/);
+    await setSessionState("needsInput");
+    await expect(waiting).toHaveAccessibleDescription(/Answer the agent’s current prompt first/);
+    await expect(popup).toContainText(path.basename(second));
+    await setSessionState("idle");
+    const attach = popup.getByRole("button", { name: "Attach to current session" });
+    await expect(attach).toBeEnabled();
+    await expect(attach).toHaveAccessibleDescription(/Press Enter in the session to send/);
+    await attach.click();
     await expect(popup).toHaveCount(0);
     const writes = await app.evaluate(() => (globalThis as any).screenshotWrites || []);
     const attachmentWrites = writes.filter((write: { data: string }) => write.data.includes("Screenshot Rick"));
