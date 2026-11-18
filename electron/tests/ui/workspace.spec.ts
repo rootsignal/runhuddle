@@ -430,7 +430,9 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(page.locator(".diff-review .added .line-number").nth(1)).toHaveText("1");
     await page.getByRole("button", { name: "Select line 1", exact: true }).click();
     await page.getByLabel("Diff review", { exact: true }).getByRole("button", { name: "Open in Cursor", exact: true }).click();
-    expect(await app.evaluate(() => (globalThis as any).editorOpened)).toEqual({ id: "cursor", target: fs.realpathSync(dir) + "/review-fixture.txt", line: 1 });
+    const openedFile = await app.evaluate(() => (globalThis as any).editorOpened);
+    expect({ ...openedFile, target: fs.realpathSync.native(openedFile.target) })
+      .toEqual({ id: "cursor", target: fs.realpathSync.native(path.join(dir, "review-fixture.txt")), line: 1 });
     await page.screenshot({ path: "test-results/preview-diff-review.png" });
     await page.keyboard.press("Escape");
     await expect(page.getByLabel("Diff review", { exact: true })).toHaveCount(0);
