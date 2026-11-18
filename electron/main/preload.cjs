@@ -38,10 +38,9 @@ contextBridge.exposeInMainWorld("runhuddle", {
   chooseFolder: () => invoke("choose-folder"),
   create: (cwd, agent) => invoke("create", cwd, agent),
   pinSession: (provider, id, pinned) => invoke("pin-session", provider, id, pinned),
+  setHistoryHidden: (kind, id, hidden) => invoke("set-history-hidden", kind, id, hidden),
   title: (id, title) => invoke("title", id, title),
   resume: (provider, id) => invoke("resume", provider, id),
-  archive: (provider, id, archived) =>
-    invoke("archive", provider, id, archived),
   replay: (id) => invoke("replay", id),
   write: (id, data) => invoke("write", id, data),
   resize: (id, cols, rows) => invoke("resize", id, cols, rows),

@@ -13,7 +13,7 @@ export function LaunchMenu({
   cwd: string;
   projects: string[];
   lastUsed: string;
-  kind?: "all" | "ai" | "shell";
+  kind?: "all" | "ai";
   pane?: string;
   onLaunch: (agent: string, cwd: string) => Promise<unknown>;
   onDismiss: () => void;
@@ -27,7 +27,7 @@ export function LaunchMenu({
     node.showModal();
     node
       .querySelector<HTMLButtonElement>(
-        `[data-agent="${kind === "shell" ? "shell" : kind === "ai" && lastUsed === "shell" ? "codex" : lastUsed || "codex"}"]`,
+        `[data-agent="${kind === "ai" && lastUsed === "shell" ? "codex" : lastUsed || "codex"}"]`,
       )
       ?.focus();
     return () => node.close();
@@ -72,11 +72,7 @@ export function LaunchMenu({
       <div className="launch-heading">
         <div>
           <h2>
-            {kind === "shell"
-              ? "New terminal"
-              : kind === "ai"
-                ? "New AI session"
-                : "New session"}
+            {kind === "ai" ? "New AI session" : "New session"}
           </h2>
           <p>
             {folder === cwd
@@ -114,11 +110,7 @@ export function LaunchMenu({
       </div>
       <div className="launch-choices">
         {launchOptions
-          .filter(
-            (o) =>
-              kind === "all" ||
-              (kind === "shell" ? o.id === "shell" : o.id !== "shell"),
-          )
+          .filter((o) => kind === "all" || o.id !== "shell")
           .map((option) => (
             <button
               key={option.id}

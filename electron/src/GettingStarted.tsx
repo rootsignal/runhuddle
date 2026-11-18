@@ -9,10 +9,19 @@ const steps = [
   {
     id: "projects",
     title: "Browse by project",
-    text: "RunHuddle finds saved conversations on this device. Use Projects to browse by folder or Recent to browse by date.",
+    text: "Expand a folder in Projects to browse its conversations. Right-click a folder for Project overview and other actions. Use the project list’s … menu to manage hidden projects and sessions.",
     fallback: {
       id: "sidebar",
-      text: "Open the sidebar and choose Projects to find sessions by folder. Use Recent to browse sessions by date.",
+      text: "Open the sidebar and choose Projects. Expand a folder to browse its conversations.",
+    },
+  },
+  {
+    id: "project-scope",
+    title: "Focus a project",
+    text: "The folder name identifies the project you’re viewing. Click All projects beside it to bring back your wider set of tabs. Each view remembers its layout, and sessions keep running as you switch.",
+    fallback: {
+      id: "projects",
+      text: "In Projects, expand a folder and choose Focus project to see just its sessions and tabs. The folder name appears above the terminal with an All projects button to return.",
     },
   },
   {
@@ -31,6 +40,15 @@ const steps = [
     fallback: {
       id: "launch",
       text: "Open two sessions or terminals to try a split. Each pane has an Arrange menu to move a tab right or down. Right-click an open session in the sidebar to end it.",
+    },
+  },
+  {
+    id: "handoff",
+    title: "Hand off to another agent",
+    text: "Open this usage menu and choose Continue with another agent… at any time. Pick an agent and review the context. When the new session is ready, use Paste handoff and press Enter to send.",
+    fallback: {
+      id: "launch",
+      text: "In an open AI session, use the agent’s usage menu above the terminal (for example, Claude usage). Choose Continue with another agent… anytime to review and pass context to an agent such as Copilot.",
     },
   },
   {

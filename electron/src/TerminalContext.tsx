@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type { GitChanges } from "./types";
 const cache = new Map<
   string,
   { at: number; result: Promise<GitChanges | null> }
 >();
-export function TerminalContext({ cwd }: { cwd: string }) {
+export function TerminalContext({ cwd, pathLabel }: { cwd: string; pathLabel?: ReactNode }) {
   const [data, setData] = useState<GitChanges | null>(null);
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
@@ -40,9 +41,9 @@ export function TerminalContext({ cwd }: { cwd: string }) {
   }, [cwd, refresh]);
   return (
     <div className="terminal-context">
-      <span className="context-path" title={cwd}>
+      {pathLabel ?? <span className="context-path" title={cwd}>
         {cwd}
-      </span>
+      </span>}
       {data && (
         <span
           className="context-branch"

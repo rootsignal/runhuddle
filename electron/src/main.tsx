@@ -1,5 +1,7 @@
 import { useDismissMenus } from "./useDismissMenus";
 import { UsageControls } from "./UsageControls";
+import { HiddenHistoryDialog } from "./HiddenHistoryDialog";
+import { ProjectOverview } from "./ProjectOverview";
 import { ScreenshotPopup } from "./ScreenshotPopup";
 import { EditorButton } from "./EditorButton";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +29,18 @@ import "./style.css";
 import logo from "../assets/icon.png";
 const key = (s: Pick<Session, "provider" | "sessionID">) => s.provider + ":" + s.sessionID;
 const name = (p: string) => p.split(/[\\/]/).filter(Boolean).at(-1) || p;
+const emptyHiddenHistory = { projects: [], sessions: [] };
+const terminalSessionKey = (t: TerminalInfo) =>
+  `${launchOptions.find((option) => option.id === t.agent)?.name}:${t.sessionID}`;
+function openRowMenu(row: Element | null) {
+  const menu = row?.querySelector<HTMLDetailsElement>("details.row-menu");
+  if (!menu) return;
+  row?.closest(".session-sidebar")?.querySelectorAll<HTMLDetailsElement>("details.row-menu[open]").forEach((open) => {
+    if (open !== menu) open.open = false;
+  });
+  menu.open = true;
+  menu.querySelector("summary")?.focus();
+}
 const labels: Record<string, string> = {
   working: "Working",
   idle: "Idle",
@@ -34,7 +48,6 @@ const labels: Record<string, string> = {
   saved: "Previous session",
   disconnected: "Activity unavailable",
   locked: "In use elsewhere",
-  archived: "Archived",
 };
 function sessionRows(data: Snapshot, connected: boolean) {
   const liveIDs = new Set(data.terminals.filter((t) => !t.exited).map((t) => t.id));
@@ -75,22 +88,21 @@ function restoredSelection(
   data: Snapshot,
   folder: string,
   previous: string,
-  hidden: string[],
+  hiddenTabs: string[],
 ) {
+  const hidden = data.hidden ?? emptyHiddenHistory;
   if (
-    data.sessions.some((s) => "session:" + key(s) === previous) ||
+    data.sessions.some((s) => (!folder || s.cwd === folder) && !hidden.projects.includes(s.cwd) &&
+      !hidden.sessions.includes(key(s)) && "session:" + key(s) === previous) ||
     data.notes.some(
-      (n) => "note:" + n.id === previous,
+      (n) => (!folder || n.project === folder) && !hidden.projects.includes(n.project) && "note:" + n.id === previous,
     )
   )
     return previous;
-  const candidates = data.terminals.filter((t) => !hidden.includes(t.id));
+  const candidates = data.terminals.filter((t) => (!folder || t.cwd === folder) && !hiddenTabs.includes(t.id) &&
+    !hidden.projects.includes(t.cwd) && !hidden.sessions.includes(terminalSessionKey(t)));
   if (candidates.some((t) => "terminal:" + t.id === previous)) return previous;
-  const fallback =
-    candidates.find((t) => !t.exited && t.cwd === folder) ||
-    candidates.find((t) => !t.exited) ||
-    candidates.find((t) => t.cwd === folder) ||
-    candidates[0];
+  const fallback = candidates.find((t) => !t.exited) || candidates[0];
   return fallback ? "terminal:" + fallback.id : "";
 }
 function recency(updated: number) {
@@ -116,6 +128,8 @@ function App() {
   const [openAlert, setOpenAlert] = useState<SessionAlertTarget>();
   const [sessionAlert, setSessionAlert] = useState<{ key: string; alert: SessionAlert }>();
   const [showNotes, setShowNotes] = useState(0);
+  const [showHiddenHistory, setShowHiddenHistory] = useState(false);
+  const [overviewFolder, setOverviewFolder] = useState("");
   const [lockedTerminals, setLockedTerminals] = useState<ReadonlySet<string>>(() => new Set());
   function updateConversationLock(id: string, locked: boolean) {
     setLockedTerminals((old) => {
@@ -176,7 +190,7 @@ function App() {
   useEffect(() => {
     localStorage.setItem("terminalAppearance", JSON.stringify(appearance));
   }, [appearance]);
-  const [launchKind, setLaunchKind] = useState<"all" | "ai" | "shell">("all");
+  const [launchKind, setLaunchKind] = useState<"all" | "ai">("all");
   const [mode, setMode] = useState<"recent" | "workspaces" | "notes">(() =>
     readSetting<string>("sidebarMode", "recent") === "workspaces"
       ? "workspaces"
@@ -233,11 +247,13 @@ function App() {
     window.runhuddle
       .snapshot()
       .then((data) => {
+        const folder = data.hidden?.projects.includes(workspace) ? "" : workspace;
+        if (folder !== workspace) setWorkspace(folder);
         setSnapshot(data);
         if (data.openAlert) setOpenAlert(data.openAlert);
         setConnection(data.connection || "connected");
         setSelection(
-          restoredSelection(data, workspace, workspaceSelections[workspace], [
+          restoredSelection(data, folder, workspaceSelections[folder], [
             ...hiddenTabs,
             ...Object.entries(companions)
               .filter(([owner]) => data.terminals.some((t) => t.id === owner))
@@ -313,7 +329,8 @@ function App() {
     document.addEventListener("keydown", shortcuts);
     return () => document.removeEventListener("keydown", shortcuts);
   }, []);
-  const projects = useMemo(
+  const hiddenHistory = snapshot.hidden ?? emptyHiddenHistory;
+  const allProjects = useMemo(
     () =>
       [
         ...new Set([
@@ -331,36 +348,40 @@ function App() {
     () => sessionRows(snapshot, connection === "connected"),
     [snapshot.sessions, snapshot.terminals, connection],
   );
+  const projects = useMemo(() => allProjects.filter((folder) => !hiddenHistory.projects.includes(folder)),
+    [allProjects, hiddenHistory]);
+  const visibleSessions = useMemo(() => allSessions.filter((row) =>
+    !hiddenHistory.projects.includes(row.cwd) && !hiddenHistory.sessions.includes(key(row))), [allSessions, hiddenHistory]);
   const sessions = useMemo(
     () =>
-      allSessions
+      visibleSessions
         .filter(
           (s) =>
             (!workspace || s.cwd === workspace) &&
-            (scope === "all"
-              ? s.state !== "archived"
-              : scope === "pinned"
-                ? snapshot.pinned.includes(key(s))
-                : s.state === "archived") &&
+            (scope !== "pinned" || snapshot.pinned.includes(key(s))) &&
             [s.title, s.project, s.cwd, s.preview, s.provider]
               .join(" ")
               .toLowerCase()
               .includes(query.toLowerCase()),
         )
         .sort((a, b) => Number(!!b.terminalId) - Number(!!a.terminalId) || b.updated - a.updated),
-    [allSessions, snapshot.pinned, workspace, scope, query],
+    [visibleSessions, snapshot.pinned, workspace, scope, query],
   );
   const workspaceTerminals = snapshot.terminals.filter(
-    (t) => !workspace || t.cwd === workspace,
+    (t) => (!workspace || t.cwd === workspace) && !hiddenHistory.projects.includes(t.cwd) &&
+      !hiddenHistory.sessions.includes(terminalSessionKey(t)),
   );
   const companionIDs = new Set(
     Object.entries(companions)
       .filter(([owner]) => snapshot.terminals.some((t) => t.id === owner))
       .map(([, id]) => id),
   );
-  const terminals = snapshot.terminals.filter(
+  const terminals = workspaceTerminals.filter(
     (t) => !hiddenTabs.includes(t.id) && !companionIDs.has(t.id),
   );
+  useEffect(() => {
+    if (!terminals.length) setLayoutInfo({ locations: {}, focused: "Pane 1" });
+  }, [terminals.length]);
   const session = allSessions.find(
     (s) => "session:" + key(s) === selection,
   );
@@ -369,12 +390,11 @@ function App() {
     (row) => row.sessionID === note.sourceSessionID && row.provider === note.sourceProvider,
   ) : undefined;
   const foundNotes = useMemo(() => query.trim() ? snapshot.notes.filter(
-    (item) => (!workspace || item.project === workspace) && matchesNote(item, query),
-  ) : [], [query, snapshot.notes, workspace]);
-  const terminal = snapshot.terminals.find(
+    (item) => (!workspace || item.project === workspace) && !hiddenHistory.projects.includes(item.project) && matchesNote(item, query),
+  ) : [], [query, snapshot.notes, workspace, hiddenHistory]);
+  const shown = terminals.find(
     (t) => "terminal:" + t.id === selection,
   );
-  const shown = terminal;
   const shownSession = allSessions.find((row) => row.terminalId === shown?.id);
   const conversationLocked = !!shown && lockedTerminals.has(shown.id);
   const attachmentTarget = shown && shown.agent !== "shell" && !shown.exited && connection === "connected"
@@ -397,7 +417,7 @@ function App() {
     } else {
       setMode("recent");
       setQuery("");
-      setScope(row.state === "archived" ? "archived" : "all");
+      setScope("all");
       if (workspace && workspace !== row.cwd) setWorkspace(row.cwd);
       if (row.terminalId) {
         setHiddenTabs((old) => old.filter((id) => id !== row.terminalId));
@@ -406,7 +426,7 @@ function App() {
     }
     setOpenAlert(undefined);
   }, [loaded, openAlert, allSessions, workspace]);
-  function select(value: string) {
+  function select(value: string, folder = workspace) {
     setHistoryResult(undefined);
     if (value.startsWith("session:")) {
       const row = allSessions.find((s) => "session:" + key(s) === value);
@@ -422,16 +442,44 @@ function App() {
       setHiddenTabs((old) => old.filter((x) => x !== id));
     }
 
+    if (folder !== workspace) setWorkspace(folder);
     setSelection(value);
-    setWorkspaceSelections((old) => ({ ...old, [workspace]: value }));
   }
   function switchWorkspace(folder: string) {
+    if (folder === workspace) return;
+    setHistoryResult(undefined);
+    setScope("all");
     setWorkspace(folder);
+    setSelection(restoredSelection(snapshot, folder, workspaceSelections[folder] ?? selection,
+      [...hiddenTabs, ...companionIDs]));
+  }
+  function focusProject(folder: string) {
+    setOverviewFolder("");
+    switchWorkspace(folder);
+    setMode("recent");
+  }
+  function newProjectSession(folder: string) {
+    setOverviewFolder("");
+    switchWorkspace(folder);
+    setLaunchKind("ai");
+    setLauncher(true);
+  }
+  async function changeHistoryVisibility(kind: "projects" | "sessions", id: string, hide: boolean) {
+    try {
+      await window.runhuddle.setHistoryHidden(kind, id, hide);
+      if (!hide) return;
+      if (kind === "projects" && workspace === id) switchWorkspace("");
+      if (kind === "projects" ? [session?.cwd, note?.project, shown?.cwd].includes(id) : session && key(session) === id) {
+        setHistoryResult(undefined);
+        setSelection("");
+      }
+    } catch (error) { setError(String(error)); }
   }
   async function chooseWorkspace() {
     try {
       const folder = await window.runhuddle.chooseFolder();
       if (folder) {
+        if (hiddenHistory.projects.includes(folder)) await window.runhuddle.setHistoryHidden("projects", folder, false);
         setFolders((old) => [...new Set([...old, folder])]);
         switchWorkspace(folder);
       }
@@ -440,6 +488,7 @@ function App() {
     }
   }
   async function create(agent: string, cwd: string) {
+    if (hiddenHistory.projects.includes(cwd)) await window.runhuddle.setHistoryHidden("projects", cwd, false);
     const t = await window.runhuddle.create(cwd, agent);
     setSnapshot((old) => ({
       ...old,
@@ -451,7 +500,6 @@ function App() {
     if (workspace && workspace !== cwd) setWorkspace(cwd);
 
     setSelection("terminal:" + t.id);
-    setWorkspaceSelections((old) => ({ ...old, [cwd]: "terminal:" + t.id }));
     setLastUsed(agent);
     setLastFolder(cwd);
     localStorage.setItem("lastLaunchType", JSON.stringify(agent));
@@ -502,7 +550,7 @@ function App() {
     }
   }
   const launchFolder =
-    shown?.cwd || session?.cwd || note?.project || workspace || lastFolder;
+    workspace || shown?.cwd || session?.cwd || note?.project || lastFolder;
   function terminalTitle(t: TerminalInfo) {
     if (t.agent !== "shell")
       return (
@@ -536,13 +584,7 @@ function App() {
     return (
       <div key={t.id} className="live-row" onContextMenu={(event) => {
         event.preventDefault();
-        const menu = event.currentTarget.querySelector<HTMLDetailsElement>("details.row-menu");
-        if (menu) {
-          const openMenu = event.currentTarget.closest(".session-sidebar")?.querySelector<HTMLDetailsElement>("details.row-menu[open]");
-          if (openMenu && openMenu !== menu) openMenu.open = false;
-          menu.open = true;
-          menu.querySelector("summary")?.focus();
-        }
+        openRowMenu(event.currentTarget);
       }}>
         {row}
         <details className="row-menu">
@@ -614,6 +656,9 @@ function App() {
   ) {
     setResuming(true);
     try {
+      const row = allSessions.find((session) => session.provider === provider && session.sessionID === sessionID);
+      if (row && hiddenHistory.projects.includes(row.cwd)) await window.runhuddle.setHistoryHidden("projects", row.cwd, false);
+      if (row && hiddenHistory.sessions.includes(key(row))) await window.runhuddle.setHistoryHidden("sessions", key(row), false);
       const t = await window.runhuddle.resume(provider, sessionID);
       if (t) {
         if (previous && previous !== t.id) {
@@ -625,6 +670,7 @@ function App() {
           terminals: [...old.terminals.filter((x) => x.id !== t.id), t],
         }));
         setHiddenTabs((old) => old.filter((id) => id !== t.id));
+        if (workspace && workspace !== t.cwd) setWorkspace(t.cwd);
         setSelection("terminal:" + t.id);
       }
     } catch (e) {
@@ -663,7 +709,7 @@ function App() {
         className="pane-heading session-toolbar"
         aria-label="Active session toolbar"
       >
-        <TerminalContext cwd={t.cwd} />
+        <TerminalContext cwd={t.cwd} pathLabel={projectScope} />
         <button
           aria-pressed={visibleShells.includes(t.id)}
           onClick={() =>
@@ -883,11 +929,31 @@ function App() {
       </button>
     </>
   );
+  const projectScope = workspace ? (
+    <div className="project-scope" data-tour-anchor="project-scope">
+      <span className="project-scope-name" title={workspace}>
+        <Icon name="folder" size={14} />
+        <span>{name(workspace)}</span>
+      </span>
+      <button title="Return to the all-projects layout" onClick={() => switchWorkspace("")}>
+        All projects
+      </button>
+    </div>
+  ) : undefined;
   return (
     <AppearanceContext.Provider value={appearance}>
       <div className={"app " + (!sidebar ? "collapsed" : "")}>
         {customAccentOpen && <AppAccentDialog accent={accent} onClose={() => setCustomAccentOpen(false)} />}
         {showGuide && <GettingStarted onClose={dismissGuide} terminalVisible={Boolean(shown)} />}
+        {showHiddenHistory && <HiddenHistoryDialog hidden={hiddenHistory} sessions={allSessions}
+          onRestore={(kind, id) => void changeHistoryVisibility(kind, id, false)} onClose={() => setShowHiddenHistory(false)} />}
+        {overviewFolder && <ProjectOverview name={name(overviewFolder)} folder={overviewFolder}
+          sessions={visibleSessions.filter((row) => row.cwd === overviewFolder).sort((a, b) => b.updated - a.updated)}
+          running={snapshot.terminals.filter((row) => row.cwd === overviewFolder && !row.exited).length}
+          notes={snapshot.notes.filter((note) => note.project === overviewFolder).length}
+          onSelect={(row) => { focusProject(overviewFolder); select("session:" + key(row), overviewFolder); }}
+          onFocus={() => focusProject(overviewFolder)} onLaunch={() => newProjectSession(overviewFolder)}
+          onClose={() => setOverviewFolder("")} />}
         {appearanceOpen && (
           <TerminalAppearance
             value={appearance}
@@ -962,37 +1028,27 @@ function App() {
                 >
                   <option value="all">All sessions</option>
                   <option value="pinned">Pinned</option>
-                  <option value="archived">Archived</option>
                 </select>
-                {workspace && (
-                  <button
-                    className="project-chip"
-                    title={workspace + " · clear project filter"}
-                    onClick={() => switchWorkspace("")}
-                    aria-label="All projects"
-                  >
-                    {name(workspace)} ×
-                  </button>
-                )}
               </div>
             )}
             <div className="sidebar-list">
               {mode === "workspaces" ? (
                 <>
                   <div className="section-label">
-                    PROJECT FOLDERS{" "}
-                    <button
-                      title="Add project folder"
-                      onClick={chooseWorkspace}
-                    >
-                      +
-                    </button>
+                    PROJECT FOLDERS
+                    <details className="row-menu project-list-menu">
+                      <summary aria-label="Project list options" title="Project list options">•••</summary>
+                      <div onClick={(event) => { (event.currentTarget.parentElement as HTMLDetailsElement).open = false; }}>
+                        <button onClick={chooseWorkspace}>Add project folder…</button>
+                        <button onClick={() => setShowHiddenHistory(true)}>Manage hidden…</button>
+                      </div>
+                    </details>
                   </div>
                   {projects
                     .filter((p) =>
                       [
                         p,
-                        ...allSessions
+                        ...visibleSessions
                           .filter((s) => s.cwd === p)
                           .map((s) => s.title),
                       ]
@@ -1001,76 +1057,101 @@ function App() {
                         .includes(query.toLowerCase()),
                     )
                     .map((p) => {
-                      const rows = allSessions.filter(
+                      const rows = visibleSessions.filter(
                         (s) =>
                           s.cwd === p &&
-                          s.state !== "archived" &&
                           (!query ||
                             p.toLowerCase().includes(query.toLowerCase()) ||
                             s.title
                               .toLowerCase()
                               .includes(query.toLowerCase())),
                       );
+                      const actions = (
+                        <>
+                          <button
+                            onClick={() => newProjectSession(p)}
+                          >
+                            New session
+                          </button>
+                          <button
+                            onClick={() => focusProject(p)}
+                          >
+                            Focus project
+                          </button>
+                          <button onClick={() => void changeHistoryVisibility("projects", p, true)}>
+                            Hide project
+                          </button>
+                        </>
+                      );
                       return (
-                        <details
-                          className="project-group"
-                          key={p}
-                          open={workspace === p || !!query || undefined}
-                        >
-                          <summary title={p}>
-                            <Icon name="folder" />
-                            <strong>{name(p)}</strong>
-                            <small>{rows.length}</small>
-                          </summary>
-                          <div className="project-actions">
-                            <button
-                              onClick={() => {
-                                switchWorkspace(p);
-                                setLaunchKind("ai");
-                                setLauncher(true);
+                        <div className="project-row" key={p}>
+                          <details className="project-group" open={workspace === p || !!query || undefined}>
+                            <summary title={p}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                openRowMenu(event.currentTarget.closest(".project-row"));
                               }}
-                            >
-                              New session
-                            </button>
-                            <button
-                              onClick={() => {
-                                switchWorkspace(p);
-                                setMode("recent");
-                              }}
-                            >
-                              View all
-                            </button>
-                          </div>
-                          {rows.map((s) => terminalRow(terminalsById.get(s.terminalId || ""), s.title,
-                            <button
-                              className={
-                                "session-row " +
-                                (selection === "session:" + key(s) ||
-                                (s.terminalId && shown?.id === s.terminalId)
-                                  ? "selected"
-                                  : "")
-                              }
-                              key={key(s)}
-                              onClick={() => select("session:" + key(s))}
-                            >
-                              <AgentIcon agent={s.provider.toLowerCase()} />
-                              <strong title={s.preview}>{s.title}</strong>
-                              {s.terminalId && lockedTerminals.has(s.terminalId) &&
-                                <span className="row-age conversation-lock">{labels.locked}</span>}
-                              <span
-                                className={
-                                  "dot " + sidebarState(s)
+                              onKeyDown={(event) => {
+                                if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                                  event.preventDefault();
+                                  openRowMenu(event.currentTarget.closest(".project-row"));
                                 }
-                                title={s.terminalId ? labels[sidebarState(s)] : "Recorded session"}
-                              />
-                            </button>,
-                          ))}
-                          {!rows.length && (
-                            <p className="empty-small">
-                              No recorded sessions in this folder.
-                            </p>
-                          )}
-                        </details>
+                              }}>
+                              <Icon name="folder" />
+                              <strong>{name(p)}</strong>
+                              <small>{rows.length}</small>
+                            </summary>
+                            <div className="project-actions">{actions}</div>
+                            {rows.map((s) => terminalRow(terminalsById.get(s.terminalId || ""), s.title,
+                              <button
+                                className={
+                                  "session-row " +
+                                  (selection === "session:" + key(s) ||
+                                  (s.terminalId && shown?.id === s.terminalId)
+                                    ? "selected"
+                                    : "")
+                                }
+                                key={key(s)}
+                                onClick={() => {
+                                  setMode("recent");
+                                  setScope("all");
+                                  select("session:" + key(s), p);
+                                }}
+                              >
+                                <AgentIcon agent={s.provider.toLowerCase()} />
+                                <strong title={s.preview}>{s.title}</strong>
+                                {s.terminalId && lockedTerminals.has(s.terminalId) &&
+                                  <span className="row-age conversation-lock">{labels.locked}</span>}
+                                <span
+                                  className={
+                                    "dot " + sidebarState(s)
+                                  }
+                                  title={s.terminalId ? labels[sidebarState(s)] : "Recorded session"}
+                                />
+                              </button>,
+                            ))}
+                            {!rows.length && (
+                              <p className="empty-small">
+                                No recorded sessions in this folder.
+                              </p>
+                            )}
+                          </details>
+                          <details className="row-menu project-row-menu" onToggle={(event) => {
+                            const menu = event.currentTarget;
+                            if (!menu.open) return;
+                            const bottom = menu.closest(".sidebar-list")?.getBoundingClientRect().bottom ?? window.innerHeight;
+                            const height = menu.querySelector("div")?.offsetHeight ?? 0;
+                            menu.classList.toggle("opens-up", bottom - menu.getBoundingClientRect().bottom < height);
+                          }}>
+                            <summary aria-label={`Actions for project ${name(p)}`} title="Project actions">•••</summary>
+                            <div onClick={(event) => {
+                              (event.currentTarget.parentElement as HTMLDetailsElement).open = false;
+                            }}>
+                              <button onClick={() => setOverviewFolder(p)}>Project overview</button>
+                              {actions}
+                            </div>
+                          </details>
+                        </div>
                       );
                     })}
                 </>
@@ -1176,7 +1257,7 @@ function App() {
                     )}
                 </>
               )}
-              <ConversationSearch query={query} folder={workspace} scope={mode === "recent" ? scope : "all"}
+              <ConversationSearch key={JSON.stringify(hiddenHistory)} query={query} folder={workspace} scope={mode === "recent" ? scope : "all"}
                 onOpen={(result) => {
                   setHistoryResult(result);
                   setSelection("session:" + result.provider + ":" + result.sessionID);
@@ -1195,17 +1276,8 @@ function App() {
               )}
             </div>
             <footer className="sidebar-foot">
-              <button
-                className="new-shell"
-                onClick={() => {
-                  setLaunchKind("shell");
-                  setLauncher(true);
-                }}
-              >
-                <Icon name="terminal" size={15} /> New terminal
-              </button>
               <small>
-                {allSessions.length} sessions · {projects.length} projects
+                {visibleSessions.length} sessions · {projects.length} projects
               </small>
             </footer>
           </aside>
@@ -1231,7 +1303,7 @@ function App() {
               <button onClick={() => setSessionAlert(undefined)} aria-label="Dismiss session notification">×</button>
             </div>
           )}
-          {!shown && <div className="empty-tabbar">{tabControls}</div>}
+          {!shown && <div className="empty-tabbar">{tabControls}{projectScope}</div>}
           {connection !== "connected" && (
             <div className="error" role="status">
               {connection === "reconnecting"
@@ -1278,7 +1350,8 @@ function App() {
                   style={{ display: shown ? "flex" : "none" }}
                 >
                   <TerminalWorkspace
-                    workspace=""
+                    key={workspace}
+                    workspace={workspace}
                     controls={tabControls}
                     tabHost={tabHost}
                     terminals={terminals}
@@ -1317,23 +1390,8 @@ function App() {
                           !snapshot.pinned.includes(key(session))).catch((reason) => setError(String(reason)))}>
                           {snapshot.pinned.includes(key(session)) ? "Unpin session" : "Pin session"}
                         </button>
-                        <button
-                          className="secondary document-action"
-                          onClick={async () => {
-                            try {
-                              await window.runhuddle.archive(
-                                session.provider,
-                                session.sessionID,
-                                session.state !== "archived",
-                              );
-                            } catch (e) {
-                              setError(String(e));
-                            }
-                          }}
-                        >
-                          {session.state === "archived"
-                            ? "Restore from archive"
-                            : "Archive in RunHuddle"}
+                        <button onClick={() => void changeHistoryVisibility("sessions", key(session), true)}>
+                          Hide session
                         </button>
                         <button
                           className="secondary document-action"
@@ -1387,7 +1445,10 @@ function App() {
                         Export Markdown…
                       </button>
                       {noteSource && (
-                        <button onClick={() => setSelection("session:" + key(noteSource))}>
+                        <button onClick={() => {
+                          if (workspace && workspace !== noteSource.cwd) setWorkspace(noteSource.cwd);
+                          setSelection("session:" + key(noteSource));
+                        }}>
                           View source conversation
                         </button>
                       )}
@@ -1418,10 +1479,9 @@ function App() {
                       New session or terminal
                     </button>
                     <div className="welcome-recents">
-                      {snapshot.sessions
+                      {visibleSessions
                         .filter(
                           (s) =>
-                            s.state !== "archived" &&
                             (!workspace || s.cwd === workspace),
                         )
                         .slice(0, 4)

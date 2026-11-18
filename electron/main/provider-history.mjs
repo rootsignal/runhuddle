@@ -11,7 +11,7 @@ function entries(directory) {
   catch { return []; }
 }
 
-function sessionRow(agent, id, cwd, title, preview, updated, archived = false) {
+function sessionRow(agent, id, cwd, title, preview, updated) {
   try { validateID(id); } catch { return; }
   if (typeof cwd !== "string" || !path.isAbsolute(cwd) || !Number.isFinite(updated)) return;
   const provider = providers[agent];
@@ -19,7 +19,7 @@ function sessionRow(agent, id, cwd, title, preview, updated, archived = false) {
     provider, sessionID: id, cwd, project: path.basename(cwd) || cwd,
     title: (typeof title === "string" && title.trim().split(/\r?\n/, 1)[0].slice(0, 120)) || provider + " session",
     preview: typeof preview === "string" ? preview.trim().slice(0, 280) : "",
-    updated, state: archived ? "archived" : "saved",
+    updated, state: "saved",
   };
 }
 
@@ -31,14 +31,14 @@ function codexRows(home) {
     try {
       database = new DatabaseSync(path.join(home, name), { readOnly: true });
       const columns = new Set(database.prepare("PRAGMA table_info(threads)").all().map((column) => column.name));
-      const optional = ["archived", "first_user_message", "has_user_event", "preview"]
+      const optional = ["first_user_message", "has_user_event", "preview"]
         .filter((column) => columns.has(column));
       const rows = database.prepare(
         "SELECT " + ["id", "cwd", "title", "updated_at", ...optional].join(", ") + " FROM threads",
       ).all();
       return rows.filter((row) => row.has_user_event !== 0 || row.first_user_message || row.preview)
         .map((row) => sessionRow("codex", row.id, row.cwd, row.title || row.first_user_message,
-          row.preview || row.first_user_message, row.updated_at, Boolean(row.archived))).filter(Boolean);
+          row.preview || row.first_user_message, row.updated_at)).filter(Boolean);
     } catch {} finally { database?.close(); }
   }
   return [];

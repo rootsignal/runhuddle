@@ -87,7 +87,7 @@ export function UsageControls({ source, recap, onCreate }: {
   }
   return <>
     <details ref={usageMenu} className="usage-menu editor-menu">
-      <summary aria-label="Agent usage">{source.provider} usage{low ? " · " + low.remaining + "% left" : ""}</summary>
+      <summary data-tour-anchor="handoff" aria-label="Agent usage">{source.provider} usage{low ? " · " + low.remaining + "% left" : ""}</summary>
       <div>
         {windows.map(w => <p key={w.label}><strong>{w.label}: {w.remaining}% remaining</strong><br/><small>Resets {new Date(w.resetsAt).toLocaleString()}</small></p>)}
         {usage?.message && <p>{usage.message}</p>}

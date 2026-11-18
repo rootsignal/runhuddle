@@ -45,12 +45,17 @@ export interface SessionRecap {
   generatedAt: number;
   sourceUpdated: number;
 }
+export interface HiddenHistory {
+  projects: string[];
+  sessions: string[];
+}
 export interface Snapshot {
   accent?: string;
   appTheme?: "system" | "light" | "dark";
   sessions: Session[];
   notes: Note[];
   pinned: string[];
+  hidden?: HiddenHistory;
   terminals: TerminalInfo[];
   home: string;
   connection?: "connected" | "reconnecting" | "disconnected";
@@ -190,9 +195,9 @@ export interface API {
   chooseFolder(): Promise<string | null>;
   create(cwd: string, agent: string): Promise<TerminalInfo>;
   pinSession(provider: string, id: string, pinned: boolean): Promise<void>;
+  setHistoryHidden(kind: keyof HiddenHistory, id: string, hidden: boolean): Promise<void>;
   title(id: string, title: string): Promise<void>;
   resume(provider: string, id: string): Promise<TerminalInfo | null>;
-  archive(provider: string, id: string, archived: boolean): Promise<void>;
   replay(id: string): Promise<{ data: string; sequence: number }>;
   write(id: string, data: string): Promise<void>;
   resize(id: string, cols: number, rows: number): Promise<void>;

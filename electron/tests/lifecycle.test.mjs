@@ -78,7 +78,7 @@ test("Claude hook reports only its own session and leaves CLI decisions untouche
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
-test("owned history survives helper restart, clears dead ownership, and retains archives", () => {
+test("owned history survives helper restart and clears dead ownership", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-ledger-"));
   try {
     const l = new SessionLedger(dir);
@@ -92,10 +92,6 @@ test("owned history survives helper restart, clears dead ownership, and retains 
     assert.equal(restored.list()[0].state, "saved");
     assert.equal(restored.list()[0].terminalId, undefined);
     assert.equal(restored.list()[0].title, "Keep this");
-    restored.update("Claude", id, { state: "archived" });
-    assert.equal(new SessionLedger(dir).list()[0].state, "archived");
-    restored.update("Claude", id, { state: "saved" });
-    assert.equal(new SessionLedger(dir).list()[0].state, "saved");
   } finally {
     fs.rmSync(dir, {
       recursive: true,
@@ -214,20 +210,15 @@ test("transcript observer consumes appended events including partial lines witho
   }
 });
 
-test("helper persists archives across a full service restart", async () => {
+test("helper loads legacy archived conversations as saved after a restart", async () => {
   const { Service } = await import("../main/service.mjs");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-history-service-"));
   let client = new Service(dir);
   try {
     new SessionLedger(dir).update("Claude", id, { cwd: dir, project: "Fixture",
-      title: "Retained history", preview: "Keep context", state: "saved" });
+      title: "Retained history", preview: "Keep context", state: "archived" });
     await client.connect();
-    await client.call("archive", {
-      provider: "Claude",
-      sessionID: id,
-      archived: true,
-    });
-    assert.equal((await client.call("sessions"))[0].state, "archived");
+    assert.equal((await client.call("sessions"))[0].state, "saved");
     await client.call("shutdown");
     client.disconnect();
     await new Promise((r) => setTimeout(r, 150));
@@ -236,13 +227,7 @@ test("helper persists archives across a full service restart", async () => {
     const rows = await client.call("sessions");
     assert.equal(rows.length, 1);
     assert.equal(rows[0].title, "Retained history");
-    assert.equal(rows[0].state, "archived");
-    await client.call("archive", {
-      provider: "Claude",
-      sessionID: id,
-      archived: false,
-    });
-    assert.equal((await client.call("sessions"))[0].state, "saved");
+    assert.equal(rows[0].state, "saved");
   } finally {
     try {
       await client.call("shutdown");

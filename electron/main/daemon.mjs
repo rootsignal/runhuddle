@@ -297,25 +297,6 @@ const server = net.createServer((socket) => {
         case "sessions":
           result = ledger.list();
           break;
-        case "archive": {
-          const row = ledger.rows.get(
-            request.provider + ":" + validateID(request.sessionID),
-          );
-          if (!row) throw Error("Session not found");
-          if (
-            [...terminals.values()].some(
-              (t) =>
-                sessionKey(t) === request.provider + ":" + request.sessionID &&
-                !t.exited,
-            )
-          )
-            throw Error("End the session before archiving it");
-          ledger.update(request.provider, request.sessionID, {
-            state: request.archived ? "archived" : "saved",
-          });
-          history();
-          break;
-        }
         case "replay":
           if (!t) throw new Error("Terminal no longer exists");
           clearTimeout(t.flush);

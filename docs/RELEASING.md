@@ -22,4 +22,4 @@ bash scripts/publish-macos.sh
 
 Keep the original build outputs if publication needs a retry. The script checks notarization tickets, publishes the versioned release and then updates the `electron-stable` channel. The site verifies the checksum and agreement between the two releases before publishing the download link. Use the same Developer ID signing identity across successive builds.
 
-The first Electron release supports Apple Silicon with macOS 14 or later. Windows and Linux can be included in a manual Electron CI run. Their package targets are NSIS and AppImage.
+Public macOS builds support Apple Silicon with macOS 14 or later. Windows and Linux can be included in a manual Electron CI run. Their package targets are NSIS and AppImage.

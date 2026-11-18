@@ -394,7 +394,7 @@ export class SessionLedger {
         this.rows.set(r.provider + ":" + r.sessionID, {
           ...r,
           terminalId: undefined,
-          state: r.state === "archived" ? "archived" : "saved",
+          state: "saved",
         });
     }
   }

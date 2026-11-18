@@ -52,7 +52,7 @@ async function chooseProject(page: any, folder: string) {
   });
   if (!(await group.evaluate((el: any) => el.open)))
     await group.locator("summary").click();
-  await group.getByRole("button", { name: "View all", exact: true }).click();
+  await group.getByRole("button", { name: "Focus project", exact: true }).click();
 }
 test("workspace navigation, retained search, notes and persistent terminal across full app quit", async () => {
   test.setTimeout(90000);
@@ -71,7 +71,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
   fs.writeFileSync(path.join(data, "service-v2", "sessions.json"), JSON.stringify([{
     provider: "Claude", sessionID: "11111111-1111-4111-8111-111111111111",
     title: "Investigate workspace navigation", cwd: dir, project: "Fixture project",
-    preview: "A saved conversation", state: "saved", updated: Date.now() / 1000,
+    preview: "A saved conversation", state: "archived", updated: Date.now() / 1000,
   }]));
   const notesFile = path.join(data, "notes", "notes.sqlite");
   notesStore(notesFile).save({
@@ -153,8 +153,10 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await checkSpotlight("launch");
     for (const [title, anchor] of [
       ["Browse by project", "projects"],
+      ["Focus a project", "projects"],
       ["Find a conversation", "search"],
       ["Organize open tabs", "launch"],
+      ["Hand off to another agent", "launch"],
       ["Adjust terminal appearance", "appearance"],
       ["Review Git changes", "changes"],
       ["Save project notes", "notes"],
@@ -164,6 +166,10 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       await guide.getByRole("button", { name: "Next" }).click();
       await expect(guide.getByRole("heading", { name: title })).toBeVisible();
       await checkSpotlight(anchor);
+      if (title === "Hand off to another agent") {
+        await expect(guide).toContainText("Claude usage");
+        await expect(guide).toContainText("Continue with another agent… anytime");
+      }
     }
     await guide.getByRole("button", { name: "Done" }).click();
     await expect(guide).toHaveCount(0);
@@ -183,8 +189,11 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(guide).toContainText("Open the sidebar and choose Projects");
     await checkSpotlight("sidebar");
     await guide.getByRole("button", { name: "Next" }).click();
+    await expect(guide.getByRole("heading", { name: "Focus a project" })).toBeVisible();
+    await guide.getByRole("button", { name: "Next" }).click();
     await expect(guide).toContainText("Open the sidebar to search sessions and notes.");
     await checkSpotlight("sidebar");
+    await guide.getByRole("button", { name: "Back" }).click();
     await guide.getByRole("button", { name: "Back" }).click();
     await guide.getByRole("button", { name: "Back" }).click();
     await expect(guide.getByRole("heading", { name: "Start a session" })).toBeVisible();
@@ -389,16 +398,9 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       page.getByRole("button", { name: "Start Terminal", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Close launcher" }).click();
-    await page
-      .getByRole("button", { name: "New terminal", exact: true })
-      .click();
     await expect(
-      page.getByRole("button", { name: "Start Terminal", exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Start Codex session", exact: true }),
+      page.getByRole("button", { name: "New terminal", exact: true }),
     ).toHaveCount(0);
-    await page.getByRole("button", { name: "Close launcher" }).click();
     await page
       .getByRole("searchbox", { name: "Search sessions and notes" })
       .fill("Investigate");
@@ -515,7 +517,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     });
     await page.getByLabel("Choose editor", { exact: true }).click();
     await expect(page.getByRole("button", { name: "Cursor", exact: true })).toBeVisible();
-    await page.locator(".context-path").click();
+    await page.locator(".project-scope-name").click();
     await expect(page.getByRole("button", { name: "Cursor", exact: true })).toBeHidden();
     await page.getByLabel("Choose editor", { exact: true }).click();
     await page.keyboard.press("Escape");
@@ -867,14 +869,12 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       .click();
     await expect(page.getByRole("tab")).toHaveCount(2);
     await page.getByRole("tab").first().click();
+    const focusedProjectTab = await page.getByRole("tab", { selected: true }).getAttribute("title");
     await chooseProject(page, "");
     await page.locator(".live-row").first().locator(".session-row").click();
     await page.getByRole("tab").nth(1).click();
     await chooseProject(page, dir);
-    await expect(page.getByRole("tab").nth(1)).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    await expect(page.getByRole("tab", { selected: true })).toHaveAttribute("title", focusedProjectTab!);
     await page.getByRole("tab").nth(1).click();
     await app.evaluate(({ dialog }) => {
       dialog.showMessageBox = async () => ({
@@ -1181,7 +1181,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       .locator(".sidebar-list")
       .getByRole("button", { name: /Investigate workspace navigation/ })
       .click();
-    // Archive/restore imports locally, preserving one exact-ID record.
+    // Keep pinning available for the conversation recovered from the old ledger.
     if (
       !(await page
         .locator(".document-more")
@@ -1189,18 +1189,18 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     )
       await page.locator(".document-more summary").click();
     await page
-      .getByRole("button", { name: "Archive in RunHuddle", exact: true })
+      .getByRole("button", { name: "Pin session", exact: true })
       .click();
     await page
       .getByRole("combobox", { name: "Session filter" })
-      .selectOption("archived");
+      .selectOption("pinned");
     await expect(
       page
         .locator(".sidebar-list")
         .getByRole("button", { name: /Investigate workspace navigation/ }),
     ).toHaveCount(1);
     await page
-      .getByRole("button", { name: "Restore from archive", exact: true })
+      .getByRole("button", { name: "Unpin session", exact: true })
       .click();
     await page
       .getByRole("combobox", { name: "Session filter" })
@@ -1464,7 +1464,109 @@ test("Browser can reopen a saved conversation after replacing its idle older ter
   }
 });
 
-test("companion shell persists without becoming a tab or following project filters", async () => {
+test("project focus keeps its own tabs and layout while other terminals stay open", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-project-layout-"));
+  const first = path.join(dir, "first-project"), second = path.join(dir, "second-project");
+  fs.mkdirSync(first);
+  fs.mkdirSync(second);
+  execFileSync("git", ["init", "-q"], { cwd: second });
+  fs.writeFileSync(path.join(second, "project.txt"), "fixture\n");
+  const data = path.join(dir, "profile");
+  const helper = path.join(data, "service-v2");
+  fs.mkdirSync(helper, { recursive: true });
+  fs.writeFileSync(path.join(helper, "sessions.json"), JSON.stringify([{
+    provider: "Claude", sessionID: "12345678-1234-4234-8234-123456781234",
+    title: "Second project conversation", cwd: second, project: "Second project",
+    preview: "", state: "saved", updated: Date.now() / 1000,
+  }]));
+  const env = { ...process.env, RUNHUDDLE_DATA: data };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const launch = {
+    args: process.env.RUNHUDDLE_TEST_EXECUTABLE ? [] : [path.resolve(".")],
+    executablePath: process.env.RUNHUDDLE_TEST_EXECUTABLE, env,
+  };
+  let app = await electron.launch(launch);
+  const client = new Service(helper);
+  try {
+    let page = await workspacePage(app);
+    await page.evaluate(async (folders) => {
+      for (const folder of folders) await window.runhuddle.create(folder, "shell");
+    }, [first, first, second]);
+    const secondTab = () => page.getByRole("tab", { name: "second-project", exact: true });
+    const arrange = () => page.getByRole("button", { name: "Arrange pane 1", exact: true });
+    const split = () => page.getByRole("separator", { name: "Resize panes" });
+    const all = () => page.getByRole("button", { name: "All projects", exact: true });
+    const projectScope = () => page.locator('.project-scope');
+    await page.locator(".live-row .session-row").getByText("second-project", { exact: true }).click();
+    await expect(page.getByRole("tab")).toHaveCount(3);
+    await arrange().click();
+    await page.getByRole("button", { name: "Move tab right", exact: true }).click();
+    await expect(split()).toHaveAttribute("aria-orientation", "vertical");
+
+    await chooseProject(page, first);
+    await expect(projectScope()).toContainText("first-project");
+    await app.evaluate(({ Menu, BrowserWindow }) => {
+      const item = Menu.getApplicationMenu()?.getMenuItemById("getting-started");
+      if (!item) throw Error("Missing Help menu item.");
+      item.click(item, BrowserWindow.getAllWindows()[0], {} as any);
+    });
+    const guide = page.getByRole("dialog", { name: "Getting started" });
+    await guide.getByRole("button", { name: "Next" }).click();
+    await guide.getByRole("button", { name: "Next" }).click();
+    await expect(guide.getByRole("heading", { name: "Focus a project" })).toBeVisible();
+    await expect(guide).toContainText("Click All projects beside it");
+    const scopeBounds = (await projectScope().boundingBox())!;
+    await expect.poll(async () => (await guide.locator(".tour-highlight").boundingBox())?.x)
+      .toBe(scopeBounds.x - 4);
+    await guide.getByRole("button", { name: "Skip guide" }).click();
+    await projectScope().getByText("first-project", { exact: true }).click();
+    await expect(all()).toBeVisible();
+    await expect(secondTab()).toHaveCount(0);
+    await expect(page.getByRole("tab")).toHaveCount(2);
+    await arrange().click();
+    await page.getByRole("button", { name: "Move tab down", exact: true }).click();
+    await expect(split()).toHaveAttribute("aria-orientation", "horizontal");
+    await chooseProject(page, "");
+    await expect(secondTab()).toHaveAttribute("aria-selected", "true");
+    await expect(split()).toHaveAttribute("aria-orientation", "vertical");
+
+    await page.getByRole("button", { name: "Projects", exact: true }).click();
+    const secondGroup = page.locator(".project-group").filter({ has: page.locator("summary", { hasText: "second-project" }) });
+    await secondGroup.locator("summary").click({ button: "right" });
+    await page.getByRole("button", { name: "Project overview", exact: true }).click();
+    const overview = page.getByRole("dialog", { name: "second-project", exact: true });
+    await expect(overview).toContainText(second);
+    await expect(overview).toContainText("Running terminals");
+    await expect(overview).toContainText("1 changed");
+    await expect(overview.getByRole("button", { name: "Second project conversation", exact: false })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(overview).toHaveCount(0);
+    await secondGroup.locator("summary").click();
+    await secondGroup.getByRole("button", { name: /Second project conversation/ }).click();
+    await expect(projectScope()).toContainText("second-project");
+    await expect(page.getByRole("heading", { name: "Second project conversation", exact: true })).toBeVisible();
+    await expect(page.locator(".live-row .session-row")).toHaveCount(1);
+
+    await chooseProject(page, first);
+    await expect(split()).toHaveAttribute("aria-orientation", "horizontal");
+    await closeUI(app);
+    app = await electron.launch(launch);
+    page = await workspacePage(app);
+    await expect(projectScope()).toContainText("first-project");
+    await expect(page.getByRole("tab")).toHaveCount(2);
+    await expect(split()).toHaveAttribute("aria-orientation", "horizontal");
+    await chooseProject(page, "");
+    await expect(page.getByRole("tab")).toHaveCount(3);
+    await expect(split()).toHaveAttribute("aria-orientation", "vertical");
+  } finally {
+    await closeUI(app);
+    if (await client.connectExisting()) await client.call("shutdown");
+    client.disconnect();
+    removeFixture(dir);
+  }
+});
+
+test("companion shell follows its session through project focus and app restart", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-companion-ui-"));
   const other = path.join(dir, "other");
   fs.mkdirSync(other);
@@ -1522,11 +1624,15 @@ test("companion shell persists without becoming a tab or following project filte
       ),
     ).toBe(id);
     await chooseProject(page, other);
-    await expect(page.getByRole("tab")).toHaveCount(2);
+    await expect(page.getByRole("tab")).toHaveCount(1);
+    await expect(page.getByRole("tab", { name: "other", exact: true })).toBeVisible();
     await expect(
       page.getByRole("region", { name: "Companion shell" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(page.locator(".live-row")).toHaveCount(1);
+    await chooseProject(page, "");
+    await expect(page.getByRole("tab")).toHaveCount(2);
+    await expect(page.getByRole("region", { name: "Companion shell" })).toBeVisible();
     const resize = page.getByRole("separator", { name: "Resize panes" });
     await resize.focus();
     await resize.press("ArrowUp");
@@ -1749,7 +1855,7 @@ test("browser preview shares reports and grants the active agent revocable live 
     const guide = page.getByRole("dialog", { name: "Getting started" });
     await expect(guide).toBeVisible();
     await expect.poll(async () => (await browserChild()).visible).toBe(false);
-    for (const title of ["Browse by project", "Find a conversation", "Organize open tabs"]) {
+    for (const title of ["Browse by project", "Focus a project", "Find a conversation", "Organize open tabs"]) {
       await guide.getByRole("button", { name: "Next" }).click();
       await expect(guide.getByRole("heading", { name: title })).toBeVisible();
     }
@@ -1757,6 +1863,18 @@ test("browser preview shares reports and grants the active agent revocable live 
     const arrange = (await page.locator('[data-tour-anchor="arrange"]').boundingBox())!;
     await expect.poll(async () => (await guide.locator(".tour-highlight").boundingBox())?.x)
       .toBe(arrange.x - 4);
+    await guide.getByRole("button", { name: "Next" }).click();
+    await expect(guide.getByRole("heading", { name: "Hand off to another agent" })).toBeVisible();
+    await expect(guide).toContainText("Paste handoff");
+    const usage = page.getByLabel("Agent usage", { exact: true });
+    await expect(usage).toContainText("Claude usage");
+    const usageBounds = (await usage.boundingBox())!;
+    await expect.poll(() => guide.locator(".tour-highlight").boundingBox()).toEqual({
+      x: usageBounds.x - 4,
+      y: usageBounds.y - 4,
+      width: usageBounds.width + 8,
+      height: usageBounds.height + 8,
+    });
     await guide.getByRole("button", { name: "Skip guide" }).click();
     await expect(page.locator(".xterm-helper-textarea")).toBeAttached();
     await expect.poll(async () => (await browserChild()).visible).toBe(true);
@@ -1916,7 +2034,10 @@ test("a fresh profile discovers existing local provider sessions", async () => {
   const copilotID = "33333333-3333-4333-8333-333333333333";
   const claudeProject = path.join(env.CLAUDE_CONFIG_DIR, "projects", dir.replace(/[^a-zA-Z0-9]/g, "-"));
   const copilotSession = path.join(env.COPILOT_HOME, "session-state", copilotID);
-  for (const folder of [env.CODEX_HOME, claudeProject, copilotSession]) fs.mkdirSync(folder, { recursive: true });
+  for (const folder of [env.RUNHUDDLE_DATA, env.CODEX_HOME, claudeProject, copilotSession])
+    fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(env.RUNHUDDLE_DATA, "provider-history-archive.json"),
+    JSON.stringify({ ["Claude:" + claudeID]: true }));
   const writeEvents = (file: string, rows: unknown[]) =>
     fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
   const codexTranscript = path.join(env.CODEX_HOME, "rollout.jsonl");
@@ -1924,8 +2045,8 @@ test("a fresh profile discovers existing local provider sessions", async () => {
     { type: "event_msg", payload: { type: "user_message", message: "Read the package manifest." } },
   ]);
   const db = new DatabaseSync(path.join(env.CODEX_HOME, "state_5.sqlite"));
-  db.exec("CREATE TABLE threads (id TEXT, cwd TEXT, title TEXT, updated_at INTEGER, rollout_path TEXT)");
-  db.prepare("INSERT INTO threads VALUES (?, ?, ?, ?, ?)").run(
+  db.exec("CREATE TABLE threads (id TEXT, cwd TEXT, title TEXT, updated_at INTEGER, rollout_path TEXT, archived INTEGER)");
+  db.prepare("INSERT INTO threads VALUES (?, ?, ?, ?, ?, 1)").run(
     codexID, dir, "Codex release history", Math.floor(Date.now() / 1000), codexTranscript,
   );
   db.close();
@@ -1936,21 +2057,60 @@ test("a fresh profile discovers existing local provider sessions", async () => {
     { type: "session.start", data: { context: { cwd: dir } } },
     { type: "user.message", data: { content: "Copilot project history" } },
   ]);
-  const app = await electron.launch({
+  const launch = {
     args: process.env.RUNHUDDLE_TEST_EXECUTABLE ? [] : [path.resolve(".")],
     executablePath: process.env.RUNHUDDLE_TEST_EXECUTABLE, env,
-  });
+  };
+  let app = await electron.launch(launch);
   try {
-    const page = await workspacePage(app);
-    const sidebar = page.locator(".sidebar-list");
+    let page = await workspacePage(app);
+    const sidebar = () => page.locator(".sidebar-list");
     for (const title of ["Codex release history", "Claude workspace history", "Copilot project history"])
-      await expect(sidebar.getByRole("button", { name: new RegExp(title) })).toBeVisible();
-    await sidebar.getByRole("button", { name: /Codex release history/ }).click();
+      await expect(sidebar().getByRole("button", { name: new RegExp(title) })).toBeVisible();
+    await sidebar().getByRole("button", { name: /Codex release history/ }).click();
     await expect(page.getByRole("region", { name: "Conversation history" })
       .getByText("Read the package manifest.", { exact: true })).toBeVisible();
     await page.locator(".document-more summary").click();
-    await page.getByRole("button", { name: "Archive in RunHuddle" }).click();
-    await expect(sidebar.getByRole("button", { name: /Codex release history/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pin session", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /archive/i })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Session filter" }).locator("option"))
+      .toHaveText(["All sessions", "Pinned"]);
+    await page.getByRole("button", { name: "Hide session", exact: true }).click();
+    await expect(sidebar().getByRole("button", { name: /Codex release history/ })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Projects", exact: true }).click();
+    const project = sidebar().locator(".project-group");
+    const projectHeader = project.locator("summary");
+    const projectMenu = sidebar().locator(".project-row-menu");
+    await projectHeader.click({ button: "right" });
+    await expect(project).not.toHaveAttribute("open", "");
+    await expect(projectMenu.getByRole("button", { name: "Focus project", exact: true })).toBeVisible();
+    await expect(projectMenu.getByRole("button", { name: "New session", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(projectMenu).not.toHaveAttribute("open", "");
+    await projectHeader.press("Shift+F10");
+    await expect(projectMenu.getByRole("button", { name: "Hide project", exact: true })).toBeVisible();
+    await page.getByRole("searchbox", { name: "Search sessions and notes" }).click();
+    await expect(projectMenu).not.toHaveAttribute("open", "");
+    await projectHeader.click({ button: "right" });
+    await projectMenu.getByRole("button", { name: "Hide project", exact: true }).click();
+    await expect(sidebar().locator(".project-group")).toHaveCount(0);
+    await closeUI(app);
+    app = await electron.launch(launch);
+    page = await workspacePage(app);
+    await expect(sidebar().locator(".project-group")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Manage hidden…", exact: true })).toHaveCount(0);
+    await page.getByLabel("Project list options", { exact: true }).click();
+    await page.getByRole("button", { name: "Manage hidden…", exact: true }).click();
+    const hidden = page.getByRole("dialog", { name: "Hidden projects and sessions" });
+    await expect(hidden).toContainText("Codex release history");
+    await hidden.getByRole("button", { name: "Restore project", exact: true }).click();
+    await hidden.getByRole("button", { name: "Restore session", exact: true }).click();
+    await expect(hidden).toContainText("No hidden projects or sessions.");
+    await hidden.getByRole("button", { name: "Close hidden history", exact: true }).click();
+    await page.getByRole("button", { name: "Recent", exact: true }).click();
+    await expect(sidebar().getByRole("button", { name: /Codex release history/ })).toBeVisible();
+    expect(fs.existsSync(codexTranscript)).toBe(true);
   } finally {
     await closeUI(app);
     const service = new Service(path.join(env.RUNHUDDLE_DATA, "service-v2"));

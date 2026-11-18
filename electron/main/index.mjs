@@ -99,19 +99,15 @@ async function createTerminal(args, browserReopen = false) {
     updateBrowserService();
   }
 }
-const providerArchiveFile = path.join(app.getPath("userData"), "provider-history-archive.json");
-let providerArchive = {};
-try { providerArchive = JSON.parse(fs.readFileSync(providerArchiveFile, "utf8")) || {}; } catch {}
 let ledgerSessions = [], providerSessions = [], managed = [];
 let providerHistoryWorker, providerHistoryScanning = false, lastProviderHistoryScan = 0;
 const sessionKey = (row) => row.provider + ":" + row.sessionID;
 function mergeSessionHistory() {
-  const sessions = new Map(providerSessions.map((row) => {
-    const key = sessionKey(row);
-    const archived = providerArchive[key];
-    return [key, typeof archived === "boolean" ? { ...row, state: archived ? "archived" : "saved" } : row];
-  }));
-  for (const row of ledgerSessions) sessions.set(sessionKey(row), row);
+  const sessions = new Map(providerSessions.map((row) => [sessionKey(row), row]));
+  // A helper from an earlier release can keep running across an update.
+  for (const row of ledgerSessions) {
+    sessions.set(sessionKey(row), row.state === "archived" ? { ...row, state: "saved" } : row);
+  }
   managed = [...sessions.values()];
 }
 function refreshProviderHistory() {
@@ -143,6 +139,14 @@ const allTerminals = async () => {
   return inventory.reconcile(rows);
 };
 const pinsFile = path.join(app.getPath("userData"), "pinned-sessions.json");
+const cleanupFile = path.join(app.getPath("userData"), "hidden-history.json");
+let hidden = { projects: [], sessions: [] };
+try {
+  const saved = JSON.parse(fs.readFileSync(cleanupFile, "utf8"));
+  for (const kind of ["projects", "sessions"]) {
+    if (Array.isArray(saved[kind])) hidden[kind] = saved[kind].filter((id) => typeof id === "string");
+  }
+} catch {}
 let pinned = [];
 try {
   const existing = JSON.parse(fs.readFileSync(pinsFile, "utf8"));
@@ -155,6 +159,7 @@ const publishStore = () => {
     event: "store",
     sessions: managed,
     pinned,
+    hidden,
     notes,
   });
 };
@@ -522,6 +527,7 @@ else {
           appTheme: appAppearance.theme,
           accent: appAppearance.accent,
           pinned,
+          hidden,
           sessions: managed,
           notes,
           terminals,
@@ -616,12 +622,14 @@ else {
         if (typeof query !== "string" || query.trim().length < 2 || query.length > 120)
           return { results: [], incomplete: false };
         const pins = new Set(pinned);
+        const hiddenProjects = new Set(hidden.projects);
+        const hiddenSessions = new Set(hidden.sessions);
         const generation = searchGeneration;
         const sessions = managed.filter((row) =>
           hasHistory(row) &&
+          !hiddenProjects.has(row.cwd) && !hiddenSessions.has(sessionKey(row)) &&
           (!folder || row.cwd === folder) &&
-          (scope === "archived" ? row.state === "archived" :
-            row.state !== "archived" && (scope !== "pinned" || pins.has(row.provider + ":" + row.sessionID))),
+          (scope !== "pinned" || pins.has(sessionKey(row))),
         ).sort((a, b) => b.updated - a.updated).map(historySource);
         const indexed = historyIndex.search(sessions, query, refresh !== false);
         if (indexed) {
@@ -692,26 +700,26 @@ else {
       handle("title", async (id, title) => {
         if (ownedIds.has(id)) await service.call("title", { id, title });
       });
-      handle("archive", async (provider, sessionID, archived) => {
-        const key = provider + ":" + sessionID;
-        if (typeof archived !== "boolean" || !managed.some((row) => sessionKey(row) === key))
-          throw Error("Session not available");
-        if (
-          (await allTerminals()).some(
-            (t) =>
-              t.agent === provider.toLowerCase() &&
-              t.sessionID === sessionID &&
-              !t.exited,
-          )
-        )
-          throw Error("End the session before archiving it");
-        if (ledgerSessions.some((row) => sessionKey(row) === key))
-          return service.call("archive", { provider, sessionID, archived });
-        const next = { ...providerArchive, [key]: archived };
-        fs.writeFileSync(providerArchiveFile + ".tmp", JSON.stringify(next), { mode: 0o600 });
-        fs.renameSync(providerArchiveFile + ".tmp", providerArchiveFile);
-        providerArchive = next;
-        mergeSessionHistory();
+      handle("set-history-hidden", async (kind, id, hide) => {
+        if ((kind !== "projects" && kind !== "sessions") || typeof id !== "string" ||
+            typeof hide !== "boolean" || (kind === "projects" && !path.isAbsolute(id)))
+          throw Error("Invalid cleanup selection.");
+        if (hide) {
+          const session = kind === "sessions" ? managed.find((row) => sessionKey(row) === id) : undefined;
+          if (kind === "sessions" && !session) throw Error("Session not available.");
+          const terminals = connection === "connected" ? await allTerminals() : inventory.rows;
+          const running = terminals.some((t) => !t.exited && (session
+            ? t.id === session.terminalId || (t.agent === session.provider.toLowerCase() && t.sessionID === session.sessionID)
+            : t.cwd === id));
+          if (running) throw Error(session ? "End the running session before hiding it." : "End this project’s running terminals before hiding it.");
+        }
+        const ids = new Set(hidden[kind]);
+        if (hide) ids.add(id);
+        else ids.delete(id);
+        const next = { ...hidden, [kind]: [...ids] };
+        fs.writeFileSync(cleanupFile + ".tmp", JSON.stringify(next), { mode: 0o600 });
+        fs.renameSync(cleanupFile + ".tmp", cleanupFile);
+        hidden = next;
         publishStore();
       });
       handle("pin-session", (provider, sessionID, shouldPin) => {

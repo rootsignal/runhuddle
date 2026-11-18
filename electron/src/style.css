@@ -1426,7 +1426,7 @@ svg {
   color: var(--app-secondary);
 }
 
-/* Session tabs own the center; project filtering belongs to history. */
+/* Controls shared by the empty workspace and terminal tab strip. */
 .empty-tabbar,
 .tab-controls {
   display: flex;
@@ -1769,11 +1769,14 @@ svg {
 .project-group {
   margin: 3px 0;
 }
+.project-row {
+  position: relative;
+}
 .project-group > summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 6px;
+  padding: 9px 30px 9px 6px;
   cursor: pointer;
   font-size: 12px;
 }
@@ -1796,6 +1799,7 @@ svg {
 }
 .project-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding-left: 22px;
   font-size: 11px;
@@ -1884,13 +1888,37 @@ svg {
   flex-shrink: 0;
   color: var(--app-muted);
 }
-.project-chip {
-  font-size: 10px;
+.project-scope {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+  margin-inline: 3px 7px;
+  padding-inline: 7px;
+  border-inline: 1px solid var(--app-border);
+  font-size: 11px;
+}
+.project-scope-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 125px;
+  color: var(--app-secondary);
+}
+.project-scope-name svg {
+  flex-shrink: 0;
+}
+.project-scope-name span {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 4px 6px;
-  color: var(--app-muted);
+}
+.project-scope button {
+  white-space: nowrap;
+  color: var(--app-accent-text);
+  border: 1px solid var(--app-border-strong);
+  padding: 3px 6px;
+  margin-left: 0;
 }
 .session-sidebar .recency-label {
   padding-top: 12px;
@@ -1905,12 +1933,6 @@ svg {
 .sidebar-foot small {
   font-size: 10px;
   color: var(--app-muted);
-}
-.new-shell {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 11px;
 }
 .live-row {
   display: flex;
@@ -1947,6 +1969,30 @@ svg {
   display: block;
   width: 100%;
   text-align: left;
+}
+.project-row .project-row-menu {
+  position: absolute;
+  right: 2px;
+  top: 4px;
+}
+.project-row-menu > summary {
+  opacity: 0;
+}
+.project-row:hover .project-row-menu > summary,
+.project-row:focus-within .project-row-menu > summary,
+.project-row-menu[open] > summary {
+  opacity: 1;
+}
+.project-row-menu.opens-up > div {
+  top: auto;
+  bottom: 100%;
+}
+.project-list-menu {
+  letter-spacing: normal;
+  font-weight: 400;
+}
+.session-sidebar .project-list-menu button {
+  padding: 7px 9px;
 }
 .notes-panel {
   display: flex;
@@ -2373,4 +2419,55 @@ body:has(.usage-warning) .screenshot-popup { bottom: auto; top: 84px; }
   padding: 8px 10px;
   border-top: 1px solid var(--app-border);
   background: var(--app-surface);
+}
+
+.hidden-history {
+  width: min(560px, 94vw);
+}
+.hidden-history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hidden-history li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--app-border);
+}
+.hidden-history li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hidden-history li button {
+  flex-shrink: 0;
+  color: var(--app-accent-text);
+}
+.project-overview {
+  width: min(560px, 94vw);
+}
+.project-overview-path {
+  overflow-wrap: anywhere;
+}
+.project-overview-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin: 18px 0;
+}
+.project-overview-stats dt {
+  color: var(--app-muted);
+  font-size: 11px;
+}
+.project-overview-stats dd {
+  margin: 3px 0 0;
+  font-weight: 600;
+}
+.project-overview footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--app-border);
+  justify-content: flex-end;
 }
