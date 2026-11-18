@@ -1,6 +1,7 @@
 import electronUpdater from "electron-updater";
 import { createUpdateCheck, terminalUpdateBlocker } from "./app-updates.mjs";
 import { usageService, configureClaudeRelay } from "./usage.mjs";
+import { removeLegacyHooks } from "./legacy-hooks.mjs";
 import {
   app,
   BrowserWindow,
@@ -427,6 +428,9 @@ else {
   app
     .whenReady()
     .then(async () => {
+      if (app.isPackaged && process.platform === "darwin") {
+        removeLegacyHooks(process.env, (provider) => console.warn(`Could not clean up obsolete RunHuddle hooks for ${provider}.`));
+      }
       if (process.platform === "win32")
         app.setAppUserModelId("io.rootsignal.runhuddle.preview");
       nativeTheme.themeSource = appAppearance.theme;
