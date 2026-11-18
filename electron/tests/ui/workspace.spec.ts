@@ -911,7 +911,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     expect(await app.evaluate(() => (globalThis as any).handoffPaste.data))
       .toBe("\x1b[200~Reviewed handoff: inspect files before continuing.\x1b[201~");
     await expect(page.getByLabel("Handoff ready", { exact: true })).toHaveCount(0);
-    const liveRow = page.locator(".live-row").filter({ hasText: "Codex" });
+    const liveRow = page.getByRole("region", { name: "Open now", exact: true }).locator(".live-row");
     await expect(liveRow).toHaveCount(1);
     await expect(
       page
