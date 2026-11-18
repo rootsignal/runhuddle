@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { Service } from "../../main/service.mjs";
+import { removeFixture } from "../fixture-cleanup.mjs";
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite");
 // Request a normal app quit asynchronously, so the test is not awaiting a
@@ -1102,7 +1103,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     } finally {
       client.disconnect();
     }
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeFixture(dir);
   }
 });
 
@@ -1194,7 +1195,7 @@ test("helper crash preserves panes and recovers without restarting the app", asy
     client = new Service(path.join(dir, "preview", "service-v2"));
     if (await client.connectExisting()) await client.call("shutdown");
     client.disconnect();
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeFixture(dir);
   }
 });
 
@@ -1300,7 +1301,7 @@ test("companion shell persists without becoming a tab or following project filte
     await closeUI(app);
     if (await client.connectExisting()) await client.call("shutdown");
     client.disconnect();
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeFixture(dir);
   }
 });
 
@@ -1355,7 +1356,7 @@ test("new screenshots offer a thumbnail, copy, dismiss, and attachment without s
     await app.evaluate(({ BrowserWindow, ipcMain }, terminal) => {
       ipcMain.removeHandler("write");
       ipcMain.handle("write", (_event, id, data) => {
-        (globalThis as any).screenshotPaste = { id, data };
+        ((globalThis as any).screenshotWrites ??= []).push({ id, data });
       });
       BrowserWindow.getAllWindows()[0].webContents.send("event", {
         event: "terminals",
@@ -1368,7 +1369,11 @@ test("new screenshots offer a thumbnail, copy, dismiss, and attachment without s
     await expect(popup).toContainText(path.basename(second));
     await popup.getByRole("button", { name: "Attach to current session" }).click();
     await expect(popup).toHaveCount(0);
-    const result = await app.evaluate(() => (globalThis as any).screenshotPaste);
+    const writes = await app.evaluate(() => (globalThis as any).screenshotWrites || []);
+    const attachmentWrites = writes.filter((write: { data: string }) => write.data.includes("Screenshot Rick"));
+    expect(attachmentWrites).toHaveLength(1);
+    const [result] = attachmentWrites;
+    expect(writes.every((write: { data: string }) => !/[\r\n]/.test(write.data))).toBe(true);
     expect(result.id).toBe(shell.id);
     expect(result.data.replace(/^\x1b\[200~/, "").replace(/\x1b\[201~$/, ""))
       .toBe(process.platform === "win32" ? '"' + second + '" ' : "'" + second.replaceAll("'", "'\\''") + "' ");
@@ -1380,6 +1385,6 @@ test("new screenshots offer a thumbnail, copy, dismiss, and attachment without s
       await client.call("shutdown").catch(() => {});
       client.disconnect();
     }
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeFixture(dir);
   }
 });

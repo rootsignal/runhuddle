@@ -1,5 +1,5 @@
 import test from "node:test";
-import { removeGitFixture } from "./git-fixture.mjs";
+import { removeFixture } from "./fixture-cleanup.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -37,7 +37,7 @@ test("explicit staging, initial unstage, index-only commits and upstream push", 
     assert.equal((await gitChanges(work)).ahead, 0);
     await gitAction(work, "stage", "other.txt"); await gitAction(work, "unstage", "other.txt");
     assert.equal(fs.readFileSync(path.join(work, "other.txt"), "utf8"), "excluded");
-  } finally { removeGitFixture(dir); }
+  } finally { removeFixture(dir); }
 });
 test("repository watcher emits for edits and stops cleanly", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-watch-"));
@@ -53,7 +53,7 @@ test("repository watcher emits for edits and stops cleanly", async () => {
     fs.writeFileSync(path.join(dir, "change.txt"), "two");
     await new Promise(r => setTimeout(r, 850));
     assert.equal(calls, before);
-  } finally { stop(); removeGitFixture(dir); }
+  } finally { stop(); removeFixture(dir); }
 });
 test("bulk staging respects ignores and bulk unstaging preserves edits, deletions and new files", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-bulk-"));
@@ -80,5 +80,5 @@ test("bulk staging respects ignores and bulk unstaging preserves edits, deletion
     assert.equal(fs.readFileSync(path.join(dir, "kept.txt"), "utf8"), "later edit");
     assert.equal(fs.readFileSync(path.join(dir, "new[1].txt"), "utf8"), "new");
     assert.equal(fs.existsSync(path.join(dir, "deleted.txt")), false);
-  } finally { removeGitFixture(dir); }
+  } finally { removeFixture(dir); }
 });

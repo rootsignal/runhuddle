@@ -94,7 +94,7 @@ export function TerminalPane({
       titleHandler.current(title),
     );
     const input = term.onData((data) => {
-      window.runhuddle.write(id, data).catch(fail);
+      if (data) window.runhuddle.write(id, data).catch(fail);
     });
     const paste = async (text: string) => {
       if (!host.current?.getClientRects().length || !ready)
