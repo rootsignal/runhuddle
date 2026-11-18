@@ -973,10 +973,11 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     // A shell-backed fixture exercises AI view lifecycle without launching an agent.
     await app.evaluate(
       ({ ipcMain }, { id, cwd }) => {
+        const resetsAt = new Date(Date.now() + 86400000).toISOString();
         ipcMain.removeHandler("usage");
         ipcMain.handle("usage", () => ({
           provider: "codex", checkedAt: new Date().toISOString(),
-          windows: [{ label: "Weekly", remaining: 9, resetsAt: new Date(Date.now() + 86400000).toISOString() }]
+          windows: [{ label: "Weekly", remaining: 9, resetsAt }]
         }));
         ipcMain.removeHandler("create");
         ipcMain.handle("create", () => ({
