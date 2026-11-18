@@ -15,7 +15,13 @@ export function Icon({
     | "folder"
     | "chevron"
     | "search"
-    | "arrow";
+    | "arrow"
+    | "activity"
+    | "pause"
+    | "disconnected"
+    | "attention"
+    | "lock"
+    | "stop";
   size?: number;
 }) {
   const paths = {
@@ -58,6 +64,12 @@ export function Icon({
       </>
     ),
     arrow: <path d="M5 12h14m-5-5 5 5-5 5" />,
+    activity: <path d="M2 12h4l3-6 5 12 3-6h5" />,
+    pause: <><circle cx="12" cy="12" r="9" /><path d="M10 9v6m4-6v6" /></>,
+    disconnected: <><circle cx="12" cy="12" r="9" /><path d="m6 18 12-12" /></>,
+    attention: <path d="M12 9v4m0 3h.01M11 4 2.5 18a1 1 0 0 0 .9 1.5h17.2a1 1 0 0 0 .9-1.5L13 4a1.2 1.2 0 0 0-2 0Z" />,
+    lock: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 5v1" /></>,
+    stop: <rect x="5" y="5" width="14" height="14" rx="2" />,
   };
   return (
     <svg

@@ -58,6 +58,7 @@ export interface Snapshot {
   notes: Note[];
   pinned: string[];
   hidden?: HiddenHistory;
+  continuations?: ContinuationLink[];
   terminals: TerminalInfo[];
   home: string;
   connection?: "connected" | "reconnecting" | "disconnected";
@@ -66,6 +67,12 @@ export interface Snapshot {
   recaps?: Record<string, SessionRecap>;
 }
 export type SessionAlertTarget = Pick<Session, "provider" | "sessionID">;
+export type ContinuationEndpoint = SessionAlertTarget & { title: string };
+export interface ContinuationLink {
+  from: ContinuationEndpoint;
+  to: ContinuationEndpoint;
+  createdAt: number;
+}
 export interface SessionAlert {
   provider?: string;
   sessionID?: string;
@@ -102,6 +109,7 @@ export type AppEvent =
   | { event: "app-accent"; accent: string }
   | { event: "app-theme"; theme: "system" | "light" | "dark" }
   | { event: "update-download"; download: UpdateDownload | null }
+  | { event: "session-continuations"; continuations: ContinuationLink[] }
   | { event: "custom-app-accent" }
   | { event: "inbox"; entries: InboxEntry[] }
   | { event: "open-alert-session"; target: SessionAlertTarget }
@@ -199,6 +207,7 @@ export interface API {
   create(cwd: string, agent: string): Promise<TerminalInfo>;
   pinSession(provider: string, id: string, pinned: boolean): Promise<void>;
   setHistoryHidden(kind: keyof HiddenHistory, id: string, hidden: boolean): Promise<void>;
+  recordSessionContinuation(from: SessionAlertTarget, to: SessionAlertTarget, title: string): Promise<boolean>;
   title(id: string, title: string): Promise<void>;
   resume(provider: string, id: string): Promise<TerminalInfo | null>;
   replay(id: string): Promise<{ data: string; sequence: number }>;

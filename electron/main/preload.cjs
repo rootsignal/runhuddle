@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("runhuddle", {
   create: (cwd, agent) => invoke("create", cwd, agent),
   pinSession: (provider, id, pinned) => invoke("pin-session", provider, id, pinned),
   setHistoryHidden: (kind, id, hidden) => invoke("set-history-hidden", kind, id, hidden),
+  recordSessionContinuation: (from, to, title) => invoke("record-session-continuation", from, to, title),
   title: (id, title) => invoke("title", id, title),
   resume: (provider, id) => invoke("resume", provider, id),
   replay: (id) => invoke("replay", id),

@@ -2,6 +2,8 @@ import { useDismissMenus } from "./useDismissMenus";
 import { UsageControls } from "./UsageControls";
 import { HiddenHistoryDialog } from "./HiddenHistoryDialog";
 import { ProjectOverview } from "./ProjectOverview";
+import { SessionStatus } from "./SessionStatus";
+import { SessionContinuation, type ContinuationRequest } from "./SessionContinuation";
 import { ScreenshotPopup } from "./ScreenshotPopup";
 import { EditorButton } from "./EditorButton";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -23,7 +25,7 @@ import { CompanionShell } from "./CompanionShell";
 import { TerminalContext } from "./TerminalContext";
 import { TerminalWorkspace } from "./TerminalWorkspace";
 import { TerminalPane } from "./Terminal";
-import type { HistorySearchResult, NoteDraft, SessionAlert, SessionAlertTarget, Snapshot, Session, TerminalInfo } from "./types";
+import type { ContinuationEndpoint, ContinuationLink, HistorySearchResult, NoteDraft, SessionAlert, SessionAlertTarget, Snapshot, Session, TerminalInfo } from "./types";
 import "./app-theme.css";
 import "./style.css";
 import logo from "../assets/icon.png";
@@ -33,7 +35,7 @@ const emptyHiddenHistory = { projects: [], sessions: [] };
 const terminalSessionKey = (t: TerminalInfo) =>
   `${launchOptions.find((option) => option.id === t.agent)?.name}:${t.sessionID}`;
 function openRowMenu(row: Element | null) {
-  const menu = row?.querySelector<HTMLDetailsElement>("details.row-menu");
+  const menu = row?.querySelector<HTMLDetailsElement>(":scope > details.row-menu");
   if (!menu) return;
   row?.closest(".session-sidebar")?.querySelectorAll<HTMLDetailsElement>("details.row-menu[open]").forEach((open) => {
     if (open !== menu) open.open = false;
@@ -41,14 +43,14 @@ function openRowMenu(row: Element | null) {
   menu.open = true;
   menu.querySelector("summary")?.focus();
 }
-const labels: Record<string, string> = {
-  working: "Working",
-  idle: "Idle",
-  needsInput: "Needs input",
-  saved: "Previous session",
-  disconnected: "Activity unavailable",
-  locked: "In use elsewhere",
-};
+function positionRowMenu(event: React.SyntheticEvent<HTMLDetailsElement>) {
+  const menu = event.currentTarget;
+  if (!menu.open) return;
+  const bottom = menu.closest(".sidebar-list")?.getBoundingClientRect().bottom ?? window.innerHeight;
+  const height = menu.querySelector("div")?.offsetHeight ?? 0;
+  menu.classList.toggle("opens-up", bottom - menu.getBoundingClientRect().bottom < height);
+}
+const lockedLabel = "In use elsewhere";
 function sessionRows(data: Snapshot, connected: boolean) {
   const liveIDs = new Set(data.terminals.filter((t) => !t.exited).map((t) => t.id));
   const liveSessions = new Map(data.terminals.flatMap((t) => {
@@ -130,6 +132,8 @@ function App() {
   const [showNotes, setShowNotes] = useState(0);
   const [showHiddenHistory, setShowHiddenHistory] = useState(false);
   const [overviewFolder, setOverviewFolder] = useState("");
+  const [continuation, setContinuation] = useState<(ContinuationRequest & { id: number })>();
+  const continuationID = useRef(0);
   const [lockedTerminals, setLockedTerminals] = useState<ReadonlySet<string>>(() => new Set());
   function updateConversationLock(id: string, locked: boolean) {
     setLockedTerminals((old) => {
@@ -287,6 +291,7 @@ function App() {
       if (event.event === "connection") setConnection(event.state);
       if (event.event === "app-theme") setSnapshot((old) => ({ ...old, appTheme: event.theme }));
       if (event.event === "update-download") setSnapshot((old) => ({ ...old, updateDownload: event.download }));
+      if (event.event === "session-continuations") setSnapshot((old) => ({ ...old, continuations: event.continuations }));
       if (event.event === "app-accent") setSnapshot((old) => ({ ...old, accent: event.accent }));
       if (event.event === "custom-app-accent") setCustomAccentOpen(true);
       if (event.event === "getting-started") setShowGuide(true);
@@ -353,25 +358,28 @@ function App() {
     [allProjects, hiddenHistory]);
   const visibleSessions = useMemo(() => allSessions.filter((row) =>
     !hiddenHistory.projects.includes(row.cwd) && !hiddenHistory.sessions.includes(key(row))), [allSessions, hiddenHistory]);
+  const searching = !!query.trim();
   const sessions = useMemo(
     () =>
       visibleSessions
         .filter(
           (s) =>
-            (!workspace || s.cwd === workspace) &&
+            (searching || !workspace || s.cwd === workspace) &&
             (scope !== "pinned" || snapshot.pinned.includes(key(s))) &&
             [s.title, s.project, s.cwd, s.preview, s.provider]
               .join(" ")
               .toLowerCase()
-              .includes(query.toLowerCase()),
+              .includes(query.trim().toLowerCase()),
         )
         .sort((a, b) => Number(!!b.terminalId) - Number(!!a.terminalId) || b.updated - a.updated),
-    [visibleSessions, snapshot.pinned, workspace, scope, query],
+    [visibleSessions, snapshot.pinned, workspace, scope, query, searching],
   );
-  const workspaceTerminals = snapshot.terminals.filter(
-    (t) => (!workspace || t.cwd === workspace) && !hiddenHistory.projects.includes(t.cwd) &&
+  const availableTerminals = snapshot.terminals.filter(
+    (t) => !hiddenHistory.projects.includes(t.cwd) &&
       !hiddenHistory.sessions.includes(terminalSessionKey(t)),
   );
+  const workspaceTerminals = availableTerminals.filter((t) => !workspace || t.cwd === workspace);
+  const sidebarTerminals = searching ? availableTerminals : workspaceTerminals;
   const companionIDs = new Set(
     Object.entries(companions)
       .filter(([owner]) => snapshot.terminals.some((t) => t.id === owner))
@@ -386,13 +394,26 @@ function App() {
   const session = allSessions.find(
     (s) => "session:" + key(s) === selection,
   );
+  const continuationsBySession = useMemo(() => {
+    const result = new Map<string, { outgoing: ContinuationLink[]; incoming: ContinuationLink[] }>();
+    for (const link of snapshot.continuations ?? []) {
+      for (const [endpoint, direction] of [[link.from, "outgoing"], [link.to, "incoming"]] as const) {
+        const id = key(endpoint);
+        const links = result.get(id) ?? { outgoing: [], incoming: [] };
+        links[direction].push(link);
+        result.set(id, links);
+      }
+    }
+    return result;
+  }, [snapshot.continuations]);
+  const sessionContinuations = session && continuationsBySession.get(key(session));
   const note = snapshot.notes.find((n) => "note:" + n.id === selection);
   const noteSource = note?.sourceSessionID ? allSessions.find(
     (row) => row.sessionID === note.sourceSessionID && row.provider === note.sourceProvider,
   ) : undefined;
   const foundNotes = useMemo(() => query.trim() ? snapshot.notes.filter(
-    (item) => (!workspace || item.project === workspace) && !hiddenHistory.projects.includes(item.project) && matchesNote(item, query),
-  ) : [], [query, snapshot.notes, workspace, hiddenHistory]);
+    (item) => !hiddenHistory.projects.includes(item.project) && matchesNote(item, query),
+  ) : [], [query, snapshot.notes, hiddenHistory]);
   const shown = terminals.find(
     (t) => "terminal:" + t.id === selection,
   );
@@ -507,6 +528,23 @@ function App() {
     localStorage.setItem("lastLaunchFolder", JSON.stringify(cwd));
     return t;
   }
+  function continueWithContext(source: Session, anotherAgent = false) {
+    setContinuation({ id: ++continuationID.current, source, anotherAgent, recap: snapshot.recaps?.[key(source)] });
+  }
+  function contextLink(endpoint: ContinuationEndpoint, createdAt: number) {
+    const related = allSessions.find((row) => key(row) === key(endpoint));
+    return (
+      <li key={key(endpoint)}>
+        <button disabled={!related} onClick={() => {
+          if (!related) return;
+          setHistoryResult(undefined);
+          if (workspace && workspace !== related.cwd) setWorkspace(related.cwd);
+          setSelection("session:" + key(related));
+        }}>{endpoint.provider} · {related?.title || endpoint.title}</button>
+        <time dateTime={new Date(createdAt).toISOString()}>{new Date(createdAt).toLocaleDateString()}</time>
+      </li>
+    );
+  }
   function hideTab(t: TerminalInfo, next?: string) {
     const remaining = terminals.filter((x) => x.id !== t.id);
 
@@ -578,29 +616,56 @@ function App() {
     return lockedTerminals.has(s.terminalId) ? "locked" : s.state;
   }
   const terminalsById = useMemo(() => new Map(snapshot.terminals.map((terminal) => [terminal.id, terminal])), [snapshot.terminals]);
-  function terminalRow(t: TerminalInfo | undefined, title: string, row: React.ReactNode) {
-    if (!t) return row;
-    const hidden = hiddenTabs.includes(t.id);
-    const locked = lockedTerminals.has(t.id);
+  function historyActions(row: Session) {
+    const pinned = snapshot.pinned.includes(key(row));
     return (
-      <div key={t.id} className="live-row" onContextMenu={(event) => {
-        event.preventDefault();
-        openRowMenu(event.currentTarget);
-      }}>
+      <>
+        <button onClick={() => void window.runhuddle.pinSession(row.provider, row.sessionID, !pinned)
+          .catch((reason) => setError(String(reason)))}>
+          {pinned ? "Unpin session" : "Pin session"}
+        </button>
+        {!row.terminalId && <button onClick={() => void changeHistoryVisibility("sessions", key(row), true)}>
+          Hide session
+        </button>}
+      </>
+    );
+  }
+  function sidebarRow(t: TerminalInfo | undefined, title: string, row: React.ReactNode, saved?: Session) {
+    const hidden = t && hiddenTabs.includes(t.id);
+    const locked = t && lockedTerminals.has(t.id);
+    return (
+      <div key={saved ? key(saved) : t?.id} className={t ? "live-row" : "saved-row"}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          openRowMenu(event.currentTarget);
+        }}
+        onKeyDown={(event) => {
+          if (!(event.target instanceof HTMLElement) || !event.target.matches(".session-row")) return;
+          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+            event.preventDefault();
+            openRowMenu(event.currentTarget);
+          }
+        }}>
         {row}
-        <details className="row-menu">
-          <summary aria-label={`Actions for ${title}`} title="Session actions">•••</summary>
+        <details className="row-menu" onToggle={positionRowMenu}>
+          <summary aria-label={`Session actions for ${title}`} title="Session actions">•••</summary>
           <div onClick={(event) => {
-            const menu = event.currentTarget.parentElement as HTMLDetailsElement;
-            menu.open = false;
+            (event.currentTarget.parentElement as HTMLDetailsElement).open = false;
           }}>
             {locked && <button onClick={() => {
               void window.runhuddle.locateCodexSession(t.id).catch((error) => setError(String(error)));
             }}>Find where it’s open</button>}
-            {!hidden && !t.exited && <button onClick={() => hideTab(t)}>Hide tab (keep running)</button>}
-            <button onClick={() => close(t)}>
-              {t.exited ? "Remove terminal" : t.agent === "shell" ? "Close terminal" : "End session"}
-            </button>
+            {saved && <>
+              {!t && <button disabled={resuming} onClick={() => void resumeSession(saved.provider, saved.sessionID)}>Resume session</button>}
+              <button onClick={() => continueWithContext(saved)}>Start new session with context…</button>
+              {historyActions(saved)}
+            </>}
+            {t && <>
+              {!hidden && !t.exited && <button onClick={() => hideTab(t)}>Hide tab (keep running)</button>}
+              <button onClick={() => close(t)}>
+                {t.exited ? "Remove terminal" : t.agent === "shell" ? "Close terminal" : "End session"}
+              </button>
+            </>}
           </div>
         </details>
       </div>
@@ -608,33 +673,24 @@ function App() {
   }
   function liveRow(t: TerminalInfo) {
     const locked = !t.exited && lockedTerminals.has(t.id);
-    return terminalRow(t, terminalTitle(t),
+    const state = locked ? "locked" : t.unavailable ? "disconnected" : t.exited ? "ended"
+      : t.agent === "shell" && connection === "connected" ? "terminal" : "disconnected";
+    return sidebarRow(t, terminalTitle(t),
         <button
           className={"session-row " + (shown?.id === t.id ? "selected" : "")}
-          onClick={() => select("terminal:" + t.id)}
+          onClick={() => select("terminal:" + t.id, workspace ? t.cwd : "")}
         >
           <AgentIcon agent={t.agent} />
           <strong title={`${terminalTitle(t)}\n${t.cwd}\n${location(t.id)}`}>
             {terminalTitle(t)}
           </strong>
-          <span
-            className={
-              "dot " + (locked ? "locked" : t.exited || t.agent !== "shell" ? "saved" : "idle")
-            }
-            title={
-              locked ? labels.locked : t.exited
-                ? "Ended"
-                : t.agent === "shell"
-                  ? "Terminal open"
-                  : "Terminal open · agent activity not linked"
-            }
-          />
-          {locked ? <span className="row-age conversation-lock">{labels.locked}</span> :
+          <SessionStatus state={state} />
+          {locked ? <span className="row-age conversation-lock">{lockedLabel}</span> :
             !t.exited && hiddenTabs.includes(t.id) && <span className="row-age">Tab hidden</span>}
         </button>,
     );
   }
-  const unlinkedAgents = workspaceTerminals.filter(
+  const unlinkedAgents = sidebarTerminals.filter(
     (t) =>
       t.agent !== "shell" &&
       !allSessions.some(
@@ -646,7 +702,7 @@ function App() {
     [terminalTitle(t), t.cwd, t.agent]
       .join(" ")
       .toLowerCase()
-      .includes(query.toLowerCase());
+      .includes(query.trim().toLowerCase());
   const openUnlinked = scope === "all"
     ? unlinkedAgents.filter((t) => !t.exited && matchesTerminal(t))
     : [];
@@ -702,9 +758,9 @@ function App() {
     }
   }
   function renderSessionToolbar(t: TerminalInfo) {
-    const source = snapshot.sessions.find((s) =>
-      s.sessionID === t.sessionID && s.provider.toLowerCase() === t.agent,
-    );
+    const provider = launchOptions.find((option) => option.id === t.agent)?.name || t.agent;
+    const source = snapshot.sessions.find((s) => s.sessionID === t.sessionID && s.provider === provider) ||
+      { provider, sessionID: t.sessionID || "", title: t.title, cwd: t.cwd, project: t.cwd, preview: "", state: "disconnected", updated: 0 };
     return (
       <div
         className="pane-heading session-toolbar"
@@ -723,10 +779,8 @@ function App() {
         </button>
         <EditorButton target={t.cwd} />
         {t.agent !== "shell" && <UsageControls
-          source={source ||
-            { provider: t.agent === "codex" ? "Codex" : t.agent === "claude" ? "Claude" : "Copilot", sessionID: t.sessionID || "", title: t.title, cwd: t.cwd, project: t.cwd, preview: "", state: "disconnected", updated: 0 }}
-          recap={source ? snapshot.recaps?.[key(source)] : undefined}
-          onCreate={create} />}
+          source={source} handoffOpen={!!continuation}
+          onHandoff={() => continueWithContext({ ...source, terminalId: t.exited ? undefined : t.id }, true)} />}
         <details className="folder-actions">
           <summary aria-label="Session actions">•••</summary>
           <div>
@@ -737,6 +791,12 @@ function App() {
               }}>
                 View conversation
               </button>
+            )}
+            {t.agent !== "shell" && (
+              <button onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                continueWithContext({ ...source, terminalId: t.exited ? undefined : t.id });
+              }}>Start new session with context…</button>
             )}
             <button
               onClick={() =>
@@ -931,10 +991,13 @@ function App() {
     </>
   );
   const projectScope = workspace ? (
-    <div className="project-scope" data-tour-anchor="project-scope">
+    <div className="project-scope" data-tour-anchor="project-scope" role="group" aria-label="Project focus">
       <span className="project-scope-name" title={workspace}>
         <Icon name="folder" size={14} />
-        <span>{name(workspace)}</span>
+        <span className="project-scope-label">
+          <small>Focused project</small>
+          <strong>{name(workspace)}</strong>
+        </span>
       </span>
       <button title="Return to the all-projects layout" onClick={() => switchWorkspace("")}>
         All projects
@@ -946,6 +1009,8 @@ function App() {
       <div className={"app " + (!sidebar ? "collapsed" : "")}>
         {customAccentOpen && <AppAccentDialog accent={accent} onClose={() => setCustomAccentOpen(false)} />}
         {showGuide && <GettingStarted onClose={dismissGuide} terminalVisible={Boolean(shown)} />}
+        {continuation && <SessionContinuation key={continuation.id} request={continuation} onCreate={create}
+          onClose={() => setContinuation((current) => current === continuation ? undefined : current)} />}
         {showHiddenHistory && <HiddenHistoryDialog hidden={hiddenHistory} sessions={allSessions}
           onRestore={(kind, id) => void changeHistoryVisibility(kind, id, false)} onClose={() => setShowHiddenHistory(false)} />}
         {overviewFolder && <ProjectOverview name={name(overviewFolder)} folder={overviewFolder}
@@ -1027,11 +1092,12 @@ function App() {
                   value={scope}
                   onChange={(e) => setScope(e.target.value)}
                 >
-                  <option value="all">All sessions</option>
+                  <option value="all">{workspace && !searching ? "Project sessions" : "All sessions"}</option>
                   <option value="pinned">Pinned</option>
                 </select>
               </div>
             )}
+            {workspace && searching && <div className="sidebar-search-scope">Searching all projects</div>}
             <div className="sidebar-list">
               {mode === "workspaces" ? (
                 <>
@@ -1103,7 +1169,7 @@ function App() {
                               <small>{rows.length}</small>
                             </summary>
                             <div className="project-actions">{actions}</div>
-                            {rows.map((s) => terminalRow(terminalsById.get(s.terminalId || ""), s.title,
+                            {rows.map((s) => sidebarRow(terminalsById.get(s.terminalId || ""), s.title,
                               <button
                                 className={
                                   "session-row " +
@@ -1122,14 +1188,10 @@ function App() {
                                 <AgentIcon agent={s.provider.toLowerCase()} />
                                 <strong title={s.preview}>{s.title}</strong>
                                 {s.terminalId && lockedTerminals.has(s.terminalId) &&
-                                  <span className="row-age conversation-lock">{labels.locked}</span>}
-                                <span
-                                  className={
-                                    "dot " + sidebarState(s)
-                                  }
-                                  title={s.terminalId ? labels[sidebarState(s)] : "Recorded session"}
-                                />
+                                  <span className="row-age conversation-lock">{lockedLabel}</span>}
+                                <SessionStatus state={sidebarState(s)} />
                               </button>,
+                              s,
                             ))}
                             {!rows.length && (
                               <p className="empty-small">
@@ -1137,13 +1199,7 @@ function App() {
                               </p>
                             )}
                           </details>
-                          <details className="row-menu project-row-menu" onToggle={(event) => {
-                            const menu = event.currentTarget;
-                            if (!menu.open) return;
-                            const bottom = menu.closest(".sidebar-list")?.getBoundingClientRect().bottom ?? window.innerHeight;
-                            const height = menu.querySelector("div")?.offsetHeight ?? 0;
-                            menu.classList.toggle("opens-up", bottom - menu.getBoundingClientRect().bottom < height);
-                          }}>
+                          <details className="row-menu project-row-menu" onToggle={positionRowMenu}>
                             <summary aria-label={`Actions for project ${name(p)}`} title="Project actions">•••</summary>
                             <div onClick={(event) => {
                               (event.currentTarget.parentElement as HTMLDetailsElement).open = false;
@@ -1166,6 +1222,7 @@ function App() {
                   )}
                   {sessions.map((s, index) => {
                     const group = (row: Session) => row.terminalId ? "Open in RunHuddle" : recency(row.updated);
+                    const latestHandoff = continuationsBySession.get(key(s))?.outgoing[0];
                     return (
                     <React.Fragment key={key(s)}>
                       {(index === 0
@@ -1175,7 +1232,7 @@ function App() {
                           {group(s)}
                         </div>
                       )}
-                      {terminalRow(terminalsById.get(s.terminalId || ""), s.title, <button
+                      {sidebarRow(terminalsById.get(s.terminalId || ""), s.title, <button
                         className={
                           "session-row " +
                           (selection === "session:" + key(s) ||
@@ -1184,31 +1241,24 @@ function App() {
                             : "")
                         }
                         key={key(s)}
-                        onClick={() => select("session:" + key(s))}
+                        onClick={() => select("session:" + key(s), workspace ? s.cwd : "")}
                       >
                         <AgentIcon agent={s.provider.toLowerCase()} />
                         <span className="recent-session-title">
                           <strong title={[s.title, s.cwd, location(s.terminalId), s.preview].filter(Boolean).join("\n")}>
                             {s.title}
                           </strong>
-                          {snapshot.recaps?.[key(s)]?.next && (
+                          {latestHandoff ? (
+                            <small title={latestHandoff.to.title}>Context passed to {latestHandoff.to.provider}</small>
+                          ) : snapshot.recaps?.[key(s)]?.next && (
                             <small title={snapshot.recaps[key(s)].next}>
                               Next · {snapshot.recaps[key(s)].next}
                             </small>
                           )}
                         </span>
-                        <span
-                          className={
-                            "dot " + sidebarState(s)
-                          }
-                          title={
-                            s.terminalId
-                              ? labels[sidebarState(s)] || s.state
-                              : "Recorded session"
-                          }
-                        />
+                        <SessionStatus state={sidebarState(s)} />
                         {s.terminalId && (lockedTerminals.has(s.terminalId)
-                          ? <span className="row-age conversation-lock">{labels.locked}</span>
+                          ? <span className="row-age conversation-lock">{lockedLabel}</span>
                           : s.state === "needsInput" ? <span className="row-age">Needs input</span>
                           : hiddenTabs.includes(s.terminalId) && <span className="row-age">Tab hidden</span>)}
                         {!s.terminalId && <span
@@ -1220,7 +1270,7 @@ function App() {
                             { month: "short", day: "numeric" },
                           )}
                         </span>}
-                      </button>)}
+                      </button>, s)}
                     </React.Fragment>
                     );
                   })}
@@ -1238,7 +1288,7 @@ function App() {
                     </p>
                   )}
                   {scope === "all" &&
-                    workspaceTerminals.some(
+                    sidebarTerminals.some(
                       (t) =>
                         t.agent === "shell" &&
                         !companionIDs.has(t.id) &&
@@ -1246,7 +1296,7 @@ function App() {
                     ) && (
                       <>
                         <div className="section-label">TERMINALS</div>
-                        {workspaceTerminals
+                        {sidebarTerminals
                           .filter(
                             (t) =>
                               t.agent === "shell" &&
@@ -1258,8 +1308,10 @@ function App() {
                     )}
                 </>
               )}
-              <ConversationSearch key={JSON.stringify(hiddenHistory)} query={query} folder={workspace} scope={mode === "recent" ? scope : "all"}
+              <ConversationSearch key={JSON.stringify(hiddenHistory)} query={query} scope={mode === "recent" ? scope : "all"}
                 onOpen={(result) => {
+                  const row = allSessions.find((item) => key(item) === key(result));
+                  if (workspace && row && row.cwd !== workspace) setWorkspace(row.cwd);
                   setHistoryResult(result);
                   setSelection("session:" + result.provider + ":" + result.sessionID);
                 }} />
@@ -1268,7 +1320,7 @@ function App() {
                   <div className="recency-label">Notes</div>
                   {foundNotes.map((item) => (
                     <button key={item.id} className={"session-row " + (note?.id === item.id ? "selected" : "")}
-                      onClick={() => select("note:" + item.id)}>
+                      onClick={() => select("note:" + item.id, workspace ? item.project : "")}>
                       <Icon name="notes" size={15} />
                       <strong>{item.title}</strong>
                     </button>
@@ -1392,16 +1444,13 @@ function App() {
                     >
                       {session.terminalId ? "Back to terminal" : resuming ? "Resuming…" : "Resume session"}
                     </button>
+                    <button className="secondary document-action" onClick={() => continueWithContext(session)}>
+                      Start new session with context…
+                    </button>
                     <details className="document-more">
                       <summary>More actions</summary>
                       <div>
-                        <button onClick={() => void window.runhuddle.pinSession(session.provider, session.sessionID,
-                          !snapshot.pinned.includes(key(session))).catch((reason) => setError(String(reason)))}>
-                          {snapshot.pinned.includes(key(session)) ? "Unpin session" : "Pin session"}
-                        </button>
-                        <button onClick={() => void changeHistoryVisibility("sessions", key(session), true)}>
-                          Hide session
-                        </button>
+                        {historyActions(session)}
                         <button
                           className="secondary document-action"
                           onClick={() => setLauncher(true)}
@@ -1411,6 +1460,18 @@ function App() {
                         </button>
                       </div>
                     </details>
+                    {sessionContinuations && (
+                      <section className="session-context-links" aria-label="Linked sessions">
+                        {sessionContinuations.outgoing.length > 0 && <>
+                          <h2>Context passed to</h2>
+                          <ul>{sessionContinuations.outgoing.map((link) => contextLink(link.to, link.createdAt))}</ul>
+                        </>}
+                        {sessionContinuations.incoming.length > 0 && <>
+                          <h2>Context from</h2>
+                          <ul>{sessionContinuations.incoming.map((link) => contextLink(link.from, link.createdAt))}</ul>
+                        </>}
+                      </section>
+                    )}
                     <SessionHistory key={key(session)} session={session}
                       recap={snapshot.recaps?.[key(session)]}
                       anchor={historyResult && key(historyResult) === key(session) ? historyResult.anchor : undefined}

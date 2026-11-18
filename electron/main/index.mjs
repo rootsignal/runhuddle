@@ -30,6 +30,7 @@ import { createSessionAlerts } from "./session-alerts.mjs";
 import { createInbox } from "./inbox.mjs";
 import { generateRecap, recapStore } from "./recaps.mjs";
 import { historyIndexClient } from "./history-index-client.mjs";
+import { providers, validateID } from "./lifecycle.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 app.setName("RunHuddle");
 app.setPath(
@@ -141,6 +142,14 @@ const allTerminals = async () => {
 };
 const pinsFile = path.join(app.getPath("userData"), "pinned-sessions.json");
 const cleanupFile = path.join(app.getPath("userData"), "hidden-history.json");
+const continuationsFile = path.join(app.getPath("userData"), "session-continuations.json");
+let continuations = [];
+try {
+  const saved = JSON.parse(fs.readFileSync(continuationsFile, "utf8"));
+  if (Array.isArray(saved)) {
+    continuations = saved.filter((link) => link?.from?.sessionID && link?.to?.sessionID && Number.isFinite(link.createdAt));
+  }
+} catch {}
 let hidden = { projects: [], sessions: [] };
 try {
   const saved = JSON.parse(fs.readFileSync(cleanupFile, "utf8"));
@@ -530,6 +539,7 @@ else {
           updateDownload,
           pinned,
           hidden,
+          continuations,
           sessions: managed,
           notes,
           terminals,
@@ -734,6 +744,26 @@ else {
         fs.renameSync(pinsFile + ".tmp", pinsFile);
         pinned = next;
         publishStore();
+      });
+      handle("record-session-continuation", (from, to, title) => {
+        const source = managed.find((row) => row.provider === from?.provider && row.sessionID === from?.sessionID);
+        if (!source || !Object.values(providers).includes(to?.provider)) return false;
+        validateID(to.sessionID);
+        if (sessionKey(source) === sessionKey(to)) return false;
+        const target = managed.find((row) => sessionKey(row) === sessionKey(to));
+        const link = {
+          from: { provider: source.provider, sessionID: source.sessionID, title: source.title },
+          to: { provider: to.provider, sessionID: to.sessionID,
+            title: target?.title || (typeof title === "string" && title.slice(0, 120)) || `${to.provider} session` },
+          createdAt: Date.now(),
+        };
+        const next = [link, ...continuations.filter((existing) =>
+          sessionKey(existing.from) !== sessionKey(from) || sessionKey(existing.to) !== sessionKey(to))];
+        fs.writeFileSync(continuationsFile + ".tmp", JSON.stringify(next), { mode: 0o600 });
+        fs.renameSync(continuationsFile + ".tmp", continuationsFile);
+        continuations = next;
+        publish({ event: "session-continuations", continuations });
+        return true;
       });
       handle("replay", (id) => service.call("replay", { id }));
       handle("write", async (id, data) =>

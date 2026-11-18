@@ -51,7 +51,7 @@ async function chooseProject(page: any, folder: string) {
     has: page.locator("summary").filter({ hasText: path.basename(folder) }),
   });
   if (!(await group.evaluate((el: any) => el.open)))
-    await group.locator("summary").click();
+    await group.locator(":scope > summary").click();
   await group.getByRole("button", { name: "Focus project", exact: true }).click();
 }
 test("workspace navigation, retained search, notes and persistent terminal across full app quit", async () => {
@@ -205,7 +205,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await guide.getByRole("button", { name: "Next" }).click();
     await expect(guide.getByRole("heading", { name: "Focus a project" })).toBeVisible();
     await guide.getByRole("button", { name: "Next" }).click();
-    await expect(guide).toContainText("Open the sidebar to search sessions and notes.");
+    await expect(guide).toContainText("Open the sidebar to search sessions and notes across all projects.");
     await checkSpotlight("sidebar");
     await guide.getByRole("button", { name: "Back" }).click();
     await guide.getByRole("button", { name: "Back" }).click();
@@ -1088,18 +1088,29 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       page.getByRole("button", { name: "End session", exact: true }),
     ).toBeVisible();
     // The live terminal and newly recorded history can arrive in either order.
-    await app.evaluate(({ BrowserWindow }, { id, cwd }) => {
-      const ui = BrowserWindow.getAllWindows()[0].webContents;
-      const sessionID = "33333333-3333-4333-8333-333333333333";
-      ui.send("event", { event: "terminals", terminals: [
-        { id, cwd, agent: "codex", sessionID, title: "Fixture agent", exited: false },
-      ] });
-      ui.send("event", { event: "store", sessions: [
-        { provider: "Codex", sessionID, cwd, project: "Fixture", title: "Review fixtures",
-          preview: "", state: "needsInput", updated: Date.now() / 1000, terminalId: id },
-      ] });
-    }, { id: terminalId, cwd: dir });
+    async function setLinkedState(state: string) {
+      await app.evaluate(({ BrowserWindow }, { id, cwd, state }) => {
+        const ui = BrowserWindow.getAllWindows()[0].webContents;
+        const sessionID = "33333333-3333-4333-8333-333333333333";
+        ui.send("event", { event: "terminals", terminals: [
+          { id, cwd, agent: "codex", sessionID, title: "Fixture agent", exited: false },
+        ] });
+        ui.send("event", { event: "store", sessions: [
+          { provider: "Codex", sessionID, cwd, project: "Fixture", title: "Review fixtures",
+            preview: "", state, updated: Date.now() / 1000, terminalId: id },
+        ] });
+      }, { id: terminalId, cwd: dir, state });
+    }
     const linked = page.locator(".sidebar-list").getByRole("button", { name: /Review fixtures/ }).and(page.locator(".session-row"));
+    const markers = new Set<string>();
+    for (const [state, label] of [["working", "Working"], ["idle", "Idle"],
+      ["disconnected", "Activity unavailable"], ["needsInput", "Needs input"]]) {
+      await setLinkedState(state);
+      const marker = linked.getByRole("img", { name: label, exact: true });
+      await expect(marker).toHaveAttribute("title", label);
+      markers.add(await marker.innerHTML());
+    }
+    expect(markers.size).toBe(4);
     await expect(linked).toHaveCount(1);
     await expect(linked).toContainText("Needs input");
     await expect(liveRow).toHaveCount(0);
@@ -1540,13 +1551,34 @@ test("project focus keeps its own tabs and layout while other terminals stay ope
     await arrange().click();
     await page.getByRole("button", { name: "Move tab down", exact: true }).click();
     await expect(split()).toHaveAttribute("aria-orientation", "horizontal");
+    const search = page.getByRole("searchbox", { name: "Search sessions and notes" });
+    const result = page.locator(".sidebar-list .session-row").getByText("Second project conversation", { exact: true });
+    const sessionFilter = page.getByRole("combobox", { name: "Session filter" });
+    const focusedLabel = projectScope().getByText("Focused project", { exact: true });
+    await expect(focusedLabel).toBeVisible();
+    await expect(sessionFilter.locator("option:checked")).toHaveText("Project sessions");
+    await expect(result).toHaveCount(0);
+    await search.fill("Second project");
+    await expect(page.getByText("Searching all projects", { exact: true })).toBeVisible();
+    await expect(focusedLabel).toBeVisible();
+    await expect(sessionFilter.locator("option:checked")).toHaveText("All sessions");
+    await expect(result).toBeVisible();
+    await expect(secondTab()).toHaveCount(0);
+    await search.clear();
+    await expect(result).toHaveCount(0);
+    await expect(projectScope()).toContainText("first-project");
+    await search.fill("Second project");
+    await result.click();
+    await expect(projectScope()).toContainText("second-project");
+    await expect(page.getByRole("heading", { name: "Second project conversation", exact: true })).toBeVisible();
+    await search.clear();
     await chooseProject(page, "");
     await expect(secondTab()).toHaveAttribute("aria-selected", "true");
     await expect(split()).toHaveAttribute("aria-orientation", "vertical");
 
     await page.getByRole("button", { name: "Projects", exact: true }).click();
     const secondGroup = page.locator(".project-group").filter({ has: page.locator("summary", { hasText: "second-project" }) });
-    await secondGroup.locator("summary").click({ button: "right" });
+    await secondGroup.locator(":scope > summary").click({ button: "right" });
     await page.getByRole("button", { name: "Project overview", exact: true }).click();
     const overview = page.getByRole("dialog", { name: "second-project", exact: true });
     await expect(overview).toContainText(second);
@@ -1555,7 +1587,7 @@ test("project focus keeps its own tabs and layout while other terminals stay ope
     await expect(overview.getByRole("button", { name: "Second project conversation", exact: false })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(overview).toHaveCount(0);
-    await secondGroup.locator("summary").click();
+    await secondGroup.locator(":scope > summary").click();
     await secondGroup.getByRole("button", { name: /Second project conversation/ }).click();
     await expect(projectScope()).toContainText("second-project");
     await expect(page.getByRole("heading", { name: "Second project conversation", exact: true })).toBeVisible();
@@ -1879,7 +1911,7 @@ test("browser preview shares reports and grants the active agent revocable live 
       .toBe(arrange.x - 4);
     await guide.getByRole("button", { name: "Next" }).click();
     await expect(guide.getByRole("heading", { name: "Hand off to another agent" })).toBeVisible();
-    await expect(guide).toContainText("Paste handoff");
+    await expect(guide).toContainText("Start new session with context");
     const usage = page.getByLabel("Agent usage", { exact: true });
     await expect(usage).toContainText("Claude usage");
     const usageBounds = (await usage.boundingBox())!;
@@ -2089,12 +2121,23 @@ test("a fresh profile discovers existing local provider sessions", async () => {
     await expect(page.getByRole("button", { name: /archive/i })).toHaveCount(0);
     await expect(page.getByRole("combobox", { name: "Session filter" }).locator("option"))
       .toHaveText(["All sessions", "Pinned"]);
-    await page.getByRole("button", { name: "Hide session", exact: true }).click();
+    const codexRow = sidebar().locator(".saved-row").filter({ hasText: "Codex release history" });
+    const rowMenu = codexRow.locator(".row-menu");
+    await codexRow.locator(".session-row").click({ button: "right" });
+    await expect(rowMenu.getByRole("button", { name: "Resume session", exact: true })).toBeVisible();
+    await expect(rowMenu.getByRole("button", { name: "Start new session with context…", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(rowMenu).not.toHaveAttribute("open", "");
+    await codexRow.locator(".session-row").press("Shift+F10");
+    await rowMenu.getByRole("button", { name: "Pin session", exact: true }).click();
+    await codexRow.locator(".session-row").click({ button: "right" });
+    await expect(rowMenu.getByRole("button", { name: "Unpin session", exact: true })).toBeVisible();
+    await rowMenu.getByRole("button", { name: "Hide session", exact: true }).click();
     await expect(sidebar().getByRole("button", { name: /Codex release history/ })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Projects", exact: true }).click();
     const project = sidebar().locator(".project-group");
-    const projectHeader = project.locator("summary");
+    const projectHeader = project.locator(":scope > summary");
     const projectMenu = sidebar().locator(".project-row-menu");
     await projectHeader.click({ button: "right" });
     await expect(project).not.toHaveAttribute("open", "");
@@ -2106,7 +2149,13 @@ test("a fresh profile discovers existing local provider sessions", async () => {
     await expect(projectMenu.getByRole("button", { name: "Hide project", exact: true })).toBeVisible();
     await page.getByRole("searchbox", { name: "Search sessions and notes" }).click();
     await expect(projectMenu).not.toHaveAttribute("open", "");
+    await projectHeader.click();
+    const projectSession = project.locator(".saved-row").filter({ hasText: "Claude workspace history" });
+    await projectSession.locator(".session-row").click({ button: "right" });
+    await expect(projectSession.getByRole("button", { name: "Pin session", exact: true })).toBeVisible();
+    await expect(projectMenu).not.toHaveAttribute("open", "");
     await projectHeader.click({ button: "right" });
+    await expect(projectSession.locator(".row-menu")).not.toHaveAttribute("open", "");
     await projectMenu.getByRole("button", { name: "Hide project", exact: true }).click();
     await expect(sidebar().locator(".project-group")).toHaveCount(0);
     await closeUI(app);
@@ -2125,6 +2174,60 @@ test("a fresh profile discovers existing local provider sessions", async () => {
     await page.getByRole("button", { name: "Recent", exact: true }).click();
     await expect(sidebar().getByRole("button", { name: /Codex release history/ })).toBeVisible();
     expect(fs.existsSync(codexTranscript)).toBe(true);
+
+    const destination = await page.evaluate((cwd) => window.runhuddle.create(cwd, "shell"), dir);
+    const continuedID = "44444444-4444-4444-8444-444444444444";
+    await app.evaluate(({ ipcMain }, terminal) => {
+      const fixture = { creates: [] as [string, string][], writes: [] as [string, string][] };
+      (globalThis as any).continuationFixture = fixture;
+      ipcMain.removeHandler("create");
+      ipcMain.handle("create", (_event, cwd, agent) => {
+        fixture.creates.push([cwd, agent]);
+        return { ...terminal, agent, title: "Fresh Claude session" };
+      });
+      ipcMain.removeHandler("usage");
+      ipcMain.handle("usage", (_event, provider) => ({ provider, windows: [] }));
+      ipcMain.removeHandler("write");
+      ipcMain.handle("write", (_event, id, text) => { fixture.writes.push([id, text]); });
+    }, { ...destination, sessionID: continuedID });
+    const recorded = sidebar().getByRole("button", { name: /Claude workspace history/ });
+    await recorded.click();
+    await page.getByRole("button", { name: "Start new session with context…", exact: true }).click();
+    const review = page.getByRole("dialog", { name: "Start new session with context", exact: true });
+    await expect(review.getByLabel("Agent for new session")).toHaveValue("claude");
+    const context = review.getByLabel("Context for new session");
+    await expect(context).toHaveValue(/user: Claude workspace history/);
+    await context.fill("Continue from this reviewed context.");
+    await review.getByRole("button", { name: "Create session with reviewed context", exact: true }).click();
+    await review.getByRole("button", { name: "Show new session", exact: true }).click();
+    const state = () => app.evaluate(() => (globalThis as any).continuationFixture);
+    expect(await state()).toEqual({ creates: [[dir, "claude"]], writes: [] });
+    await page.getByRole("complementary", { name: "Session context ready" })
+      .getByRole("button", { name: "Paste context", exact: true }).click();
+    await expect(page.getByRole("complementary", { name: "Session context ready" })).toHaveCount(0);
+    expect((await state()).writes).toEqual([[destination.id, "\x1b[200~Continue from this reviewed context.\x1b[201~"]]);
+    await expect(recorded).toBeVisible();
+    await page.getByLabel("Session actions", { exact: true }).click();
+    await page.getByRole("button", { name: "Start new session with context…", exact: true }).click();
+    await expect(review.getByLabel("Agent for new session")).toHaveValue("claude");
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(recorded).toContainText("Context passed to Claude");
+    await recorded.click();
+    const linked = () => page.getByRole("region", { name: "Linked sessions" });
+    await expect(linked()).toContainText("Context passed to");
+    await linked().getByRole("button", { name: /^Claude ·/ }).click();
+    await expect(linked()).toContainText("Context from");
+    await expect(linked().getByRole("button", { name: /Claude workspace history/ })).toBeVisible();
+
+    writeEvents(path.join(claudeProject, continuedID + ".jsonl"), [
+      { type: "user", cwd: dir, message: { content: "Continue the new task" } },
+    ]);
+    await closeUI(app);
+    app = await electron.launch(launch);
+    page = await workspacePage(app);
+    await sidebar().getByRole("button", { name: /Claude workspace history/ }).click();
+    await linked().getByRole("button", { name: /Continue the new task/ }).click();
+    await expect(linked()).toContainText("Context from");
   } finally {
     await closeUI(app);
     const service = new Service(path.join(env.RUNHUDDLE_DATA, "service-v2"));

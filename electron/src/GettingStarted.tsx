@@ -18,19 +18,19 @@ const steps = [
   {
     id: "project-scope",
     title: "Focus a project",
-    text: "The folder name identifies the project you’re viewing. Click All projects beside it to bring back your wider set of tabs. Each view remembers its layout, and sessions keep running as you switch.",
+    text: "The Focused project label shows which project owns these tabs. Click All projects beside it to bring back your wider set of tabs. Each view remembers its layout, and sessions keep running as you switch.",
     fallback: {
       id: "projects",
-      text: "In Projects, expand a folder and choose Focus project to see just its sessions and tabs. The folder name appears above the terminal with an All projects button to return.",
+      text: "In Projects, expand a folder and choose Focus project to see just its sessions and tabs. Look for Focused project above the terminal. Click All projects to return.",
     },
   },
   {
     id: "search",
     title: "Find a conversation",
-    text: "Search sessions and notes here. Select a conversation to read its history or resume it.",
+    text: "Search sessions and notes across all projects, even while focused on one. Select a conversation to open it. Right-click a session for actions, or hover over its status icon to see what it means.",
     fallback: {
       id: "sidebar",
-      text: "Open the sidebar to search sessions and notes. Select a conversation to read its history or resume it.",
+      text: "Open the sidebar to search sessions and notes across all projects. Right-click a session for its actions.",
     },
   },
   {
@@ -45,10 +45,10 @@ const steps = [
   {
     id: "handoff",
     title: "Hand off to another agent",
-    text: "Open this usage menu and choose Continue with another agent… at any time. Pick an agent and review the context. When the new session is ready, use Paste handoff and press Enter to send.",
+    text: "Use Continue with another agent… to switch agents and review the handoff. To keep the same agent, choose Start new session with context… from session actions or a saved conversation. Review the draft before sending it.",
     fallback: {
       id: "launch",
-      text: "In an open AI session, use the agent’s usage menu above the terminal (for example, Claude usage). Choose Continue with another agent… anytime to review and pass context to an agent such as Copilot.",
+      text: "In an open AI session, use the usage menu (for example, Claude usage). Choose Continue with another agent… anytime to hand off work. Use Start new session with context… in saved history or session actions to keep the same agent.",
     },
   },
   {
