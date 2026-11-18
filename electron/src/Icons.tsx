@@ -4,7 +4,10 @@ export function Icon({
   size = 18,
 }: {
   name:
+    | "notes"
+    | "inbox"
     | "changes"
+    | "browser"
     | "terminal"
     | "plus"
     | "close"
@@ -16,6 +19,14 @@ export function Icon({
   size?: number;
 }) {
   const paths = {
+    browser: <><rect x="2.5" y="4" width="19" height="16" rx="2.5" /><path d="M3 9h18m-14-2h.1m3 0h.1" /></>,
+    inbox: <path d="M3 13l3-7h12l3 7v6H3Zm0 0h5l2 3h4l2-3h5" />,
+    notes: (
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 8h8M8 12h8M8 16h5" />
+      </>
+    ),
     changes: (
       <>
         <circle cx="6" cy="5" r="2" />

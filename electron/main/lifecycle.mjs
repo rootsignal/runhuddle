@@ -227,8 +227,33 @@ export async function prepareSession(agent, cwd, resume) {
   const sessionID = randomUUID();
   return { sessionID, transcript: transcriptPath(agent, sessionID, cwd) };
 }
+function messageText(content, type) {
+  return Array.isArray(content)
+    ? content.filter((part) => part?.type === type && typeof part.text === "string")
+        .map((part) => part.text).join("\n")
+    : undefined;
+}
+
+export function claudeHookState(event) {
+  switch (event.type) {
+    case "SessionStart": return event.source === "compact" ? undefined : "idle";
+    case "UserPromptSubmit":
+    case "PostToolUse":
+    case "PostToolUseFailure":
+    case "ElicitationResult": return "working";
+    case "PreToolUse": return event.tool === "AskUserQuestion" ? "needsInput" : undefined;
+    case "PermissionRequest":
+    case "Elicitation": return "needsInput";
+    case "Notification":
+      if (["permission_prompt", "elicitation_dialog"].includes(event.notification)) return "needsInput";
+      return event.notification === "idle_prompt" ? "idle" : undefined;
+    case "Stop": return "idle";
+    default: return undefined;
+  }
+}
+
 export function transcriptEvent(agent, event) {
-  let state, preview, title;
+  let state, preview, title, prompt = false;
   const p = event.payload || event.data || {};
   if (agent === "codex") {
     if (event.type === "event_msg") {
@@ -238,14 +263,29 @@ export function transcriptEvent(agent, event) {
         turn_aborted: "idle",
         user_message: "working",
       }[p.type];
-      if (p.type === "user_message") preview = p.message;
+      if (p.type === "user_message") {
+        preview = p.message;
+        prompt = true;
+      }
       if (p.type === "agent_message") preview = p.message;
     }
+    if (event.type === "session_meta") state = "idle";
+    if (event.type === "response_item" && p.type === "message") {
+      if (p.role === "user") {
+        preview = messageText(p.content, "input_text");
+        prompt = true;
+      }
+      if (p.role === "assistant") preview = messageText(p.content, "output_text");
+    }
   }
-  if (agent === "claude" && !event.isSidechain) {
-    if (event.type === "user" && typeof event.message?.content === "string") {
-      state = "working";
-      preview = event.message.content;
+  if (agent === "claude" && !event.isSidechain && !event.isMeta) {
+    const content = event.message?.content;
+    if (event.type === "user") {
+      preview = typeof content === "string" ? content : messageText(content, "text");
+      if (preview?.trim()) {
+        state = "working";
+        prompt = true;
+      }
     }
     if (event.type === "assistant") {
       const m = event.message || {};
@@ -255,44 +295,93 @@ export function transcriptEvent(agent, event) {
           : m.stop_reason === "tool_use"
             ? "working"
             : undefined;
-      preview = Array.isArray(m.content)
-        ? m.content
-            .filter((c) => c.type === "text")
-            .map((c) => c.text)
-            .join("\n")
-        : undefined;
+      if (Array.isArray(content) && content.some((part) =>
+        part?.type === "tool_use" && part.name === "AskUserQuestion"
+      )) state = "needsInput";
+      preview = messageText(content, "text");
     }
   }
   if (agent === "copilot") {
-    state = {
+    if (!event.agentId) state = {
+      "session.start": "idle",
+      "session.resume": "idle",
+      "session.idle": "idle",
       "user.message": "working",
       "assistant.turn_start": "working",
       "assistant.turn_end": "idle",
       "session.error": "disconnected",
     }[event.type];
-    if (["user.message", "assistant.message"].includes(event.type))
+    if (/^(permission|user_input|exit_plan_mode|elicitation)\.requested$/.test(event.type))
+      state = "needsInput";
+    if (/^(permission|user_input|exit_plan_mode|elicitation)\.completed$/.test(event.type))
+      state = "working";
+    if (!event.agentId && ["user.message", "assistant.message"].includes(event.type))
       preview = p.content;
+    prompt = event.type === "user.message";
     if (event.type === "session.title_changed") title = p.title;
   }
   const patch = {};
-  if (
-    (agent === "codex" &&
-      event.type === "event_msg" &&
-      p.type === "user_message") ||
-    (agent === "claude" &&
-      event.type === "user" &&
-      typeof event.message?.content === "string") ||
-    (agent === "copilot" && event.type === "user.message")
-  ) {
+  if (prompt) {
     if (typeof preview === "string" && preview.trim())
       patch.promptTitle = preview.trim().split("\n")[0].slice(0, 120);
   }
   if (state) patch.state = state;
+  if (agent === "codex" && event.type === "event_msg" && p.type === "turn_aborted")
+    patch.interrupted = true;
+  if (agent === "codex" && event.type === "event_msg" && p.type === "task_complete")
+    patch.interrupted = false;
   if (typeof preview === "string" && preview.trim())
     patch.preview = preview.slice(0, 4000);
   if (typeof title === "string" && title.trim())
     patch.title = title.slice(0, 120);
   return patch;
+}
+
+export function codexTranscriptParser() {
+  const questions = new Set();
+  return (agent, event) => {
+    const patch = transcriptEvent(agent, event);
+    const item = event.payload;
+    if (event.type === "response_item" && item?.type === "function_call" &&
+        item.name === "request_user_input" && typeof item.call_id === "string") {
+      questions.add(item.call_id);
+      patch.state = "needsInput";
+    } else if (event.type === "response_item" && item?.type === "function_call_output" &&
+        questions.delete(item.call_id)) {
+      patch.state = questions.size ? "needsInput" : "working";
+    } else if (event.type === "event_msg" &&
+        ["task_started", "task_complete", "turn_aborted"].includes(item?.type)) {
+      questions.clear();
+    }
+    return patch;
+  };
+}
+
+export function copilotTranscriptParser() {
+  const requests = new Set();
+  let activity;
+  return (agent, event) => {
+    const patch = transcriptEvent(agent, event);
+    const match = /^(permission|user_input|exit_plan_mode|elicitation)\.(requested|completed)$/.exec(event.type);
+    const tool = event.data;
+    if (event.type === "tool.execution_start" && tool?.toolName === "ask_user" && tool.toolCallId) {
+      requests.add("tool:" + tool.toolCallId);
+      patch.state = "needsInput";
+    } else if (event.type === "tool.execution_complete" && requests.delete("tool:" + tool?.toolCallId)) {
+      patch.state = "working";
+    } else if (match) {
+      const key = match[1] + ":" + (event.data?.requestId || "");
+      if (match[2] === "requested") requests.add(key);
+      else requests.delete(key);
+    } else if (patch.state) {
+      activity = patch.state;
+      if (["user.message", "session.idle"].includes(event.type) || activity === "disconnected") requests.clear();
+    }
+    if (match || patch.state) {
+      patch.state = requests.size ? "needsInput" : activity || "working";
+    }
+    return patch;
+  };
 }
 export class SessionLedger {
   constructor(directory) {
@@ -300,7 +389,7 @@ export class SessionLedger {
     this.rows = new Map();
     if (fs.existsSync(this.file)) {
       const rows = JSON.parse(fs.readFileSync(this.file, "utf8"));
-      if (!Array.isArray(rows)) throw Error("Invalid preview session history");
+      if (!Array.isArray(rows)) throw Error("Invalid session history");
       for (const r of rows)
         this.rows.set(r.provider + ":" + r.sessionID, {
           ...r,
@@ -343,19 +432,30 @@ export class SessionLedger {
   }
 }
 // Watch only this conversation's containing directory; no whole-history polling.
-export function watchTranscript(file, agent, update) {
+export function watchTranscript(file, agent, update, { baseline, parse = transcriptEvent } = {}) {
   if (!file) return () => {};
   let watcher,
+    fileWatcher,
+    watchedInode,
     timer,
-    offset = 0,
+    offset = baseline?.size || 0,
     pending = "",
     closed = false,
-    inode,
+    inode = baseline?.ino,
     decoder = new StringDecoder("utf8");
   function read() {
     try {
       const stat = fs.statSync(file);
       if (!stat.isFile()) return;
+      if (!closed && watchedInode !== stat.ino) {
+        fileWatcher?.close();
+        watchedInode = undefined;
+        try {
+          fileWatcher = fs.watch(file, queueRead);
+          fileWatcher.on("error", () => { watchedInode = undefined; });
+          watchedInode = stat.ino;
+        } catch {}
+      }
       if (stat.size < offset || (inode !== undefined && inode !== stat.ino)) {
         offset = 0;
         pending = "";
@@ -383,11 +483,23 @@ export function watchTranscript(file, agent, update) {
       let patch = {};
       for (const line of lines) {
         try {
-          Object.assign(patch, transcriptEvent(agent, JSON.parse(line)));
+          const next = parse(agent, JSON.parse(line));
+          // A batch can include the entire turn. Keep its first real prompt as title.
+          if (patch.promptTitle) delete next.promptTitle;
+          Object.assign(patch, next);
         } catch {}
       }
       if (Object.keys(patch).length) update(patch);
     } catch {}
+  }
+  let watchedDirectory;
+  function queueRead() {
+    if (closed || timer) return;
+    timer = setTimeout(() => {
+      timer = undefined;
+      read();
+      if (watchedDirectory !== path.dirname(file)) attach();
+    }, 150);
   }
   function attach() {
     if (closed) return;
@@ -398,14 +510,12 @@ export function watchTranscript(file, agent, update) {
       if (parent === dir) return;
       dir = parent;
     }
+    watchedDirectory = dir;
     try {
-      watcher = fs.watch(dir, () => {
-        if (timer) return;
-        timer = setTimeout(() => {
-          timer = undefined;
-          read();
-          if (dir !== path.dirname(file)) attach();
-        }, 150);
+      const watchedName = path.relative(dir, file).split(path.sep)[0];
+      watcher = fs.watch(dir, (_event, name) => {
+        if (name && String(name) !== watchedName) return;
+        queueRead();
       });
       watcher.on("error", () => {});
     } catch {}
@@ -418,24 +528,6 @@ export function watchTranscript(file, agent, update) {
     read();
     clearTimeout(timer);
     watcher?.close();
+    fileWatcher?.close();
   };
-}
-export function mergeSessions(nativeRows, ownedRows) {
-  const rows = new Map(
-    nativeRows.map((r) => [r.provider.toLowerCase() + ":" + r.sessionID, r]),
-  );
-  for (const owned of ownedRows) {
-    const k = owned.provider.toLowerCase() + ":" + owned.sessionID;
-    const native = rows.get(k);
-    rows.set(k, {
-      ...native,
-      ...owned,
-      title:
-        owned.title === owned.provider + " session" && native?.title
-          ? native.title
-          : owned.title,
-      preview: owned.preview || native?.preview || "",
-    });
-  }
-  return [...rows.values()];
 }

@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useState, useRef } from "react";
 import type { ReactNode } from "react";
 import { SplitView } from "./SplitView";
@@ -75,7 +76,10 @@ function restore(key: string, ids: string[]): Node {
 }
 export function TerminalWorkspace({
   workspace,
+  controls,
+  tabHost,
   terminals,
+  replacement,
   selected,
   title,
   onSelect,
@@ -85,7 +89,10 @@ export function TerminalWorkspace({
   render,
 }: {
   workspace: string;
+  controls: ReactNode;
+  tabHost: HTMLElement | null;
   terminals: TerminalInfo[];
+  replacement?: { from: string; to: string };
   selected: string;
   title: (t: TerminalInfo) => string;
   onSelect: (id: string) => void;
@@ -126,6 +133,24 @@ export function TerminalWorkspace({
   // Terminal creation and sidebar selection affect only the owning/focused group.
   useEffect(() => {
     setTree((old) => {
+      if (replacement && ids.includes(replacement.to)) {
+        const { from, to } = replacement;
+        const leaves = groups(old);
+        const source = leaves.find((g) => g.tabs.includes(from));
+        if (source) {
+          const destination = leaves.find((g) => g.tabs.includes(to));
+          if (destination && destination.id !== source.id) {
+            old = map(old, destination.id, () => ({
+              ...destination, tabs: destination.tabs.filter((id) => id !== to),
+            }));
+          }
+          old = map(old, source.id, () => ({
+            ...source,
+            tabs: source.tabs.filter((id) => id !== to).map((id) => id === from ? to : id),
+            active: source.active === from ? to : source.active,
+          }));
+        }
+      }
       let next = reconcile(old, ids, selected, focusedGroup.current);
       const owner = groups(next).find((g) => g.tabs.includes(selected));
       if (owner) focusedGroup.current = owner.id;
@@ -136,7 +161,7 @@ export function TerminalWorkspace({
         }));
       return next;
     });
-  }, [ids.join("|"), selected]);
+  }, [ids.join("|"), selected, replacement]);
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(tree));
   }, [tree, storageKey]);
@@ -230,164 +255,176 @@ export function TerminalWorkspace({
         }
         aria-label={`Pane ${number}`}
       >
-        <div className="group-tabs">
-          <div
-            className="tabbar"
-            role="tablist"
-            aria-label={`Pane ${number} tabs`}
-            onDragOver={(e) => {
-              if (dragged) e.preventDefault();
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (dragged) move(dragged, n.id);
-            }}
-          >
-            {n.tabs.map((id) => {
-              const t = terminals.find((t) => t.id === id);
-              if (!t) return null;
-              return (
-                <div
-                  key={id}
-                  className={
-                    "terminal-tab " + (active?.id === id ? "selected" : "")
-                  }
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/plain", id);
-                    e.dataTransfer.effectAllowed = "move";
-                    setDragged(id);
-                  }}
-                  onDragEnd={() => {
-                    setDragged("");
-                    setDrop("");
-                  }}
-                  onDragOver={(e) => {
-                    if (dragged) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (dragged) move(dragged, n.id, undefined, id);
-                  }}
-                >
-                  <button
-                    role="tab"
-                    aria-selected={active?.id === id}
-                    title={title(t) + " · " + t.cwd}
-                    onClick={() => {
-                      setTree((old) =>
-                        map(old, n.id, (g) => ({
-                          ...(g as Group),
-                          active: id,
-                        })),
-                      );
-                      onSelect(id);
-                    }}
-                  >
-                    <AgentIcon agent={t.agent} />
-                    <span className="tab-title">
-                      {title(t)}
-                      {t.unavailable
-                        ? " · Unavailable"
-                        : t.exited
-                          ? " · Ended"
-                          : ""}
-                    </span>
-                  </button>
-                  <button
-                    title="Close tab · keeps running"
-                    aria-label={`Close ${title(t)}`}
-                    onClick={() =>
-                      onClose(
-                        t,
-                        n.tabs.find((x) => x !== t.id),
-                      )
-                    }
-                  >
-                    <Icon name="close" size={14} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          <div className="pane-menu">
-            <button
-              title="Arrange tabs: move right, down, or to another pane"
-              aria-label={`Arrange pane ${number}`}
-              aria-expanded={menu === n.id}
-              onClick={(e) => {
-                const box = e.currentTarget.getBoundingClientRect();
-                setMenuPosition({
-                  top: Math.max(
-                    8,
-                    Math.min(box.bottom, window.innerHeight - 290),
-                  ),
-                  left: Math.max(
-                    8,
-                    Math.min(box.right - 230, window.innerWidth - 238),
-                  ),
-                });
-                setMenu(menu === n.id ? "" : n.id);
-              }}
-            >
-              {leaves.length > 1 ? `Pane ${number} · ` : ""}Arrange ▾
-            </button>
-            {menu === n.id && active && (
-              <div className="pane-actions" style={menuPosition}>
-                <strong>Arrange current tab</strong>
-                <button
-                  disabled={n.tabs.length < 2}
-                  onClick={() => move(active.id, n.id, "right")}
-                >
-                  Move tab right
-                </button>
-                <button
-                  disabled={n.tabs.length < 2}
-                  onClick={() => move(active.id, n.id, "down")}
-                >
-                  Move tab down
-                </button>
-                {n.tabs.length < 2 && (
-                  <small>Add another tab to split this pane.</small>
-                )}
-                {leaves
-                  .filter((g) => g.id !== n.id)
-                  .map((g) => (
-                    <button key={g.id} onClick={() => move(active.id, g.id)}>
-                      Move to pane {leaves.indexOf(g) + 1}
-                    </button>
-                  ))}
-                {leaves.length > 1 && (
-                  <button
-                    onClick={() => {
-                      setTree({
-                        ...group(leaves.flatMap((g) => g.tabs)),
-                        active: active.id,
-                      });
-                      setMenu("");
-                      onSelect(active.id);
-                    }}
-                  >
-                    Combine all tabs into one pane
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setMenu("");
-                    onEnd(active);
-                  }}
-                >
-                  {active.agent === "shell" ? "Close terminal" : "End session"}
-                </button>
-                <button onClick={() => setMenu("")}>Done</button>
+        {tabHost &&
+          createPortal(
+            <div className="group-tabs">
+              {number === 1 && <div className="tab-controls">{controls}</div>}
+              <div
+                className="tabbar"
+                role="tablist"
+                aria-label={`Pane ${number} tabs`}
+                onDragOver={(e) => {
+                  if (dragged) e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragged) move(dragged, n.id);
+                }}
+              >
+                {n.tabs.map((id) => {
+                  const t = terminals.find((t) => t.id === id);
+                  if (!t) return null;
+                  return (
+                    <div
+                      key={id}
+                      className={
+                        "terminal-tab " + (active?.id === id ? "selected" : "")
+                      }
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", id);
+                        e.dataTransfer.effectAllowed = "move";
+                        setDragged(id);
+                      }}
+                      onDragEnd={() => {
+                        setDragged("");
+                        setDrop("");
+                      }}
+                      onDragOver={(e) => {
+                        if (dragged) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (dragged) move(dragged, n.id, undefined, id);
+                      }}
+                    >
+                      <button
+                        role="tab"
+                        aria-selected={active?.id === id}
+                        title={title(t) + " · " + t.cwd}
+                        onClick={() => {
+                          setTree((old) =>
+                            map(old, n.id, (g) => ({
+                              ...(g as Group),
+                              active: id,
+                            })),
+                          );
+                          onSelect(id);
+                        }}
+                      >
+                        <AgentIcon agent={t.agent} />
+                        <span className="tab-title">
+                          {title(t)}
+                          {t.unavailable
+                            ? " · Unavailable"
+                            : t.exited
+                              ? " · Ended"
+                              : ""}
+                        </span>
+                      </button>
+                      <button
+                        title="Hide tab · session keeps running"
+                        aria-label={`Close ${title(t)}`}
+                        onClick={() =>
+                          onClose(
+                            t,
+                            n.tabs.find((x) => x !== t.id),
+                          )
+                        }
+                      >
+                        <Icon name="close" size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        </div>
+              <div className="pane-menu">
+                <button
+                  data-tour-anchor={number === 1 ? "arrange" : undefined}
+                  title="Arrange tabs: move right, down, or to another pane"
+                  aria-label={`Arrange pane ${number}`}
+                  aria-expanded={menu === n.id}
+                  onClick={(e) => {
+                    const box = e.currentTarget.getBoundingClientRect();
+                    setMenuPosition({
+                      top: Math.max(
+                        8,
+                        Math.min(box.bottom, window.innerHeight - 290),
+                      ),
+                      left: Math.max(
+                        8,
+                        Math.min(box.right - 230, window.innerWidth - 238),
+                      ),
+                    });
+                    setMenu(menu === n.id ? "" : n.id);
+                  }}
+                >
+                  {leaves.length > 1 ? `Pane ${number} · ` : ""}Arrange ▾
+                </button>
+                {menu === n.id && active && (
+                  <div className="pane-actions" style={menuPosition}>
+                    <strong>Arrange current tab</strong>
+                    <button
+                      disabled={n.tabs.length < 2}
+                      onClick={() => move(active.id, n.id, "right")}
+                    >
+                      Move tab right
+                    </button>
+                    <button
+                      disabled={n.tabs.length < 2}
+                      onClick={() => move(active.id, n.id, "down")}
+                    >
+                      Move tab down
+                    </button>
+                    {n.tabs.length < 2 && (
+                      <small>Add another tab to split this pane.</small>
+                    )}
+                    {leaves
+                      .filter((g) => g.id !== n.id)
+                      .map((g) => (
+                        <button
+                          key={g.id}
+                          onClick={() => move(active.id, g.id)}
+                        >
+                          Move to pane {leaves.indexOf(g) + 1}
+                        </button>
+                      ))}
+                    {leaves.length > 1 && (
+                      <button
+                        onClick={() => {
+                          setTree({
+                            ...group(leaves.flatMap((g) => g.tabs)),
+                            active: active.id,
+                          });
+                          setMenu("");
+                          onSelect(active.id);
+                        }}
+                      >
+                        Combine all tabs into one pane
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setMenu("");
+                        onEnd(active);
+                      }}
+                    >
+                      {active.agent === "shell"
+                        ? "Close terminal"
+                        : "End session"}
+                    </button>
+                    <button onClick={() => setMenu("")}>Done</button>
+                  </div>
+                )}
+              </div>
+            </div>,
+            tabHost,
+            n.id,
+          )}
         <div className="group-content">
           {active && render(active)}
           {dragged && (

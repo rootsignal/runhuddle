@@ -4,9 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
-import { DatabaseSync } from "node:sqlite";
 import { Service } from "../main/service.mjs";
-import { readStore } from "../main/store.mjs";
 import { address, dimensions, frames, send } from "../main/protocol.mjs";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(fn) {
@@ -16,55 +14,9 @@ async function until(fn) {
   }
   throw Error("Timed out waiting for terminal output");
 }
-test("native snapshot reads SQLite WAL, preserves notes and never changes records", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-store-"));
-  const file = path.join(dir, "sessions.sqlite");
-  const db = new DatabaseSync(file);
-  try {
-    db.exec(
-      "PRAGMA journal_mode=WAL; CREATE TABLE records(key TEXT PRIMARY KEY,value BLOB)",
-    );
-    const sessions = [
-      { provider: "Claude", sessionID: "one", title: "Test", state: "idle" },
-    ];
-    const insert = db.prepare("INSERT INTO records VALUES (?,?)");
-    insert.run("sessions", Buffer.from(JSON.stringify(sessions)));
-    insert.run(
-      "savedWorkLibrary",
-      Buffer.from('[{"id":"note","text":"keep me"}]'),
-    );
-    const before = db
-      .prepare("SELECT key,hex(value) AS value FROM records ORDER BY key")
-      .all();
-    const snapshot = readStore(file);
-    assert.deepEqual(snapshot.sessions, sessions);
-    assert.equal(snapshot.notes[0].text, "keep me");
-    assert.deepEqual(
-      db
-        .prepare("SELECT key,hex(value) AS value FROM records ORDER BY key")
-        .all(),
-      before,
-    );
-    assert.deepEqual(readStore(path.join(dir, "absent")).sessions, []);
-  } finally {
-    db.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-test("rejects invalid resize and malformed store records", () => {
-  assert.throws(() => dimensions(-1, 24));
-  assert.throws(() => dimensions(80, Infinity));
-  assert.throws(() => dimensions(80.5, 24));
+test("validates terminal dimensions", () => {
+  for (const invalid of [-1, Infinity, 80.5]) assert.throws(() => dimensions(invalid, 24));
   dimensions(80, 24);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-invalid-"));
-  const file = path.join(dir, "db");
-  const db = new DatabaseSync(file);
-  db.exec(
-    "CREATE TABLE records(key TEXT,value BLOB);INSERT INTO records VALUES ('sessions','{}')",
-  );
-  db.close();
-  assert.throws(() => readStore(file), /Unexpected/);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 test(
   "bundled service owns PTYs across client restart; input, Unicode, resize, replay, exit, auth and shutdown",

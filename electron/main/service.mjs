@@ -19,7 +19,7 @@ export class Service extends EventEmitter {
     this.token = fs.readFileSync(tokenFile, "utf8");
     try {
       await this.open();
-      await this.call("hello", { token: this.token });
+      this.hello = await this.call("hello", { token: this.token });
       return true;
     } catch {
       this.disconnect();
@@ -89,7 +89,7 @@ export class Service extends EventEmitter {
       }
       if (!connected)
         throw new Error(
-          "Terminal service did not start. See service.log in preview settings.",
+          "Terminal service did not start. See service.log in the RunHuddle data folder.",
         );
     }
     const hello = await this.call("hello", { token: this.token });

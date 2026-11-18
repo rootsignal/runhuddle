@@ -8,19 +8,19 @@ Free Software Foundation.
 
 RunHuddle is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE. See LICENSE (LICENSE.txt in the app)
+FITNESS FOR A PARTICULAR PURPOSE. See LICENSE (LICENSE.runhuddle in the app resources)
 for the full terms.
 
 Source and build instructions: https://github.com/rootsignal/runhuddle
 Use the source revision identified by the release for a matching build.
 Third-party components retain their own licenses and copyright notices.
-See ThirdPartyNotices in the app and docs/LICENSING.md in the repository.
+See the bundled Chromium and Electron license notices and docs/LICENSING.md.
 
-The Electron preview bundles Symbols Nerd Font Mono from Nerd Fonts v3.5.1.
+The app bundles Symbols Nerd Font Mono from Nerd Fonts v3.5.1.
 Upstream: https://github.com/ryanoasis/nerd-fonts
 The upstream LICENSE and glyph attribution README are included under
 Resources/licenses (and electron/assets/fonts in this source tree).
 
-The Electron preview bundles terminal palettes from iTerm2-Color-Schemes,
+The app bundles terminal palettes from iTerm2-Color-Schemes,
 release-20261116-150709-494b809, https://github.com/mbadolato/iTerm2-Color-Schemes.
 The upstream collection license and source notice ship under Resources/licenses.

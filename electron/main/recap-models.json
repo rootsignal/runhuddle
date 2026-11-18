@@ -1,0 +1,5 @@
+{
+  "codex": { "agent": "Codex", "model": "gpt-6-luna", "label": "GPT-6 Luna" },
+  "claude": { "agent": "Claude", "model": "haiku", "label": "Haiku" },
+  "copilot": { "agent": "Copilot", "model": "gpt-6-luna", "label": "GPT-6 Luna" }
+}

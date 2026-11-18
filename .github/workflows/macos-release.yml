@@ -1,0 +1,70 @@
+name: Publish macOS
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: runhuddle-production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: write
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: electron
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:ui
+      - name: Build signed and notarized installers
+        env:
+          CERTIFICATE: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          RUNHUDDLE_NOTARY_PROFILE: RunHuddle-CI
+        run: |
+          set -euo pipefail
+          : "${CERTIFICATE:?Configure the Developer ID certificate secret}"
+          : "${CERTIFICATE_PASSWORD:?Configure the certificate password secret}"
+          : "${APPLE_ID:?Configure the Apple ID secret}"
+          : "${APPLE_PASSWORD:?Configure the app-specific password secret}"
+          : "${APPLE_TEAM_ID:?Configure the Apple team ID}"
+          export CSC_LINK="$CERTIFICATE" CSC_KEY_PASSWORD="$CERTIFICATE_PASSWORD"
+          xcrun notarytool store-credentials "$RUNHUDDLE_NOTARY_PROFILE" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD"
+          npm run dist -- --mac --arm64 --publish never
+          version=$(node -p 'require("./package.json").version')
+          dmg="dist/package/RunHuddle-$version-arm64.dmg"
+          xcrun notarytool submit "$dmg" --keychain-profile "$RUNHUDDLE_NOTARY_PROFILE" --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+      - name: Publish release and updater channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: bash scripts/publish-macos.sh
+      - name: Deploy the website download
+        env:
+          GH_TOKEN: ${{ secrets.RUNHUDDLE_SITE_WORKFLOW_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::Set RUNHUDDLE_SITE_WORKFLOW_TOKEN to automate website deployment"
+            exit 0
+          fi
+          version=$(node -p 'require("./package.json").version')
+          gh workflow run action.yml --repo RootSignalLabs/rootsignal-site --ref main -f "version=$version"

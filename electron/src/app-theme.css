@@ -1,0 +1,66 @@
+:root {
+  --app-canvas: light-dark(#f3f5f7, #18181b);
+  --app-surface: light-dark(#fafbfc, #202023);
+  --app-raised: light-dark(#fff, #29292e);
+  --app-hover: light-dark(#e9edf1, #303034);
+  --app-border: light-dark(#d5dbe2, #36363d);
+  --app-border-strong: light-dark(#a5afba, #51515b);
+  --app-text: light-dark(#1c2430, #dedee3);
+  --app-secondary: light-dark(#364454, #c5cdd5);
+  --app-muted: light-dark(#566474, #a0a0ac);
+
+  --app-accent-base: #8fcbd0;
+  --app-accent: color-mix(in srgb, var(--app-accent-base) 70%, white);
+  --app-accent-hover: color-mix(in srgb, var(--app-accent-base) 52%, white);
+  --app-accent-text: light-dark(
+    color-mix(in srgb, var(--app-accent-base) 38%, black),
+    color-mix(in srgb, var(--app-accent-base) 66%, white)
+  );
+  --app-accent-edge: light-dark(
+    color-mix(in srgb, var(--app-accent-base) 53%, black),
+    color-mix(in srgb, var(--app-accent-base) 64%, white)
+  );
+  --app-accent-soft: color-mix(in srgb, var(--app-accent-base) 14%, var(--app-surface));
+  --app-accent-selected: color-mix(in srgb, var(--app-accent-base) 30%, var(--app-surface));
+
+  --app-error-text: light-dark(#9a2634, #f1a6ae);
+  --app-error-surface: light-dark(#fde8ec, #38252a);
+  --app-success-text: light-dark(#2c6a43, #a6d9ac);
+  --app-success-surface: light-dark(#e1f3e6, #203328);
+  --app-warning-text: light-dark(#754a08, #eac47f);
+  --app-warning: light-dark(#996000, #e8b25b);
+  --app-info-text: light-dark(#245e9c, #8dbdf2);
+  --app-working: light-dark(#2378a8, #54bdf2);
+  --app-idle: light-dark(#358058, #6bbd92);
+  --app-inactive: light-dark(#6f8095, #8190a3);
+}
+
+.app-accent-dialog {
+  width: min(350px, calc(100vw - 32px));
+  color: var(--app-text);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border-strong);
+  border-radius: 10px;
+  padding: 18px;
+}
+.app-accent-dialog::backdrop { background: #0007; }
+.app-accent-dialog h2 { margin-top: 0; }
+.app-accent-dialog label, .app-accent-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.app-accent-dialog input[type="color"] { width: 60px; height: 34px; padding: 3px; }
+.app-accent-dialog footer { justify-content: flex-end; margin-top: 16px; }
+
+:root[data-app-theme="light"] { color-scheme: light; }
+:root[data-app-theme="dark"] { color-scheme: dark; }
+:root[data-app-theme="light"] .agent-icon {
+  color: color-mix(in srgb, var(--agent-color) 38%, var(--app-text));
+}
+@media (prefers-color-scheme: light) {
+  :root[data-app-theme="system"] .agent-icon {
+    color: color-mix(in srgb, var(--agent-color) 38%, var(--app-text));
+  }
+}

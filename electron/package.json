@@ -1,6 +1,6 @@
 {
   "name": "runhuddle-electron",
-  "version": "0.1.0",
+  "version": "0.37.0",
   "private": true,
   "license": "GPL-3.0-only",
   "type": "module",
@@ -17,6 +17,7 @@
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
+    "electron-updater": "6.8.11",
     "node-pty": "1.1.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
@@ -32,11 +33,11 @@
     "typescript": "7.0.2",
     "vite": "8.3.8"
   },
-  "description": "RunHuddle cross-platform workspace preview",
+  "description": "RunHuddle cross-platform AI session workspace",
   "author": "RootSignal",
   "build": {
     "appId": "io.rootsignal.runhuddle.preview",
-    "productName": "RunHuddle Preview",
+    "productName": "RunHuddle",
     "directories": {
       "output": "dist/package"
     },
@@ -51,10 +52,11 @@
     ],
     "mac": {
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "identity": null
+      "minimumSystemVersion": "14.0"
     },
     "win": {
       "target": [
@@ -69,6 +71,10 @@
     },
     "icon": "assets/icon.png",
     "extraResources": [
+      {
+        "from": "assets/icon.png",
+        "to": "runhuddle-icon.png"
+      },
       {
         "from": "../LICENSE",
         "to": "LICENSE.runhuddle"
@@ -93,6 +99,15 @@
         "from": "assets/themes/SOURCE.txt",
         "to": "licenses/terminal-themes-SOURCE.txt"
       }
-    ]
+    ],
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/rootsignal/runhuddle/releases/download/electron-stable"
+    },
+    "afterSign": "build/notarize.cjs",
+    "artifactName": "RunHuddle-${version}-${arch}.${ext}",
+    "dmg": {
+      "sign": true
+    }
   }
 }
