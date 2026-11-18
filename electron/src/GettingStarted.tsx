@@ -74,7 +74,7 @@ const steps = [
   {
     id: "browser",
     title: "Preview and share a page",
-    text: "Preview a local dev server or HTTPS page beside your session. Share page adds a report to your draft. For a local app, Allow agent control shares the live page with the selected session. Reopen older sessions to load browser tools.",
+    text: "Preview a local dev server or HTTPS page beside your session. Share page adds a report to your draft. Allow agent control lets the selected session interact with the open site. Switching sites or sessions ends access. Reopen older sessions to load browser tools.",
   },
 ] as const;
 

@@ -15,11 +15,6 @@ function parseAddress(value) {
   } catch {}
 }
 
-function localOrigin(value) {
-  const url = parseAddress(value);
-  if (url && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return url.origin;
-}
-
 function userAddress(value) {
   if (typeof value !== "string" || value.length > addressLimit) throw Error(addressHelp);
   const address = value.trim();
@@ -110,7 +105,6 @@ export function browserPreview(window, publish, reportDirectory, revokeAgent) {
       ready: documentReady && !!parseAddress(contents?.getURL()) && !error,
       error,
       agentSession: agentSession || null,
-      local: !!localOrigin(contents?.getURL()),
     };
   }
   const changed = () => publish({ event: "browser-preview", state: state() });
@@ -122,7 +116,7 @@ export function browserPreview(window, publish, reportDirectory, revokeAgent) {
   }
 
   function agentOrigin() {
-    if (view?.getVisible() && state().ready) return localOrigin(view.webContents.getURL());
+    if (view?.getVisible() && state().ready) return parseAddress(view.webContents.getURL())?.origin;
   }
 
   function layout(rect) {
@@ -160,11 +154,11 @@ export function browserPreview(window, publish, reportDirectory, revokeAgent) {
     const contents = view.webContents;
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
     const guardNavigation = (event) => {
-      if (sharedOrigin && event.isMainFrame && localOrigin(event.url) !== sharedOrigin) {
+      if (sharedOrigin && event.isMainFrame && parseAddress(event.url)?.origin !== sharedOrigin) {
         event.preventDefault();
         revokeAgent();
         address = contents.getURL();
-        error = "Navigation outside the shared local app was blocked. Open the address manually to continue.";
+        error = "Navigation outside the shared site was blocked. Open the address manually to continue.";
         changed();
         return;
       }
@@ -189,7 +183,7 @@ export function browserPreview(window, publish, reportDirectory, revokeAgent) {
       changed();
     });
     contents.on("did-navigate", () => {
-      if (sharedOrigin && localOrigin(contents.getURL()) !== sharedOrigin) revokeAgent();
+      if (sharedOrigin && parseAddress(contents.getURL())?.origin !== sharedOrigin) revokeAgent();
       changed();
     });
     contents.on("did-navigate-in-page", (event) => {
@@ -226,7 +220,7 @@ export function browserPreview(window, publish, reportDirectory, revokeAgent) {
   function navigate(value) {
     const url = userAddress(value);
     if (!url) throw Error(addressHelp);
-    if (sharedOrigin && localOrigin(url.href) !== sharedOrigin) revokeAgent();
+    if (sharedOrigin && url.origin !== sharedOrigin) revokeAgent();
     const contents = page();
     const previous = parseAddress(contents.getURL());
     const fragmentChange = previous && previous.href !== url.href &&

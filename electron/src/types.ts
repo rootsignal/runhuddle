@@ -93,7 +93,6 @@ export interface ScreenshotNotice {
 }
 export interface BrowserPreviewState {
   agentSession: string | null;
-  local: boolean;
   url: string;
   title: string;
   loading: boolean;

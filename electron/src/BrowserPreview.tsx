@@ -17,6 +17,7 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
   const [reopening, setReopening] = useState(false);
   const [granting, setGranting] = useState(false);
   const [attached, setAttached] = useState("");
+  const agentSession = state?.agentSession;
   const host = useRef<HTMLDivElement>(null);
   const currentTarget = useRef(target);
   const active = useRef(false);
@@ -176,26 +177,26 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
             "Adds a screenshot, page text, and console errors to your draft. Press Enter to send."}
         </p>
         <div className="browser-agent-controls">
-          {(state?.agentSession || (state?.local && target?.browserTools && !target.locked)) && (
-            <button type="button" disabled={granting || (!state.agentSession && !state.ready)}
-              onClick={() => void agentAccess(state.agentSession ? null : target!.id)}>
-              {state.agentSession ? "Stop agent control" : "Allow agent control"}
+          {(agentSession || (state?.url && target?.browserTools && !target.locked)) && (
+            <button type="button" disabled={granting || (!agentSession && !state?.ready)}
+              onClick={() => void agentAccess(agentSession ? null : target!.id)}>
+              {agentSession ? "Stop agent control" : "Allow agent control"}
             </button>
           )}
-          {state?.local && target && !target.locked && !target.browserTools && (
+          {state?.url && target && !target.locked && !target.browserTools && (
             <button type="button" disabled={reopening} onClick={() => void reopenSession(target.id)}>
               {target.canResume ? "Reopen with browser control" : "Start session with browser control"}
             </button>
           )}
           <p className="muted" aria-live="polite">
-            {reopening ? "Opening a session with browser tools…" : state?.agentSession ? "Ask this session to test the page using RunHuddle Browser. Stop control to take over." :
-              !state?.local ? "Agent control is available for local dev servers." :
+            {reopening ? "Opening a session with browser tools…" : agentSession ? "This session can interact with this site. Stop control to take over." :
+              !state?.url ? "Open a page to allow agent control." :
               !target ? "Select an AI session to allow browser control." :
               target.locked ? "This Codex conversation is in use elsewhere." :
               !target.browserTools ? target.canResume
                 ? "Reopen the saved conversation to load live browser tools."
                 : "Start a new conversation in this folder with live browser tools." :
-              "Lets this session inspect and interact with this local app. Switching sessions revokes access."}
+              "Lets this session inspect and interact with this site. Switching sites or sessions ends access."}
           </p>
         </div>
       </footer>

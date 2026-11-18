@@ -86,7 +86,7 @@ export function browserAgentBridge(directory, currentPreview, canUseTerminal) {
     const request = ++generation;
     const preview = currentPreview();
     const origin = preview?.agentOrigin();
-    if (!origin) throw Error("Open a local app in Browser first.");
+    if (!origin) throw Error("Open a page in Browser and wait for it to load.");
     const key = await readKey();
     if (!/^[0-9a-f]{64}$/.test(key)) throw Error("This terminal needs to be reopened for browser tools.");
     await listen();

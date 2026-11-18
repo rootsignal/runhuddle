@@ -21,7 +21,7 @@ Provider history is discovered from local CLI records. Project layouts, pins, an
 
 ## Live browser testing
 
-Open a local development server in Browser, select an AI session, and choose **Allow agent control**. The selected agent can inspect, screenshot, click, type, and reload the live page. Stop control, switch sessions, or close Browser to revoke it. **Share page** adds a screenshot and diagnostics to a draft. Use **Reopen with browser control** to reopen a supported older Electron session with the browser tools.
+Open an HTTPS page or a local development server in Browser, select an AI session, and choose **Allow agent control**. The selected agent can inspect, screenshot, click, type, and reload pages on the shared site. Stop control, open a different site, switch sessions, or close Browser to revoke access. **Share page** adds a screenshot and diagnostics to a draft. Use **Reopen with browser control** to reopen a supported older Electron session with the browser tools.
 
 Replay **Getting started** from Help.
 

@@ -170,6 +170,10 @@ test("workspace navigation, retained search, notes and persistent terminal acros
         await expect(guide).toContainText("Claude usage");
         await expect(guide).toContainText("Continue with another agent… anytime");
       }
+      if (title === "Preview and share a page") {
+        await expect(guide).toContainText("Preview a local dev server or HTTPS page");
+        await expect(guide).toContainText("Switching sites or sessions ends access");
+      }
     }
     await guide.getByRole("button", { name: "Done" }).click();
     await expect(guide).toHaveCount(0);
@@ -2003,7 +2007,12 @@ test("browser preview shares reports and grants the active agent revocable live 
       width: usageBounds.width + 8,
       height: usageBounds.height + 8,
     });
-    await guide.getByRole("button", { name: "Skip guide" }).click();
+    for (const title of ["Adjust terminal appearance", "Review Git changes", "Save project notes", "Catch up in Inbox", "Preview and share a page"]) {
+      await guide.getByRole("button", { name: "Next" }).click();
+      await expect(guide.getByRole("heading", { name: title })).toBeVisible();
+    }
+    await expect(guide).toContainText("Allow agent control lets the selected session interact with the open site");
+    await guide.getByRole("button", { name: "Done" }).click();
     await expect(page.locator(".xterm-helper-textarea")).toBeAttached();
     await expect.poll(async () => (await browserChild()).visible).toBe(true);
     await expect(url).toHaveValue("http://" + address + "/");
@@ -2053,13 +2062,13 @@ test("browser preview shares reports and grants the active agent revocable live 
       console: expect.arrayContaining([expect.stringContaining("Fixture page warning")]),
     });
     expect(browserTool("screenshot").content[0]).toMatchObject({ type: "image", mimeType: "image/jpeg" });
-    const point = (selector: string) => app!.evaluate(async ({ webContents }, selector) => {
-      const guest = webContents.getAllWebContents().find((item) => item.getTitle() === "Browser fixture");
+    const point = (selector: string, title = "Browser fixture") => app!.evaluate(async ({ webContents }, { selector, title }) => {
+      const guest = webContents.getAllWebContents().find((item) => item.getTitle() === title);
       return guest!.mainFrame.executeJavaScript(`(() => {
         const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
         return { x: Math.floor(r.x + r.width / 2), y: Math.floor(r.y + r.height / 2) };
       })()`);
-    }, selector);
+    }, { selector, title });
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
     await expect.poll(() => app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused())).toBe(true);
     expect(browserTool("type_text", { ...await point("input"), text: "Sample" })).toMatchObject({
@@ -2079,9 +2088,63 @@ test("browser preview shares reports and grants the active agent revocable live 
     expect(browserTool("click", await point("#outside"))).toMatchObject({
       content: [{ text: "Clicked the shared page." }],
     });
-    await expect(panel.getByRole("alert")).toContainText("Navigation outside the shared local app was blocked");
+    await expect(panel.getByRole("alert")).toContainText("Navigation outside the shared site was blocked");
     expect(browserTool("inspect_page").isError).toBe(true);
     await expect.poll(async () => (await browserChild()).url).toBe("http://" + address + "/");
+
+    // Serve non-loopback HTTPS origins through Chromium without a network dependency.
+    const site = "https://preview.runhuddle.test";
+    const otherSite = "https://another.runhuddle.test";
+    await app.evaluate(async ({ webContents }, { site, otherSite }) => {
+      const guest = webContents.getAllWebContents().find((item) => item.getTitle() === "Browser fixture")!;
+      await guest.session.protocol.handle("https", (request) => {
+        const url = new URL(request.url);
+        if (![site, otherSite].includes(url.origin)) return new Response("Not found", { status: 404 });
+        return new Response(
+          `<!doctype html><title>HTTPS fixture</title><h1>${url.origin}${url.pathname}</h1>
+            <button onclick="document.querySelector('h1').textContent='HTTPS button clicked'">Try me</button>
+            <a href="${otherSite}/next">Other site</a>`,
+          { headers: { "Content-Type": "text/html; charset=utf-8" } },
+        );
+      });
+    }, { site, otherSite });
+    const openAddress = async (address: string) => {
+      await url.fill(address);
+      await url.press("Enter");
+      await expect.poll(async () => (await browserChild()).url).toBe(address);
+      await expect(panel.getByRole("button", { name: /^Share page/ })).toBeEnabled();
+    };
+    await openAddress(site + "/");
+    expect(browserTool("inspect_page").isError).toBe(true);
+    const allow = panel.getByRole("button", { name: "Allow agent control" });
+    const stop = panel.getByRole("button", { name: "Stop agent control" });
+    await allow.click();
+    await expect(stop).toBeVisible();
+    expect(JSON.parse(browserTool("inspect_page").content[0].text)).toMatchObject({
+      url: site + "/", visibleText: expect.stringContaining(site + "/"),
+    });
+    expect(browserTool("click", await point("button", "HTTPS fixture"))).toMatchObject({
+      content: [{ text: "Clicked the shared page." }],
+    });
+    await expect.poll(() => browserTool("inspect_page").content[0].text).toContain("HTTPS button clicked");
+    await openAddress(site + "/next");
+    await expect(stop).toBeVisible();
+    expect(JSON.parse(browserTool("inspect_page").content[0].text)).toMatchObject({ url: site + "/next" });
+    await openAddress(otherSite + "/");
+    await expect(stop).toHaveCount(0);
+    expect(browserTool("inspect_page").isError).toBe(true);
+    await allow.click();
+    await expect(stop).toBeVisible();
+    expect(JSON.parse(browserTool("inspect_page").content[0].text)).toMatchObject({ url: otherSite + "/" });
+    await openAddress(site + "/");
+    await allow.click();
+    await expect(stop).toBeVisible();
+    expect(browserTool("click", await point("a", "HTTPS fixture"))).toMatchObject({
+      content: [{ text: "Clicked the shared page." }],
+    });
+    await expect(panel.getByRole("alert")).toContainText("Navigation outside the shared site was blocked");
+    expect(browserTool("inspect_page").isError).toBe(true);
+    expect((await browserChild()).url).toBe(site + "/");
   } finally {
     if (app) await closeUI(app);
     if (await client.connectExisting()) {
