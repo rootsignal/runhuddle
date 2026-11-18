@@ -15,6 +15,10 @@ const digest = (algorithm, bytes, encoding = "hex") =>
 const archiveHash = digest("sha512", archive, "base64");
 const minimumMacOS = app.build.mac.minimumSystemVersion;
 if (!/^\d+\.\d+$/.test(minimumMacOS)) throw Error("Expected a minimum macOS version");
+const updatePath = path.join(directory, "latest-mac.yml");
+const previousUpdate = fs.existsSync(updatePath) ? fs.readFileSync(updatePath, "utf8") : "";
+const releaseDate = /^releaseDate: ['"]?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)['"]?$/m.exec(previousUpdate)?.[1]
+  ?? new Date().toISOString();
 const update = [
   `version: ${version}`,
   "files:",
@@ -24,12 +28,12 @@ const update = [
   `path: ${zip}`,
   `sha512: ${archiveHash}`,
   `minimumSystemVersion: "${minimumMacOS}"`,
-  `releaseDate: "${new Date().toISOString()}"`,
+  `releaseDate: "${releaseDate}"`,
   "",
 ].join("\n");
 const sha256 = digest("sha256", installer);
 fs.writeFileSync(path.join(directory, dmg + ".sha256"), `${sha256}  ${dmg}\n`);
-fs.writeFileSync(path.join(directory, "latest-mac.yml"), update);
+fs.writeFileSync(updatePath, update);
 fs.writeFileSync(path.join(directory, "macos-release.json"), JSON.stringify({
   version, minimumMacOS, architecture: "Apple Silicon", file: dmg,
   bytes: installer.length, sha256, updateManifestSha256: digest("sha256", update),
