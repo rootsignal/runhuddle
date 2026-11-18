@@ -31,12 +31,6 @@ const labels: Record<string, string> = {
   disconnected: "Activity unavailable",
   archived: "Archived",
 };
-const sessionTerminal = (row: Session, terminals: TerminalInfo[]) =>
-  terminals.find((t) => !t.exited && (
-    t.id === row.terminalId ||
-    (t.sessionID === row.sessionID && t.agent === row.provider.toLowerCase())
-  ));
-
 function sessionRows(data: Snapshot, connected: boolean) {
   const liveIDs = new Set(data.terminals.filter((t) => !t.exited).map((t) => t.id));
   const liveSessions = new Map(data.terminals.flatMap((t) => {
@@ -78,25 +72,21 @@ function restoredSelection(
   previous: string,
   hidden: string[],
 ) {
-  const row = data.sessions.find(
-    (s) => "session:" + key(s) === previous && (!folder || s.cwd === folder),
-  );
-  if (row) {
-    const live = sessionTerminal(row, data.terminals);
-    return live && !hidden.includes(live.id) ? "terminal:" + live.id : previous;
-  }
   if (
+    data.sessions.some((s) => "session:" + key(s) === previous) ||
     data.notes.some(
-      (n) => "note:" + n.id === previous && (!folder || n.project === folder),
+      (n) => "note:" + n.id === previous,
     )
   )
     return previous;
   const candidates = data.terminals.filter((t) => !hidden.includes(t.id));
-  return candidates.some((t) => "terminal:" + t.id === previous)
-    ? previous
-    : candidates[0]
-      ? "terminal:" + candidates[0].id
-      : "";
+  if (candidates.some((t) => "terminal:" + t.id === previous)) return previous;
+  const fallback =
+    candidates.find((t) => !t.exited && t.cwd === folder) ||
+    candidates.find((t) => !t.exited) ||
+    candidates.find((t) => t.cwd === folder) ||
+    candidates[0];
+  return fallback ? "terminal:" + fallback.id : "";
 }
 function recency(updated: number) {
   const date = new Date(updated * 1000),
@@ -170,6 +160,7 @@ function App() {
   const [selection, setSelection] = useState("");
   const [linkTarget, setLinkTarget] = useState("");
   const [resuming, setResuming] = useState(false);
+  const [tabReplacement, setTabReplacement] = useState<{ from: string; to: string }>();
 
   const [hiddenTabs, setHiddenTabs] = useState<string[]>(() =>
     readSetting("hiddenTabs", []),
@@ -505,8 +496,10 @@ function App() {
     try {
       const t = await window.runhuddle.resume(provider, sessionID);
       if (t) {
-        if (previous && previous !== t.id)
+        if (previous && previous !== t.id) {
+          setTabReplacement({ from: previous, to: t.id });
           setHiddenTabs((old) => [...old, previous]);
+        }
         setSnapshot((old) => ({
           ...old,
           terminals: [...old.terminals.filter((x) => x.id !== t.id), t],
@@ -678,6 +671,8 @@ function App() {
                           t.cwd,
                           "shell",
                         );
+                        setTabReplacement({ from: t.id, to: replacement.id });
+                        setHiddenTabs((old) => [...old, t.id]);
                         setSnapshot((old) => ({
                           ...old,
                           terminals: [
@@ -1097,7 +1092,7 @@ function App() {
           {shown && renderSessionToolbar(shown)}
           <div className="review-layout">
             <div className="stage" id="review-stage">
-              {terminals.length > 0 && (
+              {loaded && terminals.length > 0 && (
                 <div
                   className="workspace-surface"
                   style={{ display: shown ? "flex" : "none" }}
@@ -1107,6 +1102,7 @@ function App() {
                     controls={tabControls}
                     tabHost={tabHost}
                     terminals={terminals}
+                    replacement={tabReplacement}
                     selected={shown?.id || ""}
                     title={terminalTitle}
                     onSelect={(id) => select("terminal:" + id)}

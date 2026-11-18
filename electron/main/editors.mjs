@@ -12,17 +12,18 @@ const catalog = [
   ["subl", "Sublime Text", "Sublime Text"],
 ];
 export function detectEditors(platform = process.platform, env = process.env, exists = fs.existsSync) {
+  const paths = platform === "win32" ? path.win32 : path.posix;
   const rows = [];
   for (const [id, name, bundle] of catalog) {
     let candidates;
-    if (platform === "darwin") candidates = ["/Applications", path.join(os.homedir(), "Applications")].map(p => path.join(p, bundle + ".app"));
+    if (platform === "darwin") candidates = ["/Applications", paths.join(os.homedir(), "Applications")].map(p => paths.join(p, bundle + ".app"));
     else if (platform === "win32") candidates = [
-      path.join(env.LOCALAPPDATA || "", "Programs", id === "code" ? "Microsoft VS Code" : bundle, id === "code" ? "Code.exe" : name + ".exe"),
-      path.join(env.ProgramFiles || "", id === "code" ? "Microsoft VS Code" : bundle, id === "code" ? "Code.exe" : name + ".exe"),
-      ...(env.PATH || "").split(path.delimiter).map(p => path.join(p, id + ".exe")),
+      paths.join(env.LOCALAPPDATA || "", "Programs", id === "code" ? "Microsoft VS Code" : bundle, id === "code" ? "Code.exe" : name + ".exe"),
+      paths.join(env.ProgramFiles || "", id === "code" ? "Microsoft VS Code" : bundle, id === "code" ? "Code.exe" : name + ".exe"),
+      ...(env.PATH || "").split(paths.delimiter).map(p => paths.join(p, id + ".exe")),
     ];
-    else candidates = (env.PATH || "/usr/local/bin:/usr/bin").split(":").map(p => path.join(p, id));
-    const application = candidates.find(p => path.isAbsolute(p) && exists(p));
+    else candidates = (env.PATH || "/usr/local/bin:/usr/bin").split(paths.delimiter).map(p => paths.join(p, id));
+    const application = candidates.find(p => paths.isAbsolute(p) && exists(p));
     if (application) rows.push({ id, name, application });
   }
   return rows;

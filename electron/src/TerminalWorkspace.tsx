@@ -79,6 +79,7 @@ export function TerminalWorkspace({
   controls,
   tabHost,
   terminals,
+  replacement,
   selected,
   title,
   onSelect,
@@ -91,6 +92,7 @@ export function TerminalWorkspace({
   controls: ReactNode;
   tabHost: HTMLElement | null;
   terminals: TerminalInfo[];
+  replacement?: { from: string; to: string };
   selected: string;
   title: (t: TerminalInfo) => string;
   onSelect: (id: string) => void;
@@ -131,6 +133,24 @@ export function TerminalWorkspace({
   // Terminal creation and sidebar selection affect only the owning/focused group.
   useEffect(() => {
     setTree((old) => {
+      if (replacement && ids.includes(replacement.to)) {
+        const { from, to } = replacement;
+        const leaves = groups(old);
+        const source = leaves.find((g) => g.tabs.includes(from));
+        if (source) {
+          const destination = leaves.find((g) => g.tabs.includes(to));
+          if (destination && destination.id !== source.id) {
+            old = map(old, destination.id, () => ({
+              ...destination, tabs: destination.tabs.filter((id) => id !== to),
+            }));
+          }
+          old = map(old, source.id, () => ({
+            ...source,
+            tabs: source.tabs.filter((id) => id !== to).map((id) => id === from ? to : id),
+            active: source.active === from ? to : source.active,
+          }));
+        }
+      }
       let next = reconcile(old, ids, selected, focusedGroup.current);
       const owner = groups(next).find((g) => g.tabs.includes(selected));
       if (owner) focusedGroup.current = owner.id;
@@ -141,7 +161,7 @@ export function TerminalWorkspace({
         }));
       return next;
     });
-  }, [ids.join("|"), selected]);
+  }, [ids.join("|"), selected, replacement]);
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(tree));
   }, [tree, storageKey]);

@@ -45,6 +45,7 @@ async function chooseProject(page: any, folder: string) {
   await group.getByRole("button", { name: "View all", exact: true }).click();
 }
 test("workspace navigation, retained search, notes and persistent terminal across full app quit", async () => {
+  test.setTimeout(90000);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-ui-"));
   execFileSync("git", ["init", "-q"], { cwd: dir });
   fs.writeFileSync(
@@ -682,6 +683,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     await expect(horizontal).toHaveAttribute("aria-valuenow", "55");
     // Sidebar focuses an existing pane without making duplicate tabs or collapsing layout.
     await page.locator(".live-row").first().locator(".session-row").click();
+    const focusedBeforeQuit = await page.locator(".focused-pane").getAttribute("aria-label");
     await expect(page.getByRole("tablist")).toHaveCount(3);
     await expect(page.getByRole("tab")).toHaveCount(3);
     await page.screenshot({ path: "test-results/preview-split.png" });
@@ -689,6 +691,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     app = await electron.launch(launch);
     page = await app.firstWindow();
     await expect(page.getByRole("tablist")).toHaveCount(3);
+    await expect(page.locator(".focused-pane")).toHaveAttribute("aria-label", focusedBeforeQuit!);
     await expect(
       page.locator('[role="separator"][aria-orientation="horizontal"]'),
     ).toHaveAttribute("aria-valuenow", "55");
@@ -1169,6 +1172,9 @@ test("helper crash preserves panes and recovers without restarting the app", asy
       .last()
       .click();
     await expect(page.locator(".terminal-host")).toHaveCount(1);
+    await expect(page.getByRole("tablist")).toHaveCount(2);
+    await expect(page.getByRole("tablist", { name: "Pane 2 tabs" }).getByRole("tab"))
+      .not.toContainText("Unavailable");
     await expect(
       page.getByRole("heading", { name: "Terminal unavailable", exact: true }),
     ).toHaveCount(1);

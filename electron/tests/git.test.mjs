@@ -1,4 +1,5 @@
 import test from "node:test";
+import { removeGitFixture } from "./git-fixture.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -48,7 +49,7 @@ test("Git review handles staged/unstaged, renames, deletion, binary, and literal
     git("clean", "-fdq");
     assert.equal((await gitChanges(dir)).files.length, 0);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 12, retryDelay: 100 });
+    removeGitFixture(dir);
   }
 });
 test("new repositories and folders without Git have clear review states", async () => {
@@ -61,7 +62,7 @@ test("new repositories and folders without Git have clear review states", async 
     assert.equal((await gitChanges(dir)).branch, "New repository");
     assert.match(await gitDiff(dir, "first.txt", "staged"), /\+first/);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 12, retryDelay: 100 });
+    removeGitFixture(dir);
   }
 });
 
@@ -108,6 +109,6 @@ test("clean repositories expose recent commits and committed branch changes sepa
     git("branch", "-D", "main");
     await assert.rejects(gitChanges(dir, "compare"), /No main branch/);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 12, retryDelay: 100 });
+    removeGitFixture(dir);
   }
 });
