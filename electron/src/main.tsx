@@ -1,17 +1,24 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useDismissMenus } from "./useDismissMenus";
+import { UsageControls } from "./UsageControls";
+import { ScreenshotPopup } from "./ScreenshotPopup";
+import { EditorButton } from "./EditorButton";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AppearanceContext,
   loadAppearance,
   TerminalAppearance,
 } from "./TerminalAppearance";
-import { WorkspaceTools } from "./WorkspaceTools";
+import { matchesNote, WorkspaceTools } from "./WorkspaceTools";
+import { NoteEditor } from "./NoteEditor";
 import { LaunchMenu } from "./LaunchMenu";
 import { AgentIcon, Icon, launchOptions } from "./Icons";
+import { SessionHistory } from "./SessionHistory";
+import { CompanionShell } from "./CompanionShell";
 import { TerminalContext } from "./TerminalContext";
 import { TerminalWorkspace } from "./TerminalWorkspace";
 import { TerminalPane } from "./Terminal";
-import type { Snapshot, Session, TerminalInfo } from "./types";
+import type { NoteDraft, Snapshot, Session, TerminalInfo } from "./types";
 import "./style.css";
 import logo from "../assets/icon.png";
 const key = (s: Session) => s.provider + ":" + s.sessionID;
@@ -21,9 +28,43 @@ const labels: Record<string, string> = {
   idle: "Idle",
   needsInput: "Needs input",
   saved: "Previous session",
-  disconnected: "Unknown",
+  disconnected: "Activity unavailable",
   archived: "Archived",
 };
+const sessionTerminal = (row: Session, terminals: TerminalInfo[]) =>
+  terminals.find((t) => !t.exited && (
+    t.id === row.terminalId ||
+    (t.sessionID === row.sessionID && t.agent === row.provider.toLowerCase())
+  ));
+
+function sessionRows(data: Snapshot, connected: boolean) {
+  const liveIDs = new Set(data.terminals.filter((t) => !t.exited).map((t) => t.id));
+  const liveSessions = new Map(data.terminals.flatMap((t) => {
+    const provider = launchOptions.find((option) => option.id === t.agent)?.name;
+    return provider && t.sessionID && !t.exited
+      ? [[provider + ":" + t.sessionID, { provider, terminal: t }] as const]
+      : [];
+  }));
+  const rows = new Map(data.sessions.map((row) => {
+    const terminalId = row.terminalId && liveIDs.has(row.terminalId)
+      ? row.terminalId
+      : liveSessions.get(key(row))?.terminal.id;
+    return [key(row), {
+      ...row,
+      terminalId,
+      state: terminalId && (!connected || terminalId !== row.terminalId) ? "disconnected" : row.state,
+    }] as const;
+  }));
+  for (const [id, { provider, terminal: t }] of liveSessions) {
+    if (rows.has(id)) continue;
+    rows.set(id, {
+      provider, sessionID: t.sessionID!, terminalId: t.id,
+      cwd: t.cwd, project: name(t.cwd), title: provider + " session",
+      preview: "", state: "disconnected", updated: 0,
+    });
+  }
+  return [...rows.values()];
+}
 function readSetting<T>(key: string, fallback: T): T {
   try {
     return JSON.parse(localStorage.getItem(key) || "null") ?? fallback;
@@ -37,18 +78,20 @@ function restoredSelection(
   previous: string,
   hidden: string[],
 ) {
+  const row = data.sessions.find(
+    (s) => "session:" + key(s) === previous && (!folder || s.cwd === folder),
+  );
+  if (row) {
+    const live = sessionTerminal(row, data.terminals);
+    return live && !hidden.includes(live.id) ? "terminal:" + live.id : previous;
+  }
   if (
-    data.sessions.some(
-      (s) => "session:" + key(s) === previous && (!folder || s.cwd === folder),
-    ) ||
     data.notes.some(
       (n) => "note:" + n.id === previous && (!folder || n.project === folder),
     )
   )
     return previous;
-  const candidates = data.terminals.filter(
-    (t) => (!folder || t.cwd === folder) && !hidden.includes(t.id),
-  );
+  const candidates = data.terminals.filter((t) => !hidden.includes(t.id));
   return candidates.some((t) => "terminal:" + t.id === previous)
     ? previous
     : candidates[0]
@@ -72,6 +115,9 @@ function recency(updated: number) {
         : "Earlier";
 }
 function App() {
+  useDismissMenus();
+  const [noteDraft, setNoteDraft] = useState<NoteDraft>();
+  const [showNotes, setShowNotes] = useState(0);
   const [snapshot, setSnapshot] = useState<Snapshot>({
     sessions: [],
     notes: [],
@@ -81,6 +127,20 @@ function App() {
     terminals: [],
     home: "",
   });
+  const [companions, setCompanions] = useState<Record<string, string>>(() =>
+    readSetting("companionShells", {}),
+  );
+  const [visibleShells, setVisibleShells] = useState<string[]>(() =>
+    readSetting("visibleShells", []),
+  );
+  const openingShells = useRef(new Set<string>());
+  useEffect(() => {
+    localStorage.setItem("companionShells", JSON.stringify(companions));
+  }, [companions]);
+  useEffect(() => {
+    localStorage.setItem("visibleShells", JSON.stringify(visibleShells));
+  }, [visibleShells]);
+  const [tabHost, setTabHost] = useState<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [connection, setConnection] = useState("connected");
   const [error, setError] = useState("");
@@ -95,7 +155,9 @@ function App() {
   }, [appearance]);
   const [launchKind, setLaunchKind] = useState<"all" | "ai" | "shell">("all");
   const [mode, setMode] = useState<"recent" | "workspaces" | "notes">(() =>
-    readSetting("sidebarMode", "recent"),
+    readSetting<string>("sidebarMode", "recent") === "workspaces"
+      ? "workspaces"
+      : "recent",
   );
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState("all");
@@ -150,12 +212,12 @@ function App() {
         setSnapshot(data);
         setConnection(data.connection || "connected");
         setSelection(
-          restoredSelection(
-            data,
-            workspace,
-            workspaceSelections[workspace],
-            hiddenTabs,
-          ),
+          restoredSelection(data, workspace, workspaceSelections[workspace], [
+            ...hiddenTabs,
+            ...Object.entries(companions)
+              .filter(([owner]) => data.terminals.some((t) => t.id === owner))
+              .map(([, id]) => id),
+          ]),
         );
         setLoaded(true);
       })
@@ -210,15 +272,20 @@ function App() {
           ...folders,
           ...snapshot.sessions.map((s) => s.cwd),
           ...snapshot.terminals.map((t) => t.cwd),
+          ...snapshot.notes.map((n) => n.project),
         ]),
       ]
         .filter(Boolean)
         .sort((a, b) => name(a).localeCompare(name(b))),
-    [folders, snapshot.sessions, snapshot.terminals],
+    [folders, snapshot.sessions, snapshot.terminals, snapshot.notes],
+  );
+  const allSessions = useMemo(
+    () => sessionRows(snapshot, connection === "connected"),
+    [snapshot.sessions, snapshot.terminals, connection],
   );
   const sessions = useMemo(
     () =>
-      snapshot.sessions
+      allSessions
         .filter(
           (s) =>
             (!workspace || s.cwd === workspace) &&
@@ -232,29 +299,38 @@ function App() {
               .toLowerCase()
               .includes(query.toLowerCase()),
         )
-        .sort((a, b) => b.updated - a.updated),
-    [snapshot.sessions, snapshot.pinned, workspace, scope, query],
+        .sort((a, b) => Number(!!b.terminalId) - Number(!!a.terminalId) || b.updated - a.updated),
+    [allSessions, snapshot.pinned, workspace, scope, query],
   );
   const workspaceTerminals = snapshot.terminals.filter(
     (t) => !workspace || t.cwd === workspace,
   );
-  const terminals = workspaceTerminals.filter(
-    (t) => !hiddenTabs.includes(t.id),
+  const companionIDs = new Set(
+    Object.entries(companions)
+      .filter(([owner]) => snapshot.terminals.some((t) => t.id === owner))
+      .map(([, id]) => id),
   );
-  const session = snapshot.sessions.find(
+  const terminals = snapshot.terminals.filter(
+    (t) => !hiddenTabs.includes(t.id) && !companionIDs.has(t.id),
+  );
+  const session = allSessions.find(
     (s) => "session:" + key(s) === selection,
   );
   const note = snapshot.notes.find((n) => "note:" + n.id === selection);
+  const noteSource = note?.sourceSessionID ? allSessions.find(
+    (row) => row.sessionID === note.sourceSessionID && row.provider === note.sourceProvider,
+  ) : undefined;
+  const foundNotes = useMemo(() => query.trim() ? snapshot.notes.filter(
+    (item) => (!workspace || item.project === workspace) && matchesNote(item, query),
+  ) : [], [query, snapshot.notes, workspace]);
   const terminal = snapshot.terminals.find(
     (t) => "terminal:" + t.id === selection,
   );
-  const shown =
-    terminal && (!workspace || terminal.cwd === workspace)
-      ? terminal
-      : undefined;
+  const shown = terminal;
+  const shownSession = allSessions.find((row) => row.terminalId === shown?.id);
   function select(value: string) {
     if (value.startsWith("session:")) {
-      const row = snapshot.sessions.find((s) => "session:" + key(s) === value);
+      const row = allSessions.find((s) => "session:" + key(s) === value);
       if (
         row?.terminalId &&
         snapshot.terminals.some((t) => t.id === row.terminalId && !t.exited)
@@ -272,14 +348,6 @@ function App() {
   }
   function switchWorkspace(folder: string) {
     setWorkspace(folder);
-    setSelection(
-      restoredSelection(
-        snapshot,
-        folder,
-        workspaceSelections[folder],
-        hiddenTabs,
-      ),
-    );
   }
   async function chooseWorkspace() {
     try {
@@ -298,10 +366,10 @@ function App() {
       ...old,
       terminals: [...old.terminals.filter((x) => x.id !== t.id), t],
     }));
-    setWorkspace(cwd);
     setMode("recent");
     setScope("all");
     setQuery("");
+    if (workspace && workspace !== cwd) setWorkspace(cwd);
 
     setSelection("terminal:" + t.id);
     setWorkspaceSelections((old) => ({ ...old, [cwd]: "terminal:" + t.id }));
@@ -309,6 +377,7 @@ function App() {
     setLastFolder(cwd);
     localStorage.setItem("lastLaunchType", JSON.stringify(agent));
     localStorage.setItem("lastLaunchFolder", JSON.stringify(cwd));
+    return t;
   }
   function hideTab(t: TerminalInfo, next?: string) {
     const remaining = terminals.filter((x) => x.id !== t.id);
@@ -354,7 +423,7 @@ function App() {
     }
   }
   const launchFolder =
-    workspace || shown?.cwd || session?.cwd || note?.project || lastFolder;
+    shown?.cwd || session?.cwd || note?.project || workspace || lastFolder;
   function terminalTitle(t: TerminalInfo) {
     if (t.agent !== "shell")
       return (
@@ -383,38 +452,38 @@ function App() {
           className={"session-row " + (shown?.id === t.id ? "selected" : "")}
           onClick={() => select("terminal:" + t.id)}
         >
-          <div className="row-top">
-            <span>{name(t.cwd)}</span>
-            <span className="provider">
-              {t.agent === "shell"
-                ? "Terminal"
-                : launchOptions.find((o) => o.id === t.agent)?.name}
-            </span>
-          </div>
-          <strong>{terminalTitle(t)}</strong>
-          <small>
-            {t.unavailable
-              ? "Unavailable"
-              : t.exited
-                ? "Exited"
+          <AgentIcon agent={t.agent} />
+          <strong title={`${terminalTitle(t)}\n${t.cwd}\n${location(t.id)}`}>
+            {terminalTitle(t)}
+          </strong>
+          <span
+            className={
+              "dot " + (t.exited || t.agent !== "shell" ? "saved" : "idle")
+            }
+            title={
+              t.exited
+                ? "Ended"
                 : t.agent === "shell"
-                  ? "Shell open"
-                  : "Session open · Status unknown"}
-          </small>
-          <small className="pane-location">{location(t.id)}</small>
+                  ? "Terminal open"
+                  : "Terminal open · agent activity not linked"
+            }
+          />
         </button>
-        {hiddenTabs.includes(t.id) && (
-          <button className="stop-action" onClick={() => close(t)}>
-            {t.agent === "shell" ? "Close terminal" : "End session"}
-          </button>
-        )}
+        <details className="row-menu">
+          <summary aria-label={`Actions for ${terminalTitle(t)}`}>•••</summary>
+          <div>
+            <button onClick={() => close(t)}>
+              {t.agent === "shell" ? "Close terminal" : "End session"}
+            </button>
+          </div>
+        </details>
       </div>
     );
   }
   const unlinkedAgents = workspaceTerminals.filter(
     (t) =>
       t.agent !== "shell" &&
-      !snapshot.sessions.some(
+      !allSessions.some(
         (s) =>
           s.sessionID === t.sessionID && s.provider.toLowerCase() === t.agent,
       ),
@@ -424,6 +493,9 @@ function App() {
       .join(" ")
       .toLowerCase()
       .includes(query.toLowerCase());
+  const openUnlinked = scope === "all"
+    ? unlinkedAgents.filter((t) => !t.exited && matchesTerminal(t))
+    : [];
   async function resumeSession(
     provider: string,
     sessionID: string,
@@ -448,6 +520,107 @@ function App() {
       setResuming(false);
     }
   }
+  async function openCompanion(t: TerminalInfo) {
+    setVisibleShells((old) => [...new Set([...old, t.id])]);
+    const existing = snapshot.terminals.find((x) => x.id === companions[t.id]);
+    if (existing && !existing.exited && !existing.unavailable) return;
+    if (openingShells.current.has(t.id)) return;
+    openingShells.current.add(t.id);
+    try {
+      const shell = await window.runhuddle.create(t.cwd, "shell");
+      setCompanions((old) => ({ ...old, [t.id]: shell.id }));
+      setSnapshot((old) => ({
+        ...old,
+        terminals: [...old.terminals.filter((x) => x.id !== shell.id), shell],
+      }));
+      if (existing) await window.runhuddle.close(existing.id);
+    } catch (e) {
+      setError(String(e));
+      setVisibleShells((old) => old.filter((id) => id !== t.id));
+    } finally {
+      openingShells.current.delete(t.id);
+    }
+  }
+  function renderSessionToolbar(t: TerminalInfo) {
+    return (
+      <div
+        className="pane-heading session-toolbar"
+        aria-label="Active session toolbar"
+      >
+        <TerminalContext cwd={t.cwd} />
+        <button
+          aria-pressed={visibleShells.includes(t.id)}
+          onClick={() =>
+            visibleShells.includes(t.id)
+              ? setVisibleShells((old) => old.filter((id) => id !== t.id))
+              : openCompanion(t)
+          }
+        >
+          Shell
+        </button>
+        <EditorButton target={t.cwd} />
+        {t.agent !== "shell" && <UsageControls
+          source={snapshot.sessions.find(s => s.sessionID === t.sessionID && s.provider.toLowerCase() === t.agent) ||
+            { provider: t.agent === "codex" ? "Codex" : t.agent === "claude" ? "Claude" : "Copilot", sessionID: t.sessionID || "", title: t.title, cwd: t.cwd, project: t.cwd, preview: "", state: "disconnected", updated: 0 }}
+          onCreate={create} />}
+        <details className="folder-actions">
+          <summary aria-label="Session actions">•••</summary>
+          <div>
+            {shownSession && (
+              <button onClick={() => setSelection("session:" + key(shownSession))}>
+                View conversation
+              </button>
+            )}
+            <button
+              onClick={() =>
+                window.runhuddle
+                  .openFolder(t.cwd, "folder")
+                  .catch((e) => setError(String(e)))
+              }
+            >
+              Show folder
+            </button>
+            <button
+              onClick={() => {
+                setLaunchKind("all");
+                setLauncher(true);
+              }}
+            >
+              New session in this folder
+            </button>
+          </div>
+        </details>
+        {t.exited && t.sessionID && (
+          <>
+            <small>
+              {t.unavailable
+                ? "Terminal unavailable"
+                : t.exitCode
+                  ? `Exited with code ${t.exitCode}`
+                  : "Session ended"}
+            </small>
+            <button
+              disabled={resuming}
+              onClick={() =>
+                resumeSession(
+                  launchOptions.find((o) => o.id === t.agent)?.name || t.agent,
+                  t.sessionID!,
+                  t.id,
+                )
+              }
+            >
+              {resuming ? "Resuming…" : "Resume session"}
+            </button>
+          </>
+        )}
+        {t.agent !== "shell" && (
+          <button onClick={() => close(t)}>
+            {t.exited ? "Remove session" : "End session"}
+          </button>
+        )}
+      </div>
+    );
+  }
   function renderTerminal(t: TerminalInfo) {
     return (
       <section
@@ -463,107 +636,118 @@ function App() {
           if (shown?.id !== t.id) select("terminal:" + t.id);
         }}
       >
-        {
-          <div className="pane-heading">
-            <TerminalContext cwd={t.cwd} />
-            {t.exited && t.sessionID && (
-              <>
-                <small>
-                  {t.unavailable
-                    ? "Terminal unavailable"
-                    : t.exitCode
-                      ? `Exited with code ${t.exitCode}`
-                      : "Session ended"}
-                </small>
-                <button
-                  disabled={resuming}
-                  onClick={() =>
-                    resumeSession(
-                      launchOptions.find((o) => o.id === t.agent)?.name ||
-                        t.agent,
-                      t.sessionID!,
-                      t.id,
-                    )
-                  }
-                >
-                  {resuming ? "Resuming…" : "Resume session"}
-                </button>
-              </>
-            )}
-            {t.agent !== "shell" && (
-              <button onClick={() => close(t)}>
-                {t.exited ? "Remove session" : "End session"}
-              </button>
+        <CompanionShell
+          owner={t}
+          terminal={snapshot.terminals.find((x) => x.id === companions[t.id])}
+          visible={visibleShells.includes(t.id)}
+          connected={connection === "connected"}
+          onHide={() =>
+            setVisibleShells((old) => old.filter((id) => id !== t.id))
+          }
+          onCreate={() => openCompanion(t)}
+          onError={setError}
+          onEnd={async () => {
+            try {
+              const id = companions[t.id];
+              if (id && (await window.runhuddle.close(id))) {
+                setVisibleShells((old) => old.filter((x) => x !== t.id));
+                setCompanions((old) => {
+                  const next = { ...old };
+                  delete next[t.id];
+                  return next;
+                });
+              }
+            } catch (e) {
+              setError(String(e));
+            }
+          }}
+        >
+          <div className="pane-body">
+            {t.unavailable ? (
+              <div className="document" role="status">
+                <h2>Terminal unavailable</h2>
+                <p>
+                  The terminal process is no longer connected. Its pane position
+                  has been kept.
+                </p>
+                {t.agent === "shell" ? (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const replacement = await window.runhuddle.create(
+                          t.cwd,
+                          "shell",
+                        );
+                        setSnapshot((old) => ({
+                          ...old,
+                          terminals: [
+                            ...old.terminals.filter(
+                              (x) => x.id !== replacement.id,
+                            ),
+                            replacement,
+                          ],
+                        }));
+                        setSelection("terminal:" + replacement.id);
+                        await window.runhuddle.close(t.id);
+                      } catch (e) {
+                        setError(String(e));
+                      }
+                    }}
+                  >
+                    Open new terminal here
+                  </button>
+                ) : (
+                  <p>
+                    Use Resume session above to reopen the recorded
+                    conversation.
+                  </p>
+                )}
+                <button onClick={() => close(t)}>Remove unavailable tab</button>
+              </div>
+            ) : connection !== "connected" ? (
+              <div className="document" role="status">
+                Terminal connection interrupted. Reconnecting…
+              </div>
+            ) : (
+              <TerminalPane
+                id={t.id}
+                visible={true}
+                focused={shown?.id === t.id}
+                onError={setError}
+                onTitle={(title) => {
+                  if (t.sessionID && title.trim())
+                    window.runhuddle.title(t.id, title).catch(() => {});
+                  if (t.agent !== "shell" && title.trim())
+                    setTitles((old) =>
+                      old[t.id] === title
+                        ? old
+                        : { ...old, [t.id]: title.slice(0, 120) },
+                    );
+                }}
+              />
             )}
           </div>
-        }
-        <div className="pane-body">
-          {t.unavailable ? (
-            <div className="document" role="status">
-              <h2>Terminal unavailable</h2>
-              <p>
-                The terminal process is no longer connected. Its pane position
-                has been kept.
-              </p>
-              {t.agent === "shell" ? (
-                <button
-                  onClick={async () => {
-                    try {
-                      const replacement = await window.runhuddle.create(
-                        t.cwd,
-                        "shell",
-                      );
-                      setSnapshot((old) => ({
-                        ...old,
-                        terminals: [
-                          ...old.terminals.filter(
-                            (x) => x.id !== replacement.id,
-                          ),
-                          replacement,
-                        ],
-                      }));
-                      setSelection("terminal:" + replacement.id);
-                      await window.runhuddle.close(t.id);
-                    } catch (e) {
-                      setError(String(e));
-                    }
-                  }}
-                >
-                  Open new terminal here
-                </button>
-              ) : (
-                <p>
-                  Use Resume session above to reopen the recorded conversation.
-                </p>
-              )}
-              <button onClick={() => close(t)}>Remove unavailable tab</button>
-            </div>
-          ) : connection !== "connected" ? (
-            <div className="document" role="status">
-              Terminal connection interrupted. Reconnecting…
-            </div>
-          ) : (
-            <TerminalPane
-              id={t.id}
-              visible={true}
-              focused={shown?.id === t.id}
-              onError={setError}
-              onTitle={(title) => {
-                if (t.sessionID && title.trim())
-                  window.runhuddle.title(t.id, title).catch(() => {});
-                if (t.agent !== "shell" && title.trim())
-                  setTitles((old) =>
-                    old[t.id] === title
-                      ? old
-                      : { ...old, [t.id]: title.slice(0, 120) },
-                  );
-              }}
-            />
-          )}
-        </div>
+        </CompanionShell>
       </section>
     );
   }
+  const tabControls = (
+    <>
+      <button
+        title={sidebar ? "Hide sidebar" : "Show sidebar"}
+        onClick={() => setSidebar(!sidebar)}
+      >
+        <Icon name="sidebar" />
+      </button>
+      <button
+        aria-label="New session or terminal"
+        title="New session or terminal (⌘T)"
+        onClick={() => setLauncher(true)}
+      >
+        <Icon name="plus" size={16} />
+      </button>
+    </>
+  );
   return (
     <AppearanceContext.Provider value={appearance}>
       <div className={"app " + (!sidebar ? "collapsed" : "")}>
@@ -588,12 +772,24 @@ function App() {
             }}
           />
         )}
+        {noteDraft && (
+          <NoteEditor initial={noteDraft} projects={projects}
+            onCancel={() => setNoteDraft(undefined)}
+            onSaved={(saved) => {
+              setSnapshot((old) => ({
+                ...old,
+                notes: [saved, ...old.notes.filter((item) => item.id !== saved.id)],
+              }));
+              setShowNotes((old) => old + 1);
+              if (!noteDraft.source) select("note:" + saved.id);
+              setNoteDraft(undefined);
+            }} />
+        )}
         {sidebar && (
           <aside className="session-sidebar">
             <header className="brand">
               <img className="brand-mark" src={logo} alt="" />
               <strong>RunHuddle</strong>
-              <span className="badge">PREVIEW</span>
             </header>
             <div className="search">
               <input
@@ -615,26 +811,30 @@ function App() {
                 className={mode === "workspaces" ? "selected" : ""}
                 onClick={() => setMode("workspaces")}
               >
-                Workspaces
-              </button>
-              <button
-                className={mode === "notes" ? "selected" : ""}
-                onClick={() => setMode("notes")}
-              >
-                Notes
+                Projects
               </button>
             </nav>
             {mode === "recent" && (
-              <div className="filters" aria-label="Session filter">
-                {["all", "pinned", "archived"].map((s) => (
+              <div className="sidebar-filter-line">
+                <select
+                  aria-label="Session filter"
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value)}
+                >
+                  <option value="all">All sessions</option>
+                  <option value="pinned">Pinned</option>
+                  <option value="archived">Archived</option>
+                </select>
+                {workspace && (
                   <button
-                    key={s}
-                    className={scope === s ? "selected" : ""}
-                    onClick={() => setScope(s)}
+                    className="project-chip"
+                    title={workspace + " · clear project filter"}
+                    onClick={() => switchWorkspace("")}
+                    aria-label="All projects"
                   >
-                    {s[0].toUpperCase() + s.slice(1)}
+                    {name(workspace)} ×
                   </button>
-                ))}
+                )}
               </div>
             )}
             <div className="sidebar-list">
@@ -643,110 +843,113 @@ function App() {
                   <div className="section-label">
                     PROJECT FOLDERS{" "}
                     <button
-                      title="Add workspace folder"
+                      title="Add project folder"
                       onClick={chooseWorkspace}
                     >
                       +
                     </button>
                   </div>
-                  <button
-                    className={
-                      "workspace-row " + (!workspace ? "selected" : "")
-                    }
-                    onClick={() => {
-                      switchWorkspace("");
-                    }}
-                  >
-                    All workspaces <small>{projects.length} folders</small>
-                  </button>
                   {projects
                     .filter((p) =>
-                      p.toLowerCase().includes(query.toLowerCase()),
+                      [
+                        p,
+                        ...allSessions
+                          .filter((s) => s.cwd === p)
+                          .map((s) => s.title),
+                      ]
+                        .join(" ")
+                        .toLowerCase()
+                        .includes(query.toLowerCase()),
                     )
-                    .map((p) => (
-                      <button
-                        key={p}
-                        className={
-                          "workspace-row " + (workspace === p ? "selected" : "")
-                        }
-                        onClick={() => {
-                          switchWorkspace(p);
-                          setMode("recent");
-                        }}
-                      >
-                        <span className="workspace-name">
-                          <Icon name="folder" /> {name(p)}
-                        </span>
-                        <small title={p}>{p}</small>
-                        <small>
-                          {snapshot.sessions.filter((s) => s.cwd === p).length}{" "}
-                          sessions ·{" "}
-                          {snapshot.terminals.filter((t) => t.cwd === p).length}{" "}
-                          terminals
-                        </small>
-                      </button>
-                    ))}
-                </>
-              ) : mode === "notes" ? (
-                <>
-                  {snapshot.notes
-                    .filter(
-                      (n) =>
-                        (!workspace || n.project === workspace) &&
-                        [n.title, n.text]
-                          .join(" ")
-                          .toLowerCase()
-                          .includes(query.toLowerCase()),
-                    )
-                    .map((n) => (
-                      <button
-                        className={
-                          "session-row " +
-                          (selection === "note:" + n.id ? "selected" : "")
-                        }
-                        key={n.id}
-                        onClick={() => select("note:" + n.id)}
-                      >
-                        <small>{name(n.project)}</small>
-                        <strong>{n.title}</strong>
-                        <small>{n.sourceProvider} · Saved note</small>
-                      </button>
-                    ))}
-                  {!snapshot.notes.length && (
-                    <p className="empty-small">
-                      Your saved RunHuddle notes will appear here.
-                    </p>
-                  )}
+                    .map((p) => {
+                      const rows = allSessions.filter(
+                        (s) =>
+                          s.cwd === p &&
+                          s.state !== "archived" &&
+                          (!query ||
+                            p.toLowerCase().includes(query.toLowerCase()) ||
+                            s.title
+                              .toLowerCase()
+                              .includes(query.toLowerCase())),
+                      );
+                      return (
+                        <details
+                          className="project-group"
+                          key={p}
+                          open={workspace === p || !!query || undefined}
+                        >
+                          <summary title={p}>
+                            <Icon name="folder" />
+                            <strong>{name(p)}</strong>
+                            <small>{rows.length}</small>
+                          </summary>
+                          <div className="project-actions">
+                            <button
+                              onClick={() => {
+                                switchWorkspace(p);
+                                setLaunchKind("ai");
+                                setLauncher(true);
+                              }}
+                            >
+                              New session
+                            </button>
+                            <button
+                              onClick={() => {
+                                switchWorkspace(p);
+                                setMode("recent");
+                              }}
+                            >
+                              View all
+                            </button>
+                          </div>
+                          {rows.map((s) => (
+                            <button
+                              className={
+                                "session-row " +
+                                (selection === "session:" + key(s) ||
+                                (s.terminalId && shown?.id === s.terminalId)
+                                  ? "selected"
+                                  : "")
+                              }
+                              key={key(s)}
+                              onClick={() => select("session:" + key(s))}
+                            >
+                              <AgentIcon agent={s.provider.toLowerCase()} />
+                              <strong title={s.preview}>{s.title}</strong>
+                              <span
+                                className={
+                                  "dot " + (s.terminalId ? s.state : "saved")
+                                }
+                                title={s.terminalId ? labels[s.state] : "Recorded session"}
+                              />
+                            </button>
+                          ))}
+                          {!rows.length && (
+                            <p className="empty-small">
+                              No recorded sessions in this folder.
+                            </p>
+                          )}
+                        </details>
+                      );
+                    })}
                 </>
               ) : (
                 <>
-                  <div className="section-label">
-                    AI SESSIONS{" "}
-                    <span>
-                      {sessions.length +
-                        (scope === "all"
-                          ? unlinkedAgents.filter(matchesTerminal).length
-                          : 0)}
-                    </span>
-                    <button
-                      aria-label="New AI session"
-                      onClick={() => {
-                        setLaunchKind("ai");
-                        setLauncher(true);
-                      }}
-                    >
-                      +
-                    </button>
-                  </div>
-                  {scope === "all" &&
-                    unlinkedAgents.filter(matchesTerminal).map(liveRow)}
-                  {sessions.map((s, index) => (
+                  {openUnlinked.length > 0 && (
+                    <section aria-label="Open now" className="unlinked-sessions">
+                      <div className="recency-label">Open now</div>
+                      {openUnlinked.map(liveRow)}
+                    </section>
+                  )}
+                  {sessions.map((s, index) => {
+                    const group = (row: Session) => row.terminalId ? "Open now" : recency(row.updated);
+                    return (
                     <React.Fragment key={key(s)}>
-                      {(index === 0 ||
-                        recency(s.updated) !==
-                          recency(sessions[index - 1].updated)) && (
+                      {(index === 0
+                        ? !s.terminalId || !openUnlinked.length
+                        : group(s) !== group(sessions[index - 1])) && (
                         <div className="recency-label">
-                          {recency(s.updated)}
+                          {group(s)}
                         </div>
                       )}
                       <button
@@ -760,125 +963,99 @@ function App() {
                         key={key(s)}
                         onClick={() => select("session:" + key(s))}
                       >
-                        <div className="row-top">
-                          <span>{s.project || name(s.cwd)}</span>
-                          <span className="provider">{s.provider}</span>
-                        </div>
-                        <strong>{s.title}</strong>
-                        <p>{s.preview || "No recorded preview"}</p>
-                        <small>
-                          <span
-                            className={
-                              "dot " + (s.terminalId ? s.state : "saved")
-                            }
-                          />
-                          {s.terminalId
-                            ? snapshot.terminals.find(
-                                (t) => t.id === s.terminalId,
-                              )?.exited
-                              ? "Previous session"
-                              : labels[s.state] || s.state
-                            : `Recorded · ${labels[s.state] || s.state}`}
-                          {s.terminalId && (
-                            <span className="pane-location">
-                              {location(s.terminalId)}
-                            </span>
+                        <AgentIcon agent={s.provider.toLowerCase()} />
+                        <strong title={[s.title, s.cwd, location(s.terminalId), s.preview].filter(Boolean).join("\n")}>
+                          {s.title}
+                        </strong>
+                        <span
+                          className={
+                            "dot " + (s.terminalId ? s.state : "saved")
+                          }
+                          title={
+                            s.terminalId
+                              ? labels[s.state] || s.state
+                              : "Recorded session"
+                          }
+                        />
+                        {s.terminalId && s.state === "needsInput" && (
+                          <span className="row-age">Needs input</span>
+                        )}
+                        {!s.terminalId && <span
+                          className="row-age"
+                          title={new Date(s.updated * 1000).toLocaleString()}
+                        >
+                          {new Date(s.updated * 1000).toLocaleDateString(
+                            undefined,
+                            { month: "short", day: "numeric" },
                           )}
-                          <span className="date">
-                            {new Date(s.updated * 1000).toLocaleDateString(
-                              undefined,
-                              { month: "short", day: "numeric" },
-                            )}
-                          </span>
-                        </small>
+                        </span>}
                       </button>
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
+                  {scope === "all" && unlinkedAgents.some((t) => t.exited && matchesTerminal(t)) && (
+                    <section aria-label="Ended terminals" className="unlinked-sessions">
+                      <div className="recency-label">Ended terminals</div>
+                      {unlinkedAgents.filter((t) => t.exited && matchesTerminal(t)).map(liveRow)}
+                    </section>
+                  )}
                   {!sessions.length && (
                     <p className="empty-small">
                       No sessions match these filters.
                     </p>
                   )}
-                  {scope === "all" && (
-                    <>
-                      <div className="section-label">
-                        TERMINALS{" "}
-                        <span>
-                          {
-                            workspaceTerminals.filter(
-                              (t) => t.agent === "shell",
-                            ).length
-                          }
-                        </span>
-                        <button
-                          aria-label="New terminal"
-                          onClick={() => {
-                            setLaunchKind("shell");
-                            setLauncher(true);
-                          }}
-                        >
-                          +
-                        </button>
-                      </div>
-                      {workspaceTerminals
-                        .filter(
-                          (t) => t.agent === "shell" && matchesTerminal(t),
-                        )
-                        .map(liveRow)}
-                      {!workspaceTerminals.some((t) => t.agent === "shell") && (
-                        <p className="empty-small">
-                          Shells for commands and dev servers.
-                        </p>
-                      )}
-                    </>
-                  )}
+                  {scope === "all" &&
+                    workspaceTerminals.some(
+                      (t) =>
+                        t.agent === "shell" &&
+                        !companionIDs.has(t.id) &&
+                        matchesTerminal(t),
+                    ) && (
+                      <>
+                        <div className="section-label">TERMINALS</div>
+                        {workspaceTerminals
+                          .filter(
+                            (t) =>
+                              t.agent === "shell" &&
+                              !companionIDs.has(t.id) &&
+                              matchesTerminal(t),
+                          )
+                          .map(liveRow)}
+                      </>
+                    )}
                 </>
+              )}
+              {foundNotes.length > 0 && (
+                <section aria-label="Matching notes">
+                  <div className="recency-label">Notes</div>
+                  {foundNotes.map((item) => (
+                    <button key={item.id} className={"session-row " + (note?.id === item.id ? "selected" : "")}
+                      onClick={() => select("note:" + item.id)}>
+                      <Icon name="notes" size={15} />
+                      <strong>{item.title}</strong>
+                    </button>
+                  ))}
+                </section>
               )}
             </div>
             <footer className="sidebar-foot">
-              Sessions and local history
-              <br />
-              <span>Imported status may be out of date.</span>
+              <button
+                className="new-shell"
+                onClick={() => {
+                  setLaunchKind("shell");
+                  setLauncher(true);
+                }}
+              >
+                <Icon name="terminal" size={15} /> New terminal
+              </button>
+              <small>
+                {allSessions.length} sessions · {projects.length} projects
+              </small>
             </footer>
           </aside>
         )}
         <main>
-          <header className="workspace-header">
-            <button
-              title={sidebar ? "Hide sidebar" : "Show sidebar"}
-              onClick={() => setSidebar(!sidebar)}
-            >
-              <Icon name="sidebar" />
-            </button>
-            <div className="workspace-picker">
-              <select
-                aria-label="Workspace"
-                value={workspace}
-                onChange={(e) => {
-                  switchWorkspace(e.target.value);
-                }}
-              >
-                <option value="">All workspaces</option>
-                {projects.map((p) => (
-                  <option value={p} key={p}>
-                    {name(p)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button className="subtle" onClick={chooseWorkspace}>
-              Open folder…
-            </button>
-            <button
-              className="primary new-button"
-              aria-label="New session or terminal"
-              onClick={() => setLauncher(true)}
-            >
-              <Icon name="plus" size={16} />
-              New…
-              <Icon name="chevron" size={14} />
-            </button>
-          </header>
+          {!shown && <div className="empty-tabbar">{tabControls}</div>}
           {connection !== "connected" && (
             <div className="error" role="status">
               {connection === "reconnecting"
@@ -911,16 +1088,24 @@ function App() {
               </button>
             </div>
           )}
+          <div
+            className="main-tabs"
+            ref={setTabHost}
+            style={{ display: shown ? "flex" : "none" }}
+            aria-label="Open sessions"
+          />
+          {shown && renderSessionToolbar(shown)}
           <div className="review-layout">
-            <div className="stage">
+            <div className="stage" id="review-stage">
               {terminals.length > 0 && (
                 <div
                   className="workspace-surface"
                   style={{ display: shown ? "flex" : "none" }}
                 >
                   <TerminalWorkspace
-                    key={workspace}
-                    workspace={workspace}
+                    workspace=""
+                    controls={tabControls}
+                    tabHost={tabHost}
                     terminals={terminals}
                     selected={shown?.id || ""}
                     title={terminalTitle}
@@ -934,51 +1119,51 @@ function App() {
               )}
               {!shown &&
                 (session ? (
-                  <article className="document">
+                  <article className="document session-document">
                     <small className="eyebrow">
-                      RECORDED SESSION · {session.provider}
+                      CONVERSATION · {session.provider}
                     </small>
                     <h1>{session.title}</h1>
                     <p className="muted">{session.cwd}</p>
                     <button
                       className="primary document-action"
                       disabled={resuming}
-                      onClick={() =>
-                        resumeSession(session.provider, session.sessionID)
-                      }
+                      onClick={() => session.terminalId
+                        ? select("terminal:" + session.terminalId)
+                        : resumeSession(session.provider, session.sessionID)}
                     >
-                      {resuming ? "Resuming…" : "Resume session"}
+                      {session.terminalId ? "Back to terminal" : resuming ? "Resuming…" : "Resume session"}
                     </button>
-                    <button
-                      className="secondary document-action"
-                      onClick={async () => {
-                        try {
-                          await window.runhuddle.archive(
-                            session.provider,
-                            session.sessionID,
-                            session.state !== "archived",
-                          );
-                        } catch (e) {
-                          setError(String(e));
-                        }
-                      }}
-                    >
-                      {session.state === "archived"
-                        ? "Restore from archive"
-                        : "Archive in RunHuddle"}
-                    </button>
-                    <button
-                      className="secondary document-action"
-                      onClick={() => setLauncher(true)}
-                    >
-                      <Icon name="plus" size={15} />
-                      New session in this folder
-                    </button>
-                    <div className="notice">
-                      {session.terminalId
-                        ? "This conversation is open in a preview terminal."
-                        : "Resume continues this conversation with its existing context. Archiving organizes history; it does not delete the provider’s conversation."}
-                    </div>
+                    <details className="document-more">
+                      <summary>More actions</summary>
+                      <div>
+                        <button
+                          className="secondary document-action"
+                          onClick={async () => {
+                            try {
+                              await window.runhuddle.archive(
+                                session.provider,
+                                session.sessionID,
+                                session.state !== "archived",
+                              );
+                            } catch (e) {
+                              setError(String(e));
+                            }
+                          }}
+                        >
+                          {session.state === "archived"
+                            ? "Restore from archive"
+                            : "Archive in RunHuddle"}
+                        </button>
+                        <button
+                          className="secondary document-action"
+                          onClick={() => setLauncher(true)}
+                        >
+                          <Icon name="plus" size={15} />
+                          New session in this folder
+                        </button>
+                      </div>
+                    </details>
                     {snapshot.terminals.some(
                       (t) =>
                         t.legacy &&
@@ -986,7 +1171,8 @@ function App() {
                         t.agent === session.provider.toLowerCase() &&
                         t.cwd === session.cwd,
                     ) && (
-                      <div className="notice">
+                      <details className="legacy-link">
+                        <summary>Link an older preview terminal…</summary>
                         <p>
                           Already open in a terminal from the earlier preview?
                           Link it once so this entry focuses that terminal.
@@ -1032,21 +1218,54 @@ function App() {
                         >
                           Link this terminal
                         </button>
-                      </div>
+                      </details>
                     )}
-                    <h3>Last recorded message</h3>
-                    <p className="preserve">
-                      {session.preview || "No recorded message"}
-                    </p>
+                    <SessionHistory key={key(session)} session={session}
+                      onSaveExcerpt={(text) => setNoteDraft({
+                        title: session.title.slice(0, 120),
+                        text,
+                        project: session.cwd,
+                        source: { provider: session.provider, sessionID: session.sessionID },
+                      })} />
                   </article>
                 ) : note ? (
-                  <article className="document">
+                  <article className="document note-document">
                     <small className="eyebrow">
-                      SAVED NOTE · {note.sourceProvider}
+                      {note.sourceProvider ? "NOTE · " + note.sourceProvider : "NOTE"}
                     </small>
                     <h1>{note.title}</h1>
-                    <p className="muted">{note.project}</p>
-                    <div className="preserve">{note.text}</div>
+                    {note.project && <p className="muted">{note.project}</p>}
+                    <div className="note-actions">
+                      <button className="primary" onClick={() => setNoteDraft({
+                        id: note.id, title: note.title, text: note.text, project: note.project,
+                      })}>
+                        Edit note
+                      </button>
+                      <button
+                        onClick={() =>
+                          window.runhuddle
+                            .noteAction(note.id, "copy")
+                            .catch((e) => setError(String(e)))
+                        }
+                      >
+                        Copy note
+                      </button>
+                      <button
+                        onClick={() =>
+                          window.runhuddle
+                            .noteAction(note.id, "export")
+                            .catch((e) => setError(String(e)))
+                        }
+                      >
+                        Export Markdown…
+                      </button>
+                      {noteSource && (
+                        <button onClick={() => setSelection("session:" + key(noteSource))}>
+                          View source conversation
+                        </button>
+                      )}
+                    </div>
+                    <div className="note-content preserve">{note.text}</div>
                   </article>
                 ) : (
                   <section className="welcome">
@@ -1060,7 +1279,7 @@ function App() {
                         : "Pick up where you left off."}
                     </h1>
                     <p>
-                      Browse recent sessions, open a workspace,
+                      Browse recent sessions or projects,
                       <br />
                       or start a new AI session or terminal.
                     </p>
@@ -1071,6 +1290,30 @@ function App() {
                       <Icon name="plus" size={16} />
                       New session or terminal
                     </button>
+                    <div className="welcome-recents">
+                      {snapshot.sessions
+                        .filter(
+                          (s) =>
+                            s.state !== "archived" &&
+                            (!workspace || s.cwd === workspace),
+                        )
+                        .slice(0, 4)
+                        .map((s) => (
+                          <button
+                            key={key(s)}
+                            onClick={() => select("session:" + key(s))}
+                          >
+                            <AgentIcon agent={s.provider.toLowerCase()} />
+                            <span>
+                              <strong>{s.title}</strong>
+                              <small>
+                                {s.project || name(s.cwd)} · {s.provider}
+                              </small>
+                            </span>
+                            <Icon name="arrow" size={16} />
+                          </button>
+                        ))}
+                    </div>
                     <div className="welcome-details">
                       <span>⌘T / Ctrl+Shift+T to start something new</span>
                     </div>
@@ -1078,11 +1321,27 @@ function App() {
                 ))}
             </div>
             <WorkspaceTools
+              notes={snapshot.notes}
+              selection={selection}
+              onSelectNote={(id) => select("note:" + id)}
+              onNewNote={() => setNoteDraft({
+                title: "", text: "", project: shown?.cwd || session?.cwd || note?.project || workspace,
+              })}
+              showNotes={showNotes}
               cwd={
-                workspace || shown?.cwd || session?.cwd || note?.project || ""
+                shown?.cwd || session?.cwd || note?.project || workspace || ""
               }
             />
           </div>
+          <ScreenshotPopup target={
+            shown && shown.agent !== "shell" && !shown.exited && connection === "connected"
+              ? {
+                  id: shown.id,
+                  title: terminalTitle(shown),
+                  busy: ["working", "needsInput"].includes(shownSession?.state || ""),
+                }
+              : undefined
+          } />
           <footer className="statusbar">
             <button onClick={() => setAppearanceOpen(true)}>
               Terminal appearance…

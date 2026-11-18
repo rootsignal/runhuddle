@@ -15,7 +15,7 @@ export function LaunchMenu({
   lastUsed: string;
   kind?: "all" | "ai" | "shell";
   pane?: string;
-  onLaunch: (agent: string, cwd: string) => Promise<void>;
+  onLaunch: (agent: string, cwd: string) => Promise<unknown>;
   onDismiss: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -76,12 +76,12 @@ export function LaunchMenu({
               ? "New terminal"
               : kind === "ai"
                 ? "New AI session"
-                : "Start something new"}
+                : "New session"}
           </h2>
           <p>
             {folder === cwd
               ? `Opens a tab in ${pane.toLowerCase()}.`
-              : "Opens in the selected workspace."}
+              : "Opens a new tab in this folder."}
           </p>
         </div>
         <button aria-label="Close launcher" disabled={busy} onClick={onDismiss}>
@@ -89,12 +89,12 @@ export function LaunchMenu({
         </button>
       </div>
       <div className="launch-destination">
-        <label htmlFor="launch-folder">WORKSPACE</label>
+        <label htmlFor="launch-folder">PROJECT FOLDER</label>
         <div>
           <Icon name="folder" />
           <select
             id="launch-folder"
-            aria-label="Launch workspace"
+            aria-label="Launch folder"
             value={folder}
             onChange={(e) => setFolder(e.target.value)}
             disabled={busy}
@@ -148,7 +148,7 @@ export function LaunchMenu({
       <footer>
         {busy
           ? "Starting…"
-          : "Uses your installed agent CLI and existing login."}
+          : "Choose an agent above to start. Uses your installed CLI and existing login."}
       </footer>
     </dialog>
   );

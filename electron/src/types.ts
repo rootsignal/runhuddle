@@ -15,6 +15,15 @@ export interface Note {
   text: string;
   project: string;
   sourceProvider: string;
+  sourceSessionID?: string;
+  sourceTitle?: string;
+}
+export interface NoteDraft {
+  id?: string;
+  title: string;
+  text: string;
+  project?: string;
+  source?: Pick<Session, "provider" | "sessionID">;
 }
 export interface TerminalInfo {
   id: string;
@@ -37,7 +46,17 @@ export interface Snapshot {
   home: string;
   connection?: "connected" | "reconnecting" | "disconnected";
 }
+export interface ScreenshotNotice {
+  id: string;
+  name: string;
+  thumbnail: string;
+}
+export interface EditorChoice { id: string; name: string; application: string }
+export interface Editors { editors: EditorChoice[]; preferred: string }
 export type AppEvent =
+  | { event: "screenshot"; screenshot: ScreenshotNotice }
+  | { event: "screenshots-off" }
+  | { event: "git"; cwd: string }
   | { event: "output"; id: string; data: string; sequence: number }
   | { event: "terminals"; terminals: TerminalInfo[] }
   | ({ event: "store" } & Omit<Snapshot, "home" | "terminals">)
@@ -53,6 +72,9 @@ export interface GitFile {
   area: "staged" | "unstaged" | "untracked" | "committed";
 }
 export interface GitChanges {
+  upstream?: string;
+  ahead?: number;
+  behind?: number;
   commits?: { id: string; title: string }[];
   revision?: string;
   base?: string;
@@ -60,7 +82,30 @@ export interface GitChanges {
   branch: string;
   files: GitFile[];
 }
+export interface UsageInfo {
+  provider: string; windows: { label: string; remaining: number; resetsAt: string }[];
+  checkedAt?: string; credits?: string | null; message?: string;
+}
 export interface API {
+  screenshotPath(id: string): Promise<string>;
+  copyScreenshotPath(id: string): Promise<void>;
+  usage(provider: string): Promise<UsageInfo>;
+  connectClaudeUsage(enable: boolean): Promise<boolean>;
+  editors(): Promise<Editors>;
+  chooseEditor(): Promise<Editors | null>;
+  openEditor(id: string, target: string, line?: number): Promise<void>;
+  watchGit(cwd: string): Promise<void>;
+  gitAction(cwd: string, action: "stage" | "unstage" | "stage-all" | "unstage-all" | "commit" | "push", input?: string): Promise<GitChanges>;
+  noteAction(id: string, action: "copy" | "export"): Promise<void>;
+  saveNote(draft: NoteDraft): Promise<Note>;
+  history(
+    provider: string,
+    id: string,
+  ): Promise<{
+    messages: { role: string; text: string; time: string }[];
+    truncated: boolean;
+  }>;
+  openFolder(cwd: string, target: "folder"): Promise<void>;
   gitChanges(
     cwd: string,
     mode?: string,

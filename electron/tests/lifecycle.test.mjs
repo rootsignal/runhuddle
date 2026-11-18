@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   SessionLedger,
   mergeSessions,
@@ -10,8 +12,73 @@ import {
   terminalEnvironment,
   transcriptEvent,
   watchTranscript,
+  claudeHookState,
+  codexTranscriptParser,
+  copilotTranscriptParser,
 } from "../main/lifecycle.mjs";
 const id = "11111111-1111-4111-8111-111111111111";
+
+test("current provider events distinguish prompts, approvals and completion", () => {
+  const codexMessage = (role, type, text) => transcriptEvent("codex", {
+    type: "response_item", payload: { type: "message", role, content: [{ type, text }] },
+  });
+  assert.equal(codexMessage("user", "input_text", "Fix the sidebar").promptTitle, "Fix the sidebar");
+  assert.deepEqual(codexMessage("assistant", "output_text", "Still working"), { preview: "Still working" });
+  const parseCodex = codexTranscriptParser();
+  const codexItem = (type, call_id, name) =>
+    parseCodex("codex", { type: "response_item", payload: { type, call_id, name } }).state;
+  assert.equal(codexItem("function_call", "question", "request_user_input"), "needsInput");
+  assert.equal(codexItem("function_call_output", "unrelated"), undefined);
+  assert.equal(codexItem("function_call_output", "question"), "working");
+  assert.equal(transcriptEvent("claude", {
+    type: "user", message: { content: [{ type: "image" }, { type: "text", text: "Review this" }] },
+  }).state, "working");
+  assert.equal(claudeHookState({ type: "PermissionRequest" }), "needsInput");
+  assert.equal(claudeHookState({ type: "SessionStart", source: "compact" }), undefined);
+  assert.equal(claudeHookState({ type: "Stop" }), "idle");
+
+  const parse = copilotTranscriptParser();
+  const copilot = (type, requestId) => parse("copilot", { type, data: { requestId } }).state;
+  assert.equal(copilot("session.start"), "idle");
+  assert.equal(copilot("user.message"), "working");
+  assert.equal(copilot("permission.requested", "a"), "needsInput");
+  assert.equal(copilot("user_input.requested", "b"), "needsInput");
+  assert.equal(copilot("permission.completed", "a"), "needsInput");
+  assert.equal(copilot("user_input.completed", "b"), "working");
+  assert.equal(copilot("session.idle"), "idle");
+  assert.equal(copilot("user.message"), "working");
+  assert.equal(parse("copilot", {
+    type: "tool.execution_start", data: { toolName: "ask_user", toolCallId: "question" },
+  }).state, "needsInput");
+  assert.equal(parse("copilot", {
+    type: "tool.execution_complete", data: { toolCallId: "question" },
+  }).state, "working");
+  assert.equal(copilot("assistant.turn_end"), "idle");
+});
+
+test("Claude hook reports only its own session and leaves CLI decisions untouched", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-claude-hook-"));
+  const file = path.join(dir, "activity.jsonl");
+  const script = fileURLToPath(new URL("../main/claude-activity.cjs", import.meta.url));
+  const send = (payload) => {
+    const result = spawnSync(process.execPath, [script, file, id], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      input: JSON.stringify(payload),
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "");
+  };
+  try {
+    send({ session_id: "other", hook_event_name: "Stop" });
+    send({ session_id: id, agent_id: "subagent", hook_event_name: "Stop" });
+    assert.equal(fs.existsSync(file), false);
+    send({ session_id: id, hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: "private" } });
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { type: "PermissionRequest", tool: "Bash" });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 test("exact provider identity merges history without merging same folder or title", () => {
   const rows = mergeSessions(
     [
@@ -143,9 +210,11 @@ test("activity follows completion events, not arbitrary assistant output or tool
 test("transcript observer consumes appended events including partial lines without polling", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-events-"));
   const file = path.join(dir, "events.jsonl");
-  fs.writeFileSync(file, "");
+  fs.writeFileSync(file, '{"type":"event_msg","payload":{"type":"task_started"}}\n');
   const patches = [];
-  const stop = watchTranscript(file, "codex", (p) => patches.push(p));
+  const stop = watchTranscript(file, "codex", (p) => patches.push(p), {
+    baseline: fs.statSync(file),
+  });
   try {
     fs.appendFileSync(file, '{"type":"event_msg","payload":');
     await new Promise((r) => setTimeout(r, 220));

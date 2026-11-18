@@ -4,6 +4,17 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useAppearance, terminalOptions } from "./TerminalAppearance";
 import type { AppEvent } from "./types";
+const terminalPastes = new Map<string, (text: string) => Promise<void>>();
+
+export async function pasteTerminalPath(id: string, file: string) {
+  if (/[\x00-\x1f\x7f]/.test(file)) throw Error("This file path cannot be pasted.");
+  const paste = terminalPastes.get(id);
+  if (!paste) throw Error("The selected terminal is no longer open.");
+  const windows = /^[a-z]:[\\/]|^\\\\/i.test(file);
+  const reference = windows ? '"' + file + '"' : "'" + file.replaceAll("'", "'\\''") + "'";
+  await paste(reference + " ");
+}
+
 export function TerminalPane({
   id,
   visible,
@@ -85,6 +96,14 @@ export function TerminalPane({
     const input = term.onData((data) => {
       window.runhuddle.write(id, data).catch(fail);
     });
+    const paste = async (text: string) => {
+      if (!host.current?.getClientRects().length || !ready)
+        throw Error("Open the session terminal before attaching.");
+      const data = term.modes.bracketedPasteMode ? "\x1b[200~" + text + "\x1b[201~" : text;
+      await window.runhuddle.write(id, data);
+      if (!disposed && host.current?.getClientRects().length) term.focus();
+    };
+    terminalPastes.set(id, paste);
     let timer: ReturnType<typeof setTimeout>;
     const observer = new ResizeObserver(() => {
       clearTimeout(timer);
@@ -97,6 +116,7 @@ export function TerminalPane({
     observer.observe(host.current!);
     return () => {
       disposed = true;
+      if (terminalPastes.get(id) === paste) terminalPastes.delete(id);
       clearTimeout(timer);
       observer.disconnect();
       input.dispose();

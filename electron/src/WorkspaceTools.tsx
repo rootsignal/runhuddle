@@ -1,9 +1,42 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChangesPanel } from "./ChangesPanel";
+import type { Note } from "./types";
 import { Icon } from "./Icons";
-export function WorkspaceTools({ cwd }: { cwd: string }) {
+export function WorkspaceTools({
+  cwd,
+  notes,
+  selection,
+  onSelectNote,
+  onNewNote,
+  showNotes,
+}: {
+  cwd: string;
+  notes: Note[];
+  selection: string;
+  onSelectNote: (id: string) => void;
+  onNewNote: () => void;
+  showNotes: number;
+}) {
+  useEffect(() => {
+    void window.runhuddle.watchGit(cwd);
+  }, [cwd]);
   const [open, setOpen] = useState(
-    () => localStorage.getItem("workspaceTool") === "changes",
+    () => localStorage.getItem("workspaceTool") || "",
+  );
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    if (!showNotes) return;
+    setOpen("notes");
+    setQuery("");
+  }, [showNotes]);
+  const matching = useMemo(
+    () =>
+      open === "notes"
+        ? query.trim()
+          ? notes.filter((note) => matchesNote(note, query))
+          : notes
+        : [],
+    [notes, open, query],
   );
   const [width, setWidth] = useState(() => {
     const stored = Number(localStorage.getItem("workspaceToolWidth"));
@@ -11,7 +44,7 @@ export function WorkspaceTools({ cwd }: { cwd: string }) {
   });
   const drag = useRef<{ x: number; width: number } | null>(null);
   useEffect(() => {
-    localStorage.setItem("workspaceTool", open ? "changes" : "");
+    localStorage.setItem("workspaceTool", open);
   }, [open]);
   useEffect(() => {
     localStorage.setItem("workspaceToolWidth", String(width));
@@ -61,19 +94,92 @@ export function WorkspaceTools({ cwd }: { cwd: string }) {
               }
             }}
           />
-          <ChangesPanel cwd={cwd} onClose={() => setOpen(false)} />
+          {open === "changes" ? (
+            <ChangesPanel cwd={cwd} onClose={() => setOpen("")} />
+          ) : (
+            <section className="notes-panel" aria-label="Saved notes">
+              <header>
+                <strong>Notes</strong>
+                <button onClick={onNewNote}>New note</button>
+                <button aria-label="Close notes" onClick={() => setOpen("")}>
+                  ×
+                </button>
+              </header>
+              <input
+                type="search"
+                aria-label="Search notes"
+                placeholder="Search notes"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <div>
+                {matching.map((n) => (
+                  <button
+                    key={n.id}
+                    className={
+                      "session-row " +
+                      (selection === "note:" + n.id ? "selected" : "")
+                    }
+                    onClick={() => onSelectNote(n.id)}
+                  >
+                    <strong>{n.title}</strong>
+                    <small>
+                      {[
+                        n.project.split(/[\\/]/).filter(Boolean).at(-1),
+                        n.sourceProvider,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "Personal note"}
+                    </small>
+                  </button>
+                ))}
+                {!matching.length && (
+                  <p className="empty-small">
+                    {notes.length
+                      ? "No notes match your search."
+                      : "Save a project note or an excerpt from a conversation."}
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       )}
       <nav className="tools-rail" aria-label="Workspace tools">
         <button
           title="Changes"
           aria-label="Changes"
-          aria-pressed={open}
-          onClick={() => setOpen(!open)}
+          aria-pressed={open === "changes"}
+          onClick={() => setOpen(open === "changes" ? "" : "changes")}
         >
           <Icon name="changes" size={19} />
+        </button>
+        <button
+          title="Notes"
+          aria-label="Notes"
+          aria-pressed={open === "notes"}
+          onClick={() => setOpen(open === "notes" ? "" : "notes")}
+        >
+          <Icon name="notes" size={19} />
         </button>
       </nav>
     </>
   );
+}
+
+export function matchesNote(note: Note, query: string) {
+  const fields = [
+    note.title,
+    note.text,
+    note.project,
+    note.sourceProvider,
+    note.sourceTitle,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .every((word) => fields.includes(word));
 }

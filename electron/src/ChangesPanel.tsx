@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { DiffReview } from "./DiffReview";
 import type { GitChanges, GitFile } from "./types";
 export function ChangesPanel({
   cwd,
@@ -7,6 +9,14 @@ export function ChangesPanel({
   cwd: string;
   onClose: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
+  openRef.current = open;
+  const host = document.getElementById("review-stage");
   const [mode, setMode] = useState("working");
   const [revision, setRevision] = useState("");
   const [data, setData] = useState<GitChanges | null>(null);
@@ -23,6 +33,7 @@ export function ChangesPanel({
     commit = data?.revision,
   ) {
     const token = ++request.current;
+    setOpen(true);
     setSelected(file);
     setDiff("");
     setReading(true);
@@ -49,12 +60,12 @@ export function ChangesPanel({
         setReading(false);
     }
   }
-  async function refresh() {
+  async function refresh(keepReview = false, quiet = false) {
     const version = ++generation.current;
     ++request.current;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     setError("");
-    setDiff("");
+    if (!quiet) setDiff("");
     setReading(false);
     if (!cwd) {
       setData(null);
@@ -72,9 +83,10 @@ export function ChangesPanel({
       const file =
         next.files.find(
           (f) => f.path === selected?.path && f.area === selected.area,
-        ) || next.files[0];
+        );
       setSelected(file || null);
-      if (file) void preview(file, version, next.revision);
+      if (file && keepReview && openRef.current) void preview(file, version, next.revision);
+      if (!file) setOpen(false);
     } catch (e) {
       if (version === generation.current) {
         setError(String(e).replace(/^Error: /, ""));
@@ -87,8 +99,10 @@ export function ChangesPanel({
   }
   useEffect(() => {
     setRevision("");
+    setMessage(""); setActionError(""); setNotice("");
   }, [cwd]);
   useEffect(() => {
+    setOpen(false);
     setData(null);
     setSelected(null);
     void refresh();
@@ -97,17 +111,44 @@ export function ChangesPanel({
       ++request.current;
     };
   }, [cwd, mode, revision]);
+  const refreshCurrent = useRef(() => {});
+  refreshCurrent.current = () => { void refresh(true, true); };
+  useEffect(() => {
+    const unsubscribe = window.runhuddle.onEvent(e => {
+      if (e.event === "git" && e.cwd === cwd) refreshCurrent.current();
+    });
+    const focus = () => refreshCurrent.current();
+    window.addEventListener("focus", focus);
+    return () => { unsubscribe(); window.removeEventListener("focus", focus); };
+  }, [cwd]);
+  async function act(action: "stage" | "unstage" | "stage-all" | "unstage-all" | "commit" | "push" | "commit-push", input = "") {
+    setBusy(true); setActionError(""); setNotice("");
+    try {
+      if (action === "commit-push") {
+        await window.runhuddle.gitAction(cwd, "commit", input);
+        setMessage(""); setNotice("Committed staged changes.");
+        try { await window.runhuddle.gitAction(cwd, "push"); setNotice("Committed and pushed."); }
+        catch (e) { setActionError("Commit succeeded, but push failed: " + String(e).replace(/^Error: /, "")); }
+      } else await window.runhuddle.gitAction(cwd, action, input);
+      if (action === "commit") { setMessage(""); setNotice("Committed staged changes."); }
+      if (action === "push") setNotice("Push completed.");
+      await refresh(true, true);
+    } catch(e) { setActionError(String(e).replace(/^Error: /, "")); }
+    finally { setBusy(false); }
+  }
   return (
     <aside className="changes-panel" aria-label="Workspace changes">
       <header>
         <strong>Changes</strong>
-        <button disabled={loading || !cwd} onClick={refresh}>
+        <button disabled={loading || !cwd} onClick={() => refresh(true)}>
           Refresh changes
         </button>
         <button aria-label="Close changes" onClick={onClose}>
           ×
         </button>
       </header>
+      {actionError && <p role="alert">{actionError}</p>}
+      {notice && <p role="status">{notice}</p>}
       <div className="review-modes" role="group" aria-label="Review scope">
         {[
           ["working", "Uncommitted"],
@@ -156,8 +197,27 @@ export function ChangesPanel({
             <div className="changes-repo">
               <strong>{data.branch}</strong>
               <small title={data.root}>{data.root}</small>
-              <small>Refresh to see the latest changes.</small>
+              <small>{data.upstream ? data.upstream + " · " + data.ahead + " ahead · " + data.behind + " behind" : "No upstream configured"}</small>
+              {data.upstream && <small title="Counts reflect the last fetch.">Remote status · last fetch</small>}
+
             </div>
+            {mode === "working" && <form className="commit-form" onSubmit={e => { e.preventDefault(); void act("commit", message); }}>
+              <textarea aria-label="Commit message" placeholder="Commit message" value={message} onChange={e => setMessage(e.target.value)} disabled={busy} />
+              {!data.files.some(f => f.area === "staged") && <small className="commit-hint" id="commit-hint">Stage files with + before committing.</small>}
+              <div className="commit-buttons"><button aria-busy={busy} aria-describedby={!data.files.some(f => f.area === "staged") ? "commit-hint" : undefined} disabled={busy || !message.trim() || !data.files.some(f => f.area === "staged")}>
+                {busy ? "Working…" : "Commit staged changes"}
+              </button>
+              <details className="commit-options">
+                <summary aria-label="Commit options">▾</summary>
+                <div><button type="button" disabled={busy || !message.trim() || !data.files.some(f => f.area === "staged") || !data.upstream || !!data.behind}
+                  onClick={e => { e.currentTarget.closest("details")?.removeAttribute("open"); void act("commit-push", message); }}>Commit &amp; Push</button></div>
+              </details></div>
+              <div className="push-action">
+                <button type="button" disabled={busy || !data.upstream || !data.ahead || !!data.behind}
+                onClick={() => act("push")}>Push{data.ahead ? " (" + data.ahead + ")" : ""}</button>
+                <small>{!data.upstream ? "Publish this branch from your terminal to set an upstream." : data.behind ? "Pull or rebase in your terminal before pushing." : data.ahead ? "Push committed changes to " + data.upstream : "No commits to push."}</small>
+              </div>
+            </form>}
             {!data.files.length ? (
               <p role="status">
                 {mode === "working"
@@ -172,18 +232,23 @@ export function ChangesPanel({
               <>
                 <nav className="changed-files" aria-label="Changed files">
                   {(
-                    ["staged", "unstaged", "untracked", "committed"] as const
+                    ["staged", "changes", "committed"] as const
                   ).map((area) => {
-                    const files = data.files.filter((f) => f.area === area);
+                    const files = data.files.filter((f) => area === "changes" ? ["unstaged", "untracked"].includes(f.area) : f.area === area);
                     return (
                       files.length > 0 && (
-                        <section key={area}>
-                          <h3>
-                            {area} · {files.length}
-                          </h3>
+                        <details className="change-group" key={area} open>
+                          <summary>
+                            <span>{area === "staged" ? "Staged Changes" : area === "changes" ? "Changes" : "Committed"} · {files.length}</span>
+                            {mode === "working" && <button type="button" disabled={busy}
+                              title={area === "staged" ? "Unstage All Changes" : "Stage All Changes"}
+                              aria-label={area === "staged" ? "Unstage All Changes" : "Stage All Changes"}
+                              onClick={e => { e.preventDefault(); void act(area === "staged" ? "unstage-all" : "stage-all"); }}>
+                              {area === "staged" ? "− Unstage All" : "+ Stage All"}
+                            </button>}
+                          </summary>
                           {files.map((file) => (
-                            <button
-                              key={file.path}
+                            <div className="changed-file-row" key={file.path}><button
                               title={
                                 file.previous
                                   ? `${file.previous} → ${file.path}`
@@ -191,7 +256,7 @@ export function ChangesPanel({
                               }
                               className={
                                 selected?.path === file.path &&
-                                selected.area === area
+                                selected.area === file.area
                                   ? "selected"
                                   : ""
                               }
@@ -200,38 +265,23 @@ export function ChangesPanel({
                               <span className="file-status">{file.status}</span>
                               <span>{file.path}</span>
                             </button>
+                            {mode === "working" && <button disabled={busy}
+                              aria-label={(area === "staged" ? "Unstage " : "Stage ") + file.path}
+                              onClick={() => act(area === "staged" ? "unstage" : "stage", file.path)}>
+                              {area === "staged" ? "−" : "+"}
+                            </button>}</div>
                           ))}
-                        </section>
+                        </details>
                       )
                     );
                   })}
                 </nav>
-                <div className="diff-heading">
-                  {selected?.path} <small>{selected?.area}</small>
-                </div>
-                <pre className="git-diff" aria-label="File diff" tabIndex={0}>
-                  {reading
-                    ? "Loading diff…"
-                    : diff.split("\n").map((line, i) => (
-                        <span
-                          key={i}
-                          className={
-                            line.startsWith("+") && !line.startsWith("+++")
-                              ? "added"
-                              : line.startsWith("-") && !line.startsWith("---")
-                                ? "removed"
-                                : line.startsWith("@@")
-                                  ? "hunk"
-                                  : ""
-                          }
-                        >
-                          {line}
-                          {"\n"}
-                        </span>
-                      ))}
-                </pre>
+                {open && selected && host && createPortal(
+                  <DiffReview root={data.root} file={selected} diff={diff} loading={reading}
+                    onClose={() => { openRef.current = false; setOpen(false); }} />, host)}
               </>
             )}
+
           </>
         )
       )}

@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
+import { usageService, configureClaudeRelay } from "./usage.mjs";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  clipboard,
+  ipcMain,
+  Menu,
+  shell,
+} from "electron";
 import { Worker } from "node:worker_threads";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,8 +15,11 @@ import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { mergeSessions } from "./lifecycle.mjs";
 import { TerminalInventory } from "./terminal-inventory.mjs";
-import { gitChanges, gitDiff } from "./git.mjs";
+import { editorService } from "./editors.mjs";
+import { gitChanges, gitDiff, gitAction, watchRepository } from "./git.mjs";
 import { Service } from "./service.mjs";
+import { screenshotMonitor } from "./screenshots.mjs";
+import { notesStore } from "./notes.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
 app.setName("RunHuddle Preview");
 app.setPath(
@@ -15,6 +27,11 @@ app.setPath(
   process.env.RUNHUDDLE_PREVIEW_DATA ||
     path.join(app.getPath("appData"), "RunHuddle Preview"),
 );
+const editors = editorService(path.join(app.getPath("userData"), "editor.json"));
+let stopGitWatch = () => {};
+let gitWatchGeneration = 0;
+const usageDirectory = path.join(app.getPath("userData"), "usage");
+const readUsage = usageService(usageDirectory);
 const nativeStore =
   process.env.RUNHUDDLE_NATIVE_STORE ||
   path.join(app.getPath("appData"), "RunHuddle", "sessions.sqlite");
@@ -23,6 +40,13 @@ const legacy = new Service(path.join(app.getPath("userData"), "service"));
 const inventory = new TerminalInventory(
   path.join(app.getPath("userData"), "terminal-inventory.json"),
 );
+const noteStore = notesStore(path.join(app.getPath("userData"), "notes", "notes.sqlite"));
+let localNotes = [];
+let notes = [];
+function mergeNotes() {
+  const localIDs = new Set(localNotes.map((note) => note.id));
+  notes = [...localNotes, ...cached.notes.filter((note) => !localIDs.has(note.id))];
+}
 let connection = "connected",
   quitting = false,
   recovering;
@@ -68,6 +92,7 @@ const publishStore = () =>
     event: "store",
     ...cached,
     sessions: merged(),
+    notes,
     storeError,
   });
 async function serviceEvent(event) {
@@ -91,6 +116,20 @@ let storeError = null;
 const publish = (event) => {
   if (window && !window.isDestroyed()) window.webContents.send("event", event);
 };
+const screenshotPreference = path.join(app.getPath("userData"), "hide-screenshot-popups");
+const screenshotFolderPreference = path.join(app.getPath("userData"), "screenshot-folder");
+let screenshotFolder;
+try {
+  const saved = fs.readFileSync(screenshotFolderPreference, "utf8");
+  if (path.isAbsolute(saved)) screenshotFolder = saved;
+} catch {}
+const screenshots = screenshotMonitor({
+  desktop: app.getPath("desktop"),
+  pictures: app.getPath("pictures"),
+  home: os.homedir(),
+  customFolder: () => screenshotFolder,
+  publish,
+});
 async function refresh() {
   if (refreshing) {
     refreshAgain = true;
@@ -114,6 +153,7 @@ async function refresh() {
       });
     });
     storeError = null;
+    mergeNotes();
   } catch (error) {
     storeError = error.message;
   } finally {
@@ -175,6 +215,7 @@ function createWindow() {
   window.on("closed", () => {
     window = undefined;
   });
+  window.on("focus", screenshots.refresh);
   window.loadURL(documentURL);
 }
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -191,6 +232,8 @@ else {
       legacyConnected = await legacy.connectExisting();
       await service.connect();
       managed = await service.call("sessions");
+      try { localNotes = noteStore.list(); } catch {}
+      mergeNotes();
       await refresh();
       await allTerminals();
       service.on("event", (event) => serviceEvent(event).catch(() => {}));
@@ -240,15 +283,126 @@ else {
             .catch(() => {});
       });
       handle("reconnect", recover);
-      handle("snapshot", async () => ({
-        ...cached,
-        storeError,
-        sessions: merged(),
-        terminals:
-          connection === "connected" ? await allTerminals() : inventory.rows,
-        connection,
-        home: os.homedir(),
-      }));
+      handle("screenshot-path", (id) => screenshots.file(id));
+      handle("copy-screenshot-path", async (id) => {
+        clipboard.writeText(await screenshots.file(id));
+      });
+      handle("snapshot", async () => {
+        const terminals =
+          connection === "connected" ? await allTerminals() : inventory.rows;
+        return {
+          ...cached,
+          storeError,
+          sessions: merged(),
+          notes,
+          terminals,
+          connection,
+          home: os.homedir(),
+        };
+      });
+      handle("open-folder", async (cwd, target) => {
+        if (
+          typeof cwd !== "string" ||
+          !path.isAbsolute(cwd) ||
+          !fs.statSync(cwd).isDirectory()
+        )
+          throw new Error("Choose an existing project folder.");
+        if (target === "folder") {
+          const error = await shell.openPath(cwd);
+          if (error) throw new Error(error);
+        } else throw new Error("Unsupported folder action");
+      });
+      handle("save-note", (draft) => {
+        const previous = draft?.id && notes.find((n) => n.id === draft.id);
+        if (draft?.id && !previous) throw Error("Note not available");
+        const source = draft?.source && merged().find((session) =>
+          session.provider === draft.source.provider &&
+          session.sessionID === draft.source.sessionID);
+        if (draft?.source && !source) throw Error("The source session is no longer available.");
+        const note = noteStore.save(draft, previous, source);
+        localNotes = [note, ...localNotes.filter((n) => n.id !== note.id)];
+        mergeNotes();
+        publishStore();
+        return note;
+      });
+      handle("note-action", async (id, action) => {
+        const note = notes.find((n) => n.id === id);
+        if (!note) throw new Error("Note not available");
+        const text = `# ${note.title}\n\n${note.text}\n`;
+        if (action === "copy") {
+          clipboard.writeText(text);
+          return;
+        }
+        if (action !== "export") throw new Error("Unknown note action");
+        const result = await dialog.showSaveDialog(window, {
+          title: "Export note",
+          defaultPath:
+            (note.title.replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 100).trim() || "note") + ".md",
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+        if (!result.canceled && result.filePath)
+          await fs.promises.writeFile(result.filePath, text, "utf8");
+      });
+      handle("history", async (provider, sessionID) => {
+        const row = [...managed, ...cached.sessions].find(
+          (s) => s.provider === provider && s.sessionID === sessionID,
+        );
+        if (!row || row.simulated) throw new Error("Session not available");
+        return new Promise((resolve, reject) => {
+          const worker = new Worker(path.join(root, "history-worker.mjs"), {
+            workerData: {
+              provider: row.provider,
+              sessionID: row.sessionID,
+              cwd: row.cwd,
+            },
+          });
+          const timer = setTimeout(() => {
+            worker.terminate();
+            reject(new Error("History read timed out"));
+          }, 10000);
+          worker.once("message", (message) => {
+            clearTimeout(timer);
+            message.error
+              ? reject(new Error(message.error))
+              : resolve(message.result);
+          });
+          worker.once("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
+          worker.once("exit", () => {
+            clearTimeout(timer);
+            reject(
+              new Error("History reader closed before returning a result"),
+            );
+          });
+        });
+      });
+      handle("usage", readUsage);
+      handle("claude-usage-connect", enable => configureClaudeRelay(usageDirectory, enable));
+      handle("editors", () => editors.list());
+      handle("choose-editor", async () => {
+        const result = await dialog.showOpenDialog({
+          title: "Choose an editor application",
+          defaultPath: process.platform === "darwin" ? "/Applications" : undefined,
+          properties: ["openFile"],
+          ...(process.platform === "darwin" ? { filters: [{ name: "Applications", extensions: ["app"] }] } : {}),
+        });
+        if (result.canceled || !result.filePaths[0]) return null;
+        const application = result.filePaths[0];
+        const editor = { id: "custom", name: path.basename(application).replace(/\.(app|exe)$/i, ""), application };
+        editors.save(editor);
+        return editors.list();
+      });
+      handle("open-editor", (id, target, line) => editors.open(id, target, line));
+      handle("watch-git", async (cwd) => {
+        const generation = ++gitWatchGeneration;
+        stopGitWatch();
+        const stop = await watchRepository(cwd, () => publish({ event: "git", cwd }));
+        if (generation !== gitWatchGeneration) stop();
+        else stopGitWatch = stop;
+      });
+      handle("git-action", gitAction);
       handle("git-changes", gitChanges);
       handle("git-diff", gitDiff);
       handle("choose-folder", async () => {
@@ -436,12 +590,53 @@ else {
               { role: "reload" },
               { role: "toggleDevTools" },
               { label: "Refresh native session snapshot", click: refresh },
+              {
+                label: "Screenshot popups",
+                type: "checkbox",
+                checked: !fs.existsSync(screenshotPreference),
+                click: ({ checked }) => {
+                  if (checked) {
+                    fs.rmSync(screenshotPreference, { force: true });
+                    screenshots.enable();
+                  } else {
+                    fs.writeFileSync(screenshotPreference, "", { mode: 0o600 });
+                    screenshots.stop();
+                    publish({ event: "screenshots-off" });
+                  }
+                },
+              },
+              {
+                label: "Choose screenshot folder…",
+                click: async () => {
+                  const options = {
+                    title: "Choose the folder where screenshots are saved",
+                    defaultPath: screenshotFolder,
+                    properties: ["openDirectory"],
+                  };
+                  const result = window
+                    ? await dialog.showOpenDialog(window, options)
+                    : await dialog.showOpenDialog(options);
+                  if (result.canceled || !result.filePaths[0]) return;
+                  screenshotFolder = result.filePaths[0];
+                  fs.writeFileSync(screenshotFolderPreference, screenshotFolder, { mode: 0o600 });
+                  void screenshots.refresh();
+                },
+              },
+              {
+                label: "Use system screenshot folders",
+                click: () => {
+                  fs.rmSync(screenshotFolderPreference, { force: true });
+                  screenshotFolder = undefined;
+                  void screenshots.refresh();
+                },
+              },
               { role: "togglefullscreen" },
             ],
           },
         ]),
       );
       createWindow();
+      if (!fs.existsSync(screenshotPreference)) screenshots.enable();
       app.on("activate", () => {
         if (!window) createWindow();
       });
@@ -454,6 +649,7 @@ else {
   app.on("before-quit", () => {
     quitting = true;
     watcher?.close();
+    screenshots.stop();
     clearTimeout(refreshTimer);
     service.disconnect();
     legacy.disconnect();

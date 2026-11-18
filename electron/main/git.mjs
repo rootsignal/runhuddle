@@ -10,7 +10,7 @@ async function git(cwd, args) {
     {
       cwd,
       encoding: "utf8",
-      timeout: 15000,
+      timeout: args[0] === "push" ? 120000 : 30000,
       maxBuffer: 2 * 1024 * 1024,
       env: { ...process.env, GIT_PAGER: "cat", GIT_TERMINAL_PROMPT: "0" },
     },
@@ -54,8 +54,11 @@ export async function gitChanges(cwd, mode = "working", revision = "") {
         files.push({ path: file, previous, status: code[1], area: "unstaged" });
     }
   }
-  if (mode !== "working") return review(root, branch.trim(), mode, revision);
-  return { root, branch: branch.trim(), files };
+  const upstream = await git(root, ["rev-parse", "--abbrev-ref", "@{upstream}"]).then(v => v.trim(), () => "");
+  const counts = upstream ? await git(root, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]).catch(() => "0 0") : "0 0";
+  const [ahead, behind] = counts.trim().split(/\s+/).map(Number);
+  const result = mode !== "working" ? await review(root, branch.trim(), mode, revision) : { root, branch: branch.trim(), files };
+  return { ...result, upstream, ahead, behind };
 }
 export async function gitDiff(
   cwd,
@@ -97,7 +100,8 @@ export async function gitDiff(
   }
   if (area === "untracked") {
     const target = path.resolve(snapshot.root, file);
-    if (!target.startsWith(snapshot.root + path.sep))
+    const relative = path.relative(snapshot.root, target);
+    if (!relative || path.isAbsolute(relative) || relative.split(path.sep)[0] === "..")
       throw Error("Invalid repository path");
     // Do not follow symlinks out of the repository.
     const stat = await fs.lstat(target);
@@ -190,4 +194,74 @@ async function review(root, branch, mode, revision) {
       });
   }
   return { root, branch, files, commits, revision: target, base };
+}
+
+// Writes are explicit user actions; resetting the index never changes working files.
+const writes = new Set();
+export async function gitAction(cwd, action, input = "") {
+  const snapshot = await gitChanges(cwd);
+  const root = snapshot.root;
+  if (writes.has(root)) throw Error("Another Git action is still running.");
+  writes.add(root);
+  try {
+    if (action === "stage-all") {
+      await git(root, ["add", "--all", "--", "."]);
+    } else if (action === "unstage-all") {
+      const hasHead = await git(root, ["rev-parse", "--verify", "HEAD"]).then(() => true, () => false);
+      await git(root, hasHead ? ["reset", "--mixed", "HEAD"] : ["read-tree", "--empty"]);
+    } else if (action === "stage" || action === "unstage") {
+      const file = snapshot.files.find(f => f.path === input &&
+        (action === "unstage" ? f.area === "staged" : f.area !== "staged"));
+      if (!file) throw Error("The file changed. Refresh and try again.");
+      const paths = [file.path, ...(file.previous ? [file.previous] : [])];
+      if (action === "stage") await git(root, ["add", "--", ...paths]);
+      else {
+        const hasHead = await git(root, ["rev-parse", "--verify", "HEAD"]).then(() => true, () => false);
+        await git(root, hasHead ? ["reset", "HEAD", "--", ...paths] : ["rm", "--cached", "--", ...paths]);
+      }
+    } else if (action === "commit") {
+      if (typeof input !== "string" || !input.trim() || input.length > 20000) throw Error("Enter a commit message.");
+      if (!snapshot.files.some(f => f.area === "staged")) throw Error("Stage files before committing.");
+      const conflicts = await git(root, ["diff", "--name-only", "--diff-filter=U"]);
+      if (conflicts.trim()) throw Error("Resolve merge conflicts before committing.");
+      await git(root, ["commit", "-m", input.trim()]);
+    } else if (action === "push") {
+      if (!snapshot.upstream) throw Error("No upstream configured. Publish this branch from your terminal first.");
+      if (snapshot.behind > 0) throw Error("The branch is behind its upstream. Pull or rebase in your terminal before pushing.");
+      // Use this branch's explicit upstream, regardless of push.default settings.
+      const branch = (await git(root, ["symbolic-ref", "--short", "HEAD"])).trim();
+      const remote = (await git(root, ["config", "--get", "branch." + branch + ".remote"])).trim();
+      const ref = (await git(root, ["config", "--get", "branch." + branch + ".merge"])).trim();
+      if (!remote || remote.startsWith("-") || !ref.startsWith("refs/heads/")) throw Error("Invalid upstream configuration.");
+      await git(root, ["push", "--", remote, "HEAD:" + ref]);
+    } else throw Error("Unsupported Git action.");
+    return gitChanges(root);
+  } finally { writes.delete(root); }
+}
+
+export async function watchRepository(cwd, notify) {
+  if (!cwd) return () => {};
+  let root, gitDir, commonDir;
+  try {
+    root = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
+    gitDir = (await git(cwd, ["rev-parse", "--absolute-git-dir"])).trim();
+    commonDir = path.resolve(cwd, (await git(cwd, ["rev-parse", "--git-common-dir"])).trim());
+  } catch { return () => {}; }
+  const watchers = [];
+  let timer, stopped = false;
+  const changed = (_event, file) => {
+    const parts = String(file || "").split(/[\\/]/);
+    if (parts.some(p => ["node_modules", ".git", "dist", ".next", "build", "objects"].includes(p)) ||
+      parts.at(-1)?.endsWith(".lock")) return;
+    if (!timer) timer = setTimeout(() => { timer = null; if (!stopped) notify(); }, 750);
+  };
+  const { watch } = await import("node:fs");
+  for (const folder of new Set([root, gitDir, commonDir])) {
+    try {
+      const watcher = watch(folder, { recursive: true }, changed);
+      watcher.on("error", () => watcher.close());
+      watchers.push(watcher);
+    } catch {}
+  }
+  return () => { stopped = true; clearTimeout(timer); watchers.forEach(w => w.close()); };
 }

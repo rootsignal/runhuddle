@@ -2,7 +2,7 @@ name: Electron preview
 on:
   workflow_dispatch:
   push:
-    branches: [electron-foundation]
+    branches: [electron-foundation, 'electron-preview-ci/**']
     paths: ['electron/**', '.github/workflows/electron-preview.yml']
   pull_request:
     paths: ['electron/**', '.github/workflows/electron-preview.yml']

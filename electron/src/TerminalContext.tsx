@@ -15,7 +15,10 @@ export function TerminalContext({ cwd }: { cwd: string }) {
       }
     };
     window.addEventListener("repository-refreshed", updated);
-    return () => window.removeEventListener("repository-refreshed", updated);
+    const unsubscribe = window.runhuddle.onEvent(e => {
+      if (e.event === "git" && e.cwd === cwd) { cache.delete(cwd); setRefresh(n => n + 1); }
+    });
+    return () => { unsubscribe(); window.removeEventListener("repository-refreshed", updated); };
   }, [cwd]);
   useEffect(() => {
     let active = true;

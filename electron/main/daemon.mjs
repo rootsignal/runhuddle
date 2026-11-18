@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import pty from "node-pty";
 import {
   SessionLedger,
@@ -14,6 +15,10 @@ import {
   terminalEnvironment,
   watchTranscript,
   validateID,
+  claudeHookState,
+  codexTranscriptParser,
+  copilotTranscriptParser,
+  quote,
 } from "./lifecycle.mjs";
 import { address, frames, send, dimensions, PROTOCOL } from "./protocol.mjs";
 const directory = process.argv[2];
@@ -25,12 +30,33 @@ const sessionKey = (t) => providers[t.agent] + ":" + t.sessionID;
 const history = () => broadcast({ event: "history", sessions: ledger.list() });
 function record(t, patch) {
   if (!t.sessionID) return;
-  ledger.update(providers[t.agent], t.sessionID, {
+  const key = sessionKey(t);
+  const previous = ledger.rows.get(key);
+  const row = ledger.update(providers[t.agent], t.sessionID, {
     cwd: t.cwd,
     project: path.basename(t.cwd),
     ...patch,
   });
-  history();
+  if (previous !== row) history();
+}
+function claudeActivity(id, sessionID, args) {
+  if (process.platform === "win32") return null;
+  const file = path.join(directory, "activity", id + ".jsonl");
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const script = fileURLToPath(new URL("./claude-activity.cjs", import.meta.url));
+  const command = "ELECTRON_RUN_AS_NODE=1 " +
+    [process.execPath, script, file, sessionID].map(quote).join(" ");
+  const events = ["SessionStart", "UserPromptSubmit", "PermissionRequest", "Notification",
+    "PreToolUse", "PostToolUse", "PostToolUseFailure", "Elicitation", "ElicitationResult", "Stop"];
+  const hooks = Object.fromEntries(events.map((event) => [
+    event,
+    [{
+      ...(event === "PreToolUse" ? { matcher: "AskUserQuestion" } : {}),
+      hooks: [{ type: "command", command, timeout: 2 }],
+    }],
+  ]));
+  args.push("--settings", JSON.stringify({ hooks }));
+  return file;
 }
 const clients = new Set();
 let creationQueue = Promise.resolve();
@@ -82,6 +108,12 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
   }
   const identity =
     agent === "shell" ? {} : await prepareSession(agent, cwd, resume);
+  const id = randomUUID();
+  const argsForAgent = agent === "shell" ? [] : agentArguments(agent, identity.sessionID, !!resume);
+  const activityFile = agent === "claude" ? claudeActivity(id, identity.sessionID, argsForAgent) : null;
+  const baseline = resume && identity.transcript
+    ? fs.statSync(identity.transcript, { throwIfNoEntry: false })
+    : undefined;
   const launch =
     agent === "shell"
       ? {
@@ -91,7 +123,7 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
               : os.userInfo().shell || "/bin/sh",
           args: process.platform === "win32" ? [] : ["-l"],
         }
-      : shellLaunch(agentArguments(agent, identity.sessionID, !!resume));
+      : shellLaunch(argsForAgent);
   const shell = launch.file,
     args = launch.args,
     env = terminalEnvironment();
@@ -103,7 +135,7 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
     env,
   });
   const t = {
-    id: randomUUID(),
+    id,
     title: path.basename(cwd) || "Terminal",
     cwd,
     agent,
@@ -122,17 +154,40 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
       imported: false,
       hasUserTitle: !!resume,
     });
-    t.unwatch = watchTranscript(identity.transcript, agent, (patch) => {
+    let hasHookActivity = false;
+    const parse = agent === "codex" ? codexTranscriptParser() :
+      agent === "copilot" ? copilotTranscriptParser() : undefined;
+    const stopTranscript = watchTranscript(identity.transcript, agent, (patch) => {
       const row = ledger.rows.get(sessionKey(t));
       if (row?.terminalId === t.id) {
         const { promptTitle, ...changes } = patch;
+        if (hasHookActivity) delete changes.state;
         if (promptTitle && !row.hasUserTitle) {
           changes.title = promptTitle;
           changes.hasUserTitle = true;
         }
         record(t, changes);
       }
+    }, { baseline, parse });
+    const stopActivity = watchTranscript(activityFile, agent, ({ state }) => {
+      if (!state || ledger.rows.get(sessionKey(t))?.terminalId !== t.id) return;
+      hasHookActivity = true;
+      record(t, { state });
+    }, {
+      parse: (_agent, event) => {
+        const state = claudeHookState(event);
+        return state ? { state } : {};
+      },
     });
+    t.unwatch = () => {
+      stopTranscript();
+      stopActivity();
+      if (activityFile) {
+        try {
+          fs.rmSync(activityFile, { force: true });
+        } catch {}
+      }
+    };
   }
   child.onData((data) => {
     t.sequence++;
@@ -174,7 +229,8 @@ const server = net.createServer((socket) => {
   socket.on("close", () => {
     clearTimeout(deadline);
     clients.delete(socket);
-    if (!clients.size && !terminals.size) idleTimer = setTimeout(stop, 10000);
+    if (!clients.size && ![...terminals.values()].some((t) => !t.exited))
+      idleTimer = setTimeout(stop, 10000);
   });
   frames(socket, async (request) => {
     try {
