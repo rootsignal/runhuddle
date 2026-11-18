@@ -1150,7 +1150,9 @@ function App() {
                   )}
                   {!sessions.length && (query.trim().length < 2 || scope !== "all") && (
                     <p className="empty-small">
-                      No sessions match these filters.
+                      {!snapshot.sessions.length && scope === "all" && !query.trim()
+                        ? "Saved conversations from this device appear here."
+                        : "No sessions match these filters."}
                     </p>
                   )}
                   {scope === "all" &&

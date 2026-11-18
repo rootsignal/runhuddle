@@ -99,7 +99,43 @@ async function createTerminal(args, browserReopen = false) {
     updateBrowserService();
   }
 }
-let managed = [];
+const providerArchiveFile = path.join(app.getPath("userData"), "provider-history-archive.json");
+let providerArchive = {};
+try { providerArchive = JSON.parse(fs.readFileSync(providerArchiveFile, "utf8")) || {}; } catch {}
+let ledgerSessions = [], providerSessions = [], managed = [];
+let providerHistoryWorker, providerHistoryScanning = false, lastProviderHistoryScan = 0;
+const sessionKey = (row) => row.provider + ":" + row.sessionID;
+function mergeSessionHistory() {
+  const sessions = new Map(providerSessions.map((row) => {
+    const key = sessionKey(row);
+    const archived = providerArchive[key];
+    return [key, typeof archived === "boolean" ? { ...row, state: archived ? "archived" : "saved" } : row];
+  }));
+  for (const row of ledgerSessions) sessions.set(sessionKey(row), row);
+  managed = [...sessions.values()];
+}
+function refreshProviderHistory() {
+  if (quitting || providerHistoryScanning || Date.now() - lastProviderHistoryScan < 5000) return;
+  if (!providerHistoryWorker) {
+    const worker = new Worker(path.join(root, "provider-history.mjs"));
+    providerHistoryWorker = worker;
+    worker.on("exit", () => {
+      providerHistoryWorker = undefined;
+      providerHistoryScanning = false;
+    });
+    worker.on("error", () => {});
+    worker.on("message", ({ rows }) => {
+      providerHistoryScanning = false;
+      if (!rows || quitting) return;
+      providerSessions = rows;
+      mergeSessionHistory();
+      publishStore();
+    });
+  }
+  providerHistoryScanning = true;
+  lastProviderHistoryScan = Date.now();
+  providerHistoryWorker.postMessage(null);
+}
 let ownedIds = new Set();
 const allTerminals = async () => {
   const rows = await service.call("list");
@@ -131,11 +167,12 @@ async function serviceEvent(event) {
     publishStore();
     updateBrowserService();
   } else if (event.event === "history") {
-    managed = event.sessions;
+    ledgerSessions = event.sessions;
+    mergeSessionHistory();
     publishStore();
     if (connection === "connected") {
-      inbox.sync(managed);
-      sessionAlerts.update(managed);
+      inbox.sync(ledgerSessions);
+      sessionAlerts.update(ledgerSessions);
     }
   } else publish(event);
 }
@@ -361,6 +398,7 @@ function createWindow() {
     viewedTerminal = null;
   });
   window.on("focus", screenshots.refresh);
+  window.on("focus", refreshProviderHistory);
   window.loadURL(documentURL);
 }
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -379,9 +417,10 @@ else {
       nativeTheme.themeSource = appAppearance.theme;
       nativeTheme.on("updated", () => window?.setBackgroundColor(windowBackground()));
       await service.connect();
-      managed = await service.call("sessions");
-      sessionAlerts.seed(managed);
-      inbox.sync(managed);
+      ledgerSessions = await service.call("sessions");
+      mergeSessionHistory();
+      sessionAlerts.seed(ledgerSessions);
+      inbox.sync(ledgerSessions);
       try { notes = noteStore.list(); } catch {}
       try { recaps = savedRecaps.list(); } catch {}
       scheduleHistoryIndex();
@@ -402,9 +441,10 @@ else {
                 service.disconnect();
                 return;
               }
-              managed = await service.call("sessions");
-              sessionAlerts.seed(managed);
-              inbox.sync(managed);
+              ledgerSessions = await service.call("sessions");
+              mergeSessionHistory();
+              sessionAlerts.seed(ledgerSessions);
+              inbox.sync(ledgerSessions);
               const terminals = await allTerminals();
               publishStore();
               publish({ event: "terminals", terminals });
@@ -653,6 +693,9 @@ else {
         if (ownedIds.has(id)) await service.call("title", { id, title });
       });
       handle("archive", async (provider, sessionID, archived) => {
+        const key = provider + ":" + sessionID;
+        if (typeof archived !== "boolean" || !managed.some((row) => sessionKey(row) === key))
+          throw Error("Session not available");
         if (
           (await allTerminals()).some(
             (t) =>
@@ -662,7 +705,14 @@ else {
           )
         )
           throw Error("End the session before archiving it");
-        return service.call("archive", { provider, sessionID, archived });
+        if (ledgerSessions.some((row) => sessionKey(row) === key))
+          return service.call("archive", { provider, sessionID, archived });
+        const next = { ...providerArchive, [key]: archived };
+        fs.writeFileSync(providerArchiveFile + ".tmp", JSON.stringify(next), { mode: 0o600 });
+        fs.renameSync(providerArchiveFile + ".tmp", providerArchiveFile);
+        providerArchive = next;
+        mergeSessionHistory();
+        publishStore();
       });
       handle("pin-session", (provider, sessionID, shouldPin) => {
         if (typeof shouldPin !== "boolean" || !managed.some((row) => row.provider === provider && row.sessionID === sessionID))
@@ -924,6 +974,7 @@ else {
         ]),
       );
       createWindow();
+      refreshProviderHistory();
       if (!fs.existsSync(screenshotPreference)) screenshots.enable();
       app.on("activate", () => {
         if (!window) createWindow();
@@ -941,6 +992,7 @@ else {
     recapRequest?.controller.abort();
     stopHistorySearch();
     clearTimeout(historySyncTimer);
+    void providerHistoryWorker?.terminate();
     void historyIndex.close();
     for (const key of activeAlerts.keys()) dismissSessionAlert(key);
     service.disconnect();

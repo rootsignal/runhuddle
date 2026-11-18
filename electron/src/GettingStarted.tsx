@@ -9,7 +9,7 @@ const steps = [
   {
     id: "projects",
     title: "Browse by project",
-    text: "Use Projects to find sessions by folder. Switch to Recent to browse sessions by date.",
+    text: "RunHuddle finds saved conversations on this device. Use Projects to browse by folder or Recent to browse by date.",
     fallback: {
       id: "sidebar",
       text: "Open the sidebar and choose Projects to find sessions by folder. Use Recent to browse sessions by date.",

@@ -1901,3 +1901,60 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     removeFixture(dir);
   }
 });
+
+test("a fresh profile discovers existing local provider sessions", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-provider-history-"));
+  const env = {
+    ...process.env, RUNHUDDLE_DATA: path.join(dir, "app"),
+    CODEX_HOME: path.join(dir, "codex"), CLAUDE_CONFIG_DIR: path.join(dir, "claude"),
+    COPILOT_HOME: path.join(dir, "copilot"),
+  };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const codexID = "11111111-1111-4111-8111-111111111111";
+  const claudeID = "22222222-2222-4222-8222-222222222222";
+  const copilotID = "33333333-3333-4333-8333-333333333333";
+  const claudeProject = path.join(env.CLAUDE_CONFIG_DIR, "projects", dir.replace(/[^a-zA-Z0-9]/g, "-"));
+  const copilotSession = path.join(env.COPILOT_HOME, "session-state", copilotID);
+  for (const folder of [env.CODEX_HOME, claudeProject, copilotSession]) fs.mkdirSync(folder, { recursive: true });
+  const writeEvents = (file: string, rows: unknown[]) =>
+    fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
+  const codexTranscript = path.join(env.CODEX_HOME, "rollout.jsonl");
+  writeEvents(codexTranscript, [
+    { type: "event_msg", payload: { type: "user_message", message: "Read the package manifest." } },
+  ]);
+  const db = new DatabaseSync(path.join(env.CODEX_HOME, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT, cwd TEXT, title TEXT, updated_at INTEGER, rollout_path TEXT)");
+  db.prepare("INSERT INTO threads VALUES (?, ?, ?, ?, ?)").run(
+    codexID, dir, "Codex release history", Math.floor(Date.now() / 1000), codexTranscript,
+  );
+  db.close();
+  writeEvents(path.join(claudeProject, claudeID + ".jsonl"), [
+    { type: "user", cwd: dir, message: { content: "Claude workspace history" } },
+  ]);
+  writeEvents(path.join(copilotSession, "events.jsonl"), [
+    { type: "session.start", data: { context: { cwd: dir } } },
+    { type: "user.message", data: { content: "Copilot project history" } },
+  ]);
+  const app = await electron.launch({
+    args: process.env.RUNHUDDLE_TEST_EXECUTABLE ? [] : [path.resolve(".")],
+    executablePath: process.env.RUNHUDDLE_TEST_EXECUTABLE, env,
+  });
+  try {
+    const page = await workspacePage(app);
+    const sidebar = page.locator(".sidebar-list");
+    for (const title of ["Codex release history", "Claude workspace history", "Copilot project history"])
+      await expect(sidebar.getByRole("button", { name: new RegExp(title) })).toBeVisible();
+    await sidebar.getByRole("button", { name: /Codex release history/ }).click();
+    await expect(page.getByRole("region", { name: "Conversation history" })
+      .getByText("Read the package manifest.", { exact: true })).toBeVisible();
+    await page.locator(".document-more summary").click();
+    await page.getByRole("button", { name: "Archive in RunHuddle" }).click();
+    await expect(sidebar.getByRole("button", { name: /Codex release history/ })).toHaveCount(0);
+  } finally {
+    await closeUI(app);
+    const service = new Service(path.join(env.RUNHUDDLE_DATA, "service-v2"));
+    try { if (await service.connectExisting()) await service.call("shutdown"); } finally { service.disconnect(); }
+    await removeFixture(dir);
+  }
+});
