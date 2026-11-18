@@ -49,9 +49,11 @@ export interface HiddenHistory {
   projects: string[];
   sessions: string[];
 }
+export type UpdateDownload = { version: string; percent: number | null };
 export interface Snapshot {
   accent?: string;
   appTheme?: "system" | "light" | "dark";
+  updateDownload?: UpdateDownload | null;
   sessions: Session[];
   notes: Note[];
   pinned: string[];
@@ -99,6 +101,7 @@ export interface Editors { editors: EditorChoice[]; preferred: string }
 export type AppEvent =
   | { event: "app-accent"; accent: string }
   | { event: "app-theme"; theme: "system" | "light" | "dark" }
+  | { event: "update-download"; download: UpdateDownload | null }
   | { event: "custom-app-accent" }
   | { event: "inbox"; entries: InboxEntry[] }
   | { event: "open-alert-session"; target: SessionAlertTarget }

@@ -1,11 +1,27 @@
-export function createUpdateCheck({ app, dialog, updater, windowForDialog, supported = true, canInstall = async () => true }) {
+export function terminalUpdateBlocker(terminals, sessions, platform) {
+  const open = terminals.filter((terminal) => !terminal.exited);
+  if (platform !== "darwin") return open.length ? "End the open terminals before installing." : "";
+  const working = new Set(sessions.filter((session) => session.state === "working").map((session) => session.terminalId));
+  return open.some((terminal) => working.has(terminal.id))
+    ? "Wait for working agents to finish before installing."
+    : "";
+}
+
+export function createUpdateCheck({ app, dialog, updater, windowForDialog, supported = true,
+  installBlocker = async () => "", onDownloadProgress = () => {} }) {
   let busy = false;
+  let downloadProgress;
   updater.autoDownload = false;
   updater.autoInstallOnAppQuit = false;
   // electron-updater also emits errors for rejected checks and downloads.
   updater.on("error", () => {});
   updater.on("download-progress", ({ percent }) => {
-    windowForDialog()?.setProgressBar(Math.max(0, Math.min(1, percent / 100)));
+    if (!downloadProgress || !Number.isFinite(percent)) return;
+    const rounded = Math.round(Math.max(0, Math.min(100, percent)));
+    if (downloadProgress.percent === rounded) return;
+    downloadProgress = { ...downloadProgress, percent: rounded };
+    onDownloadProgress(downloadProgress);
+    windowForDialog()?.setProgressBar(rounded / 100);
   });
 
   const show = (options) => {
@@ -34,10 +50,14 @@ export function createUpdateCheck({ app, dialog, updater, windowForDialog, suppo
         buttons: ["Download", "Later"], defaultId: 0, cancelId: 1,
       });
       if (download.response !== 0) return;
+      downloadProgress = { version, percent: null };
+      onDownloadProgress(downloadProgress);
       windowForDialog()?.setProgressBar(2);
       try {
         await updater.downloadUpdate();
       } finally {
+        downloadProgress = undefined;
+        onDownloadProgress(null);
         windowForDialog()?.setProgressBar(-1);
       }
       const install = await show({
@@ -46,9 +66,10 @@ export function createUpdateCheck({ app, dialog, updater, windowForDialog, suppo
         buttons: ["Install and restart", "Later"], defaultId: 0, cancelId: 1,
       });
       if (install.response !== 0) return;
-      if (await canInstall()) updater.quitAndInstall();
-      else await show({ type: "info", message: "Finish running sessions before installing.",
-        detail: "When your terminals have ended, open Check for Updates again to install." });
+      const blocked = await installBlocker();
+      if (!blocked) updater.quitAndInstall();
+      else await show({ type: "info", message: blocked,
+        detail: "Open Check for Updates again when you’re ready to install." });
     } catch (error) {
       const channelMissing = error.code === "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND";
       await show({

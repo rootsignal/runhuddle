@@ -286,6 +286,7 @@ function App() {
         setSnapshot((previous) => ({ ...previous, inbox: event.entries }));
       if (event.event === "connection") setConnection(event.state);
       if (event.event === "app-theme") setSnapshot((old) => ({ ...old, appTheme: event.theme }));
+      if (event.event === "update-download") setSnapshot((old) => ({ ...old, updateDownload: event.download }));
       if (event.event === "app-accent") setSnapshot((old) => ({ ...old, accent: event.accent }));
       if (event.event === "custom-app-accent") setCustomAccentOpen(true);
       if (event.event === "getting-started") setShowGuide(true);
@@ -1283,6 +1284,14 @@ function App() {
           </aside>
         )}
         <main>
+          {snapshot.updateDownload && (
+            <section className="update-download" aria-label="Update download">
+              <strong>Downloading RunHuddle {snapshot.updateDownload.version}…</strong>
+              <progress aria-label="Update download progress" max={100}
+                value={snapshot.updateDownload.percent ?? undefined} />
+              {snapshot.updateDownload.percent !== null && <span>{snapshot.updateDownload.percent}%</span>}
+            </section>
+          )}
           {sessionAlert && (
             <div className="session-alert-banner" role="status" aria-label="Session notification">
               <div><strong>{sessionAlert.alert.title}</strong> <span>{sessionAlert.alert.body}</span></div>

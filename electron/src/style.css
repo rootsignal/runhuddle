@@ -2471,3 +2471,22 @@ body:has(.usage-warning) .screenshot-popup { bottom: auto; top: 84px; }
   border-top: 1px solid var(--app-border);
   justify-content: flex-end;
 }
+
+.update-download {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+  font-size: 12px;
+}
+.update-download progress {
+  width: min(170px, 25vw);
+  min-width: 48px;
+  accent-color: var(--app-accent-edge);
+}
+.update-download span {
+  color: var(--app-secondary);
+  font-variant-numeric: tabular-nums;
+}

@@ -173,6 +173,20 @@ test("workspace navigation, retained search, notes and persistent terminal acros
     }
     await guide.getByRole("button", { name: "Done" }).click();
     await expect(guide).toHaveCount(0);
+    async function showUpdateDownload(download: { version: string; percent: number | null } | null) {
+      await app.evaluate(({ BrowserWindow }, state) => {
+        BrowserWindow.getAllWindows()[0].webContents.send("event", { event: "update-download", download: state });
+      }, download);
+    }
+    await showUpdateDownload({ version: "0.99.0", percent: null });
+    const download = page.getByRole("region", { name: "Update download" });
+    await expect(download).toContainText("Downloading RunHuddle 0.99.0");
+    await expect(download.locator("progress[value]")).toHaveCount(0);
+    await showUpdateDownload({ version: "0.99.0", percent: 42 });
+    await expect(download.getByRole("progressbar")).toHaveAttribute("value", "42");
+    await expect(download).toContainText("42%");
+    await showUpdateDownload(null);
+    await expect(download).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Browser preview" })).toHaveCount(0);
     expect(await page.evaluate(async () => ({
       terminalCount: (await window.runhuddle.snapshot()).terminals.length,

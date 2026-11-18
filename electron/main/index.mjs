@@ -1,5 +1,5 @@
 import electronUpdater from "electron-updater";
-import { createUpdateCheck } from "./app-updates.mjs";
+import { createUpdateCheck, terminalUpdateBlocker } from "./app-updates.mjs";
 import { usageService, configureClaudeRelay } from "./usage.mjs";
 import {
   app,
@@ -46,6 +46,7 @@ const accentChoices = {
 };
 const validAccent = (value) => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
 let appAppearance = { theme: "system", accent: accentChoices.Teal };
+let updateDownload = null;
 try {
   const saved = JSON.parse(fs.readFileSync(appearanceFile, "utf8"));
   if (themeChoices.includes(saved.theme)) appAppearance.theme = saved.theme;
@@ -526,6 +527,7 @@ else {
         return {
           appTheme: appAppearance.theme,
           accent: appAppearance.accent,
+          updateDownload,
           pinned,
           hidden,
           sessions: managed,
@@ -838,8 +840,16 @@ else {
       const checkForUpdates = createUpdateCheck({
         app, dialog, updater: electronUpdater.autoUpdater, windowForDialog: () => window,
         supported: process.platform !== "linux" || !!process.env.APPIMAGE,
-        canInstall: async () => connection === "connected" && !launchingTerminals &&
-          !(await service.call("list")).some((terminal) => !terminal.exited),
+        onDownloadProgress: (download) => {
+          updateDownload = download;
+          publish({ event: "update-download", download });
+        },
+        installBlocker: async () => {
+          if (connection !== "connected" || launchingTerminals)
+            return "Wait for RunHuddle to finish connecting to its terminals before installing.";
+          const [terminals, sessions] = await Promise.all([service.call("list"), service.call("sessions")]);
+          return terminalUpdateBlocker(terminals, sessions, process.platform);
+        },
       });
       Menu.setApplicationMenu(
         Menu.buildFromTemplate([
