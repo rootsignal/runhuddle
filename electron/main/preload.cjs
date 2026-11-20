@@ -44,8 +44,8 @@ contextBridge.exposeInMainWorld("runhuddle", {
   viewedTerminal: (id) => invoke("viewed-terminal", id),
   codexPromptReady: (id, terminalId) => invoke("codex-prompt-ready", id, terminalId),
   liveSessionPreview: (provider, id, terminalId) => invoke("live-session-preview", provider, id, terminalId),
-  liveSessionFollowUp: (provider, id, terminalId, message, screenshots) =>
-    invoke("live-session-follow-up", provider, id, terminalId, message, screenshots),
+  liveSessionFollowUp: (provider, id, terminalId, message, screenshots, queued) =>
+    invoke("live-session-follow-up", provider, id, terminalId, message, screenshots, queued),
   screenshotDraft: (id) => invoke("screenshot-draft", id),
   copyInboxReply: (id, text) => invoke("copy-inbox-reply", id, text),
   inboxPreview: (id) => invoke("inbox-preview", id),

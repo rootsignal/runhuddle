@@ -158,11 +158,7 @@ export function pendingQuestions(agent, source) {
   return [...unique.values()].slice(0, 5);
 }
 
-export async function readAttentionPreview(session, kind) {
-  const { source } = await transcriptTail(session);
-  const agent = session.provider.toLowerCase();
-  const messages = parseHistory(agent, source);
-  const turnStart = messages.map((message) => message.role).lastIndexOf("user");
+function previewTurn(messages, turnStart, end) {
   const rawInstruction = messages[turnStart]?.text ?? "";
   const imageTags = /<image\b(?=[^>]*\bpath\s*=)[^>]*>(?:\s*<\/image>)?/gi;
   const references = rawInstruction.match(screenshotReferences)?.[0] ?? "";
@@ -170,7 +166,7 @@ export async function readAttentionPreview(session, kind) {
   const instruction = screenshots
     ? rawInstruction.replace(screenshotReferences, "").replace(imageTags, "").replace(/\[Image #\d+\]\s*/gi, "").trim()
     : rawInstruction.trim();
-  const answer = messages.slice(turnStart + 1).findLast((message) => message.role === "assistant")?.text.trim();
+  const answer = messages.slice(turnStart + 1, end).findLast((message) => message.role === "assistant")?.text.trim();
   const opening = answer?.split(/\n[ \t]*\n/, 1)[0].replace(/\s+/g, " ");
   const clip = (text, limit) => text && (text.length > limit ? text.slice(0, limit - 1).trimEnd() + "…" : text);
   return {
@@ -180,6 +176,21 @@ export async function readAttentionPreview(session, kind) {
     update: clip(opening, 280),
     answer: answer?.slice(0, 12000),
     truncated: (answer?.length ?? 0) > 12000,
+  };
+}
+
+export async function readAttentionPreview(session, kind, includeTurns = false) {
+  const { source } = await transcriptTail(session);
+  const agent = session.provider.toLowerCase();
+  const messages = parseHistory(agent, source);
+  const starts = messages.flatMap((message, index) => message.role === "user" ? [index] : []).slice(-5);
+  const start = starts.at(-1) ?? -1;
+  const turn = previewTurn(messages, start, messages.length);
+  return {
+    ...turn,
     questions: kind === "input" ? pendingQuestions(agent, source) : undefined,
+    ...(includeTurns ? {
+      recentTurns: starts.map((index, position) => position === starts.length - 1 ? turn : previewTurn(messages, index, starts[position + 1])),
+    } : {}),
   };
 }

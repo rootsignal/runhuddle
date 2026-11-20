@@ -3,11 +3,11 @@ import { readAttentionPreview, readHistory } from "./history.mjs";
 import { readHistoryAround, searchHistory } from "./history-search.mjs";
 
 try {
-  const { session, sessions, query, anchor, attentionKind } = workerData;
+  const { session, sessions, query, anchor, attentionKind, includeTurns } = workerData;
   const result = sessions
     ? await searchHistory(sessions, query)
     : attentionKind
-      ? await readAttentionPreview(session, attentionKind)
+      ? await readAttentionPreview(session, attentionKind, includeTurns)
       : anchor
         ? await readHistoryAround(session, anchor)
         : await readHistory(session);

@@ -87,7 +87,8 @@ export interface SessionAlert {
   inboxId?: string;
 }
 export type InboxQuestion = { text: string; choices: string[] };
-export type InboxPreview = { instruction?: string; screenshots?: number; instructionAt?: number; update?: string; questions?: InboxQuestion[]; answer?: string; truncated?: boolean };
+export type PreviewTurn = { instruction?: string; screenshots?: number; instructionAt?: number; update?: string; answer?: string; truncated?: boolean };
+export type InboxPreview = PreviewTurn & { questions?: InboxQuestion[]; recentTurns?: PreviewTurn[] };
 export interface InboxEntry extends SessionAlertTarget {
   id: string;
   kind: "input" | "completion";
@@ -183,7 +184,7 @@ export interface API {
   cancelHistorySearch(): Promise<void>;
   codexPromptReady(id: string, terminalId: string): Promise<boolean>;
   liveSessionPreview(provider: string, id: string, terminalId: string): Promise<InboxPreview>;
-  liveSessionFollowUp(provider: string, id: string, terminalId: string, message: string, screenshots?: ArrayBuffer[]): Promise<void>;
+  liveSessionFollowUp(provider: string, id: string, terminalId: string, message: string, screenshots?: ArrayBuffer[], queued?: boolean): Promise<void>;
   screenshotDraft(id: string): Promise<Uint8Array<ArrayBuffer>>;
   copyInboxReply(id: string, text: string): Promise<void>;
   inboxPreview(id: string): Promise<InboxPreview>;

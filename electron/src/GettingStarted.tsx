@@ -69,7 +69,7 @@ const steps = [
   {
     id: "project-dashboard",
     title: "See all projects",
-    text: "Open Project dashboard to preview items that need attention, switch between live sessions and open their preview, terminal, or changes in place. Use Next attention for a session waiting on you and Next review for a finished turn. Open Browser from the session toolbar to keep a page beside your work. Preview also shows referenced files and web links below the latest reply. Choose Open workspace for your full terminal layout. The Command Palette lets you find sessions, projects, and actions, including Quick Terminal. Find the current bindings in Session → Keyboard Shortcuts.",
+    text: "Open Project dashboard to preview items that need attention, switch between live sessions and open their preview, terminal, or changes in place. Use Next attention for a session waiting on you and Next review for a finished turn. Open Browser from the session toolbar to keep a page beside your work. Preview also shows referenced files and web links below the reply. Use Previous turn in Preview to read earlier instructions and replies. Choose Open workspace for your full terminal layout. The Command Palette lets you find sessions, projects, and actions, including Quick Terminal. Find the current bindings in Session → Keyboard Shortcuts.",
   },
   {
     id: "inbox",

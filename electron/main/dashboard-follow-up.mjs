@@ -3,11 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import xterm from "@xterm/xterm";
 
-export async function codexPromptReady(replay) {
-  if (!replay?.data || replay.data.length >= 512 * 1024 || process.platform === "win32") return false;
+const conversationLocked = /Close it there and press R to continue here/i;
+
+async function readTerminalScreen(replay) {
   const sizes = replay.sizes ?? [];
   const initial = sizes[0] ?? replay;
-  if (!initial.cols || !initial.rows) return false;
+  if (!initial.cols || !initial.rows) return;
   const term = new xterm.Terminal({ cols: initial.cols, rows: initial.rows, scrollback: 0, allowProposedApi: true });
   try {
     let offset = 0;
@@ -20,19 +21,26 @@ export async function codexPromptReady(replay) {
     const buffer = term.buffer.active;
     const lines = Array.from({ length: term.rows }, (_, i) =>
       buffer.getLine(buffer.baseY + i)?.translateToString(true).trim() ?? "").filter(Boolean);
-    const footer = lines.slice(-8);
-    return term.modes.bracketedPasteMode &&
-      footer.some((line) => /^›\s+Ask Codex to do anything$/.test(line)) &&
-      /[?] for shortcuts/i.test(footer.at(-1) ?? "") &&
-      !footer.some((line) => /esc to interrupt|permission|close it there|background terminal running/i.test(line));
+    return { lines, bracketedPaste: term.modes.bracketedPasteMode };
   } finally {
     term.dispose();
   }
 }
 
+export async function codexPromptReady(replay) {
+  if (!replay?.data || replay.data.length >= 512 * 1024 || process.platform === "win32") return false;
+  const screen = await readTerminalScreen(replay);
+  if (!screen?.bracketedPaste) return false;
+  const footer = screen.lines.slice(-8);
+  return footer.some((line) => /^›\s+Ask Codex to do anything$/.test(line)) &&
+    /[?] for shortcuts/i.test(footer.at(-1) ?? "") &&
+    !conversationLocked.test(screen.lines.join(" ")) &&
+    !footer.some((line) => /esc to interrupt|permission|background terminal running/i.test(line));
+}
+
 export const screenshotReferences = /\n\nScreenshots to inspect:\n(?:- "[^"\r\n]*[\\/]runhuddle-screenshots-[^"\r\n]+[\\/]screenshot-\d+\.png"(?:\n|$))+$/;
 
-export async function sendDashboardFollowUp(service, entry, terminalId, message, stillCurrent, images = [], toPng) {
+export async function sendDashboardFollowUp(service, entry, terminalId, message, stillCurrent, images = [], toPng, queued = false) {
   const text = typeof message === "string" ? message.trim() : "";
   if (!Array.isArray(images) || images.length > 8 ||
       images.some((image) => !(image instanceof ArrayBuffer) || !image.byteLength || image.byteLength > 10 * 1024 * 1024))
@@ -54,7 +62,11 @@ export async function sendDashboardFollowUp(service, entry, terminalId, message,
   // Codex enables bracketed paste on Unix. Respect an explicit disable in the retained output.
   const codexReplayTruncated = pasteMode === undefined && entry.provider === "Codex" &&
     process.platform !== "win32" && replay.data.length === 512 * 1024;
-  if ((pasteMode !== "h" && !codexReplayTruncated) || /Close it there and press R to continue here/i.test(replay.data.slice(-12000)))
+  const recentOutput = replay.data.slice(-12000);
+  const screen = await readTerminalScreen(replay);
+  const locked = conversationLocked.test(screen ? screen.lines.join(" ") : recentOutput);
+  const acceptsPaste = screen?.bracketedPaste ?? (pasteMode === "h");
+  if ((!acceptsPaste && !codexReplayTruncated) || locked)
     throw Error("Open the session to continue. Its terminal is not accepting dashboard messages.");
 
   let directory;
@@ -79,6 +91,13 @@ export async function sendDashboardFollowUp(service, entry, terminalId, message,
         await codexPromptReady(await service.call("replay", { id: terminalId }))) {
       current = currentRow(await service.call("sessions"));
       if (current?.state === "disconnected") current = { ...current, state: "idle" };
+    }
+    if (queued) {
+      // The user can type in the terminal while a follow-up waits in Preview.
+      if (current?.provider !== "Codex" || current.state !== "idle" ||
+          !await codexPromptReady(await service.call("replay", { id: terminalId })))
+        throw Error("The terminal doesn’t have an empty Codex prompt.");
+      current = currentRow(await service.call("sessions"));
     }
     if (current?.state !== "idle" || !stillCurrent()) throw Error(target);
     // Deliver the paste and submit together to the verified PTY.

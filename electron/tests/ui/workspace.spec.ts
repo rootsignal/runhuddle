@@ -179,6 +179,7 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       if (title === "See all projects") {
         await expect(guide).toContainText("Open Browser from the session toolbar");
         await expect(guide).toContainText("Preview also shows referenced files and web links");
+        await expect(guide).toContainText("Use Previous turn in Preview");
         await expect(guide).toContainText("Session → Keyboard Shortcuts");
       }
       if (title === "Preview and share a page") {
@@ -2306,7 +2307,13 @@ test("browser preview shares reports and grants the active agent revocable live 
 
 test("Inbox keeps unread completions across restart and opens the exact recorded session", async ({}, testInfo) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-inbox-ui-"));
-  fs.writeFileSync(path.join(dir, "Release notes.md"), "# Release checklist\n\n- Verify the mobile layout.\n");
+  fs.writeFileSync(path.join(dir, "Release notes.md"), [
+    "# Release checklist", "", "- Verify the mobile layout.", "- [x] Build passed.", "",
+    "| Area | Status |", "| --- | --- |", "| Dashboard | Ready |", "",
+    "> Review before publishing.", "", "```sh", "npm test", "```", "",
+    "[Release site](https://example.test/markdown)", "", "![Remote image](https://example.test/image.png)",
+    "", "<script>shouldNotRender()</script>",
+  ].join("\n"));
   const data = path.join(dir, "preview");
   fs.mkdirSync(data);
   const sessionID = "55555555-5555-4555-8555-555555555555";
@@ -2559,7 +2566,8 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
         return state;
       });
       dialog.showMessageBox = async (_window, options) => {
-        if (!options.detail?.includes("https://example.test/release")) throw Error("Wrong browser confirmation");
+        if (!options.detail || !/^https:\/\/example\.test\/(release|markdown)\n/.test(options.detail))
+          throw Error("Wrong browser confirmation");
         return { response: 1, checkboxChecked: false };
       };
       shell.openExternal = async (href) => { (globalThis as any).openedReplyLink = href; };
@@ -2568,21 +2576,47 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
         if (provider !== "Codex" || sessionID !== terminal.sessionID || terminalId !== terminal.id)
           throw Error("Wrong preview destination");
         return { instruction: "Check the mobile layout.", update: "Ready for the next instruction.",
+          recentTurns: [
+            { instruction: "Inspect the checkout.", instructionAt: 1700000000000, answer: "Checkout inspected." },
+            { instruction: "Check the mobile layout.", answer: "Ready for the next instruction." },
+          ],
         answer: "Ready for the next instruction.\n\n- Mobile layout checked\n- Desktop layout is next\n\nSee [Release notes](<Release notes.md>) and the [release site](https://example.test/release)." };
       });
       ipcMain.removeHandler("live-session-follow-up");
-      ipcMain.handle("live-session-follow-up", (_event, provider, sessionID, terminalId, text, screenshots) => {
-        if (provider !== "Codex" || sessionID !== terminal.sessionID || terminalId !== terminal.id ||
+      ipcMain.handle("live-session-follow-up", (_event, provider, sessionID, terminalId, text, screenshots, queued) => {
+        if (queued !== (process.platform !== "win32") || provider !== "Codex" || sessionID !== terminal.sessionID || terminalId !== terminal.id ||
             text !== "Review the desktop layout next." || screenshots.length !== 2 ||
             screenshots.some((image: ArrayBuffer) => new Uint8Array(image)[0] !== 137)) throw Error("Wrong live follow-up destination or message");
       });
     }, liveTerminal);
     await expect(live.locator(".dashboard-briefing dd").filter({ hasText: "Ready for the next instruction." })).toBeVisible();
+    const turns = live.getByRole("navigation", { name: "Recent turns" });
+    await turns.getByRole("button", { name: "Previous turn" }).click();
+    await expect(turns).toContainText("Turn 1 of 2");
+    await expect(live.getByText("Inspect the checkout.", { exact: true })).toBeVisible();
+    await expect(live.getByText("Checkout inspected.", { exact: true })).toBeVisible();
+    await expect(live.getByText("Ready for a follow-up.", { exact: true })).toBeVisible();
+    await expect(turns.getByRole("button", { name: "Previous turn" })).toBeDisabled();
+    await turns.getByRole("button", { name: "Next turn" }).click();
+    await expect(turns).toContainText("Latest");
+    await turns.getByRole("button", { name: "Previous turn" }).click();
+    await turns.getByRole("button", { name: "Back to latest" }).click();
+    await expect(turns).toContainText("Latest");
     const references = live.getByRole("region", { name: "Referenced files and links" });
     await references.getByRole("button", { name: "View Release notes", exact: true }).click();
     const filePreview = page.getByRole("dialog", { name: "File preview" });
     await expect(filePreview.getByRole("heading", { name: "Release checklist" })).toBeVisible();
     await expect(filePreview.getByRole("listitem").filter({ hasText: "Verify the mobile layout." })).toBeVisible();
+    await expect(filePreview.getByRole("columnheader", { name: "Area" })).toBeVisible();
+    await expect(filePreview.getByRole("cell", { name: "Dashboard" })).toBeVisible();
+    await expect(filePreview.getByRole("checkbox")).toBeChecked();
+    await expect(filePreview.getByRole("checkbox")).toBeDisabled();
+    await expect(filePreview.locator("blockquote")).toHaveText("Review before publishing.");
+    await expect(filePreview.locator("pre code")).toContainText("npm test");
+    await expect(filePreview.getByRole("link", { name: "Release site" })).toBeVisible();
+    await expect(filePreview.locator("img, script")).toHaveCount(0);
+    await filePreview.getByRole("link", { name: "Release site" }).click();
+    await expect.poll(() => app.evaluate(() => (globalThis as any).openedReplyLink)).toBe("https://example.test/markdown");
     await filePreview.getByRole("button", { name: "Close file preview" }).click();
     await references.getByRole("button", { name: "Open release site in RunHuddle Browser" }).click();
     const linkedBrowser = live.getByRole("region", { name: "Browser preview" });
@@ -2654,7 +2688,14 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await dashboard().getByRole("button", { name: "Add to follow-up draft" }).click();
     const screenshots = live.getByRole("list", { name: "Draft screenshots" });
     await expect(screenshots.getByRole("listitem")).toHaveCount(2);
-    await expect(live.getByRole("button", { name: "Send follow-up" })).toBeDisabled();
+    if (process.platform !== "win32") {
+      const queueFollowUp = live.getByRole("button", { name: "Queue follow-up", exact: true });
+      await queueFollowUp.click();
+      await expect(live.getByText("Queued · sends when the agent is ready")).toBeVisible();
+      await live.getByRole("button", { name: "Cancel queue" }).click();
+      await expect(screenshots.getByRole("listitem")).toHaveCount(2);
+      await queueFollowUp.click();
+    }
     const activityToolbar = live.locator(".dashboard-live-session:visible .dashboard-live-toolbar");
     await expect.poll(() => activityToolbar.evaluate((element) => getComputedStyle(element, "::after").animationName))
       .toBe("dashboard-horizontal-signal");
@@ -2688,8 +2729,8 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     expect((await switchboard.boundingBox())!.height).toBe(switchboardHeight);
     await expect(activityToolbar).toHaveAttribute("data-working", "false");
     await expect(workTimer).toHaveCount(0);
+    if (process.platform === "win32") await live.getByRole("button", { name: "Send follow-up" }).click();
 
-    await live.getByRole("button", { name: "Send follow-up" }).click();
     await expect(live.getByText("Follow-up sent to Codex fixture.")).toBeVisible();
     await expect(live.locator(".dashboard-briefing dd").filter({ hasText: "Review the desktop layout next." })).toBeVisible();
     await expect(live.getByText("Waiting for the agent’s next recorded update.", { exact: true })).toBeVisible();
@@ -3739,6 +3780,26 @@ test("Quick Terminal keeps its shell and keyboard shortcuts can be remapped", as
     await page.keyboard.press("ControlOrMeta+t");
     await expect(terminalInput()).toBeFocused();
     expect(await page.evaluate(() => localStorage.getItem("quickTerminalID"))).toBe(shellId);
+    const destination = "https://example.test/quick-terminal";
+    await app.evaluate(({ BrowserWindow, dialog, shell }, { id, url }) => {
+      dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
+      shell.openExternal = async (href) => { Object.assign(globalThis, { quickTerminalLink: href }); };
+      BrowserWindow.getAllWindows()[0].webContents.send("event", {
+        event: "output", id, sequence: 1_000_000,
+        data: "\x1b[2J\x1b[H\x1b]8;;" + url + "\x07Quick Link\x1b]8;;\x07",
+      });
+    }, { id: shellId, url: destination });
+    const screen = quick().locator(".xterm-screen");
+    await expect(screen).toContainText("Quick Link");
+    const position = { x: 12, y: 6 };
+    await screen.hover({ position });
+    await screen.click({ position, modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+    await expect.poll(() => app.evaluate(() => (globalThis as any).quickTerminalLink)).toBe(destination);
+    await quick().getByRole("button", { name: "Dismiss Quick Terminal" }).click();
+    await expect(quick()).toHaveCount(0);
+    await expect(dashboard()).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+t");
+    await expect(terminalInput()).toBeFocused();
     await app.evaluate(({ dialog }) => {
       dialog.showMessageBox = async (_window, options) => {
         if (options.message !== "Close this terminal?") throw Error("Expected a shell confirmation");

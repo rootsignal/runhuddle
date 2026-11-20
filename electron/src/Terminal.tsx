@@ -7,7 +7,6 @@ import { historyBeforeReplay, readScrollback, saveScrollback, seedScrollback } f
 import type { AppEvent } from "./types";
 type Geometry = { cols: number; rows: number };
 const geometries = new Map<string, Geometry>();
-const redrawnTerminals = new WeakSet<Set<Terminal>>();
 const terminalViews = new Map<string, Set<Terminal>>();
 
 function synchronizeViews(id: string, geometry: Geometry) {
@@ -147,7 +146,7 @@ export function TerminalPane({
       const geometry = fit.proposeDimensions();
       if (!geometry) return;
       const old = geometries.get(id);
-      const redraw = needsRedraw && !redrawnTerminals.has(peers);
+      const redraw = needsRedraw;
       if (!redraw && old?.cols === geometry.cols && old.rows === geometry.rows) return;
       geometries.delete(id);
       geometries.set(id, geometry);
@@ -155,7 +154,7 @@ export function TerminalPane({
       if (!orderedSizes && !redraw) synchronizeViews(id, geometry);
       async function resize(geometry: Geometry) {
         if (redraw) {
-          redrawnTerminals.add(peers);
+          needsRedraw = false;
           // The replay can start in the middle of a differential paint. Give Codex a
           // real height change so it rebuilds its viewport even if the final size is unchanged.
           const nudge = { cols: geometry.cols, rows: geometry.rows > 2 ? geometry.rows - 1 : geometry.rows + 1 };
@@ -173,6 +172,7 @@ export function TerminalPane({
         await window.runhuddle.resize(id, geometry.cols, geometry.rows);
       }
       void resize(geometry).catch((error) => {
+        if (redraw) needsRedraw = true;
         if (geometries.get(id) === geometry) geometries.delete(id);
         fail(error);
       });
@@ -322,6 +322,8 @@ export function TerminalPane({
     const previousFocus = document.activeElement;
     const frame = requestAnimationFrame(() => {
       fitCurrent.current();
+      const term = instance.current?.term;
+      if (term) term.refresh(0, term.rows - 1);
       if (focused && document.activeElement === previousFocus)
         instance.current?.term.focus();
     });

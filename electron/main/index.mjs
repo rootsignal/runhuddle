@@ -624,17 +624,18 @@ else {
         const row = liveDashboardSession(provider, sessionID, terminalId);
         if (!row || connection !== "connected") return {};
         return runHistoryWorker({ session: historySource(row),
-          attentionKind: row.state === "needsInput" ? "input" : "completion" }, 10000).result;
+          attentionKind: row.state === "needsInput" ? "input" : "completion", includeTurns: true }, 10000).result;
       });
-      async function dashboardFollowUp(row, terminalId, message, review, images) {
+      async function dashboardFollowUp(row, terminalId, message, review, images, queued) {
         const key = sessionKey(row);
         if (connection !== "connected" || followingUp.has(key) || (review && sentFollowUps.has(review)))
           throw Error("This session is no longer available for a follow-up.");
         followingUp.add(key);
         try {
           await sendDashboardFollowUp(service, row, terminalId, message, () =>
-            connection === "connected" && (!review || inbox.list().includes(review)),
-            images, (bytes) => nativeImage.createFromBuffer(Buffer.from(bytes)).toPNG());
+            connection === "connected" && (!review || inbox.list().includes(review)) &&
+              (!queued || !inbox.list().some((entry) => entry.kind === "input" && sessionKey(entry) === key)),
+            images, (bytes) => nativeImage.createFromBuffer(Buffer.from(bytes)).toPNG(), queued === true);
           if (!review) return;
           sentFollowUps.add(review);
           try {
@@ -647,11 +648,11 @@ else {
           followingUp.delete(key);
         }
       }
-      handle("live-session-follow-up", (provider, sessionID, terminalId, message, images) => {
+      handle("live-session-follow-up", (provider, sessionID, terminalId, message, images, queued) => {
         const row = liveDashboardSession(provider, sessionID, terminalId);
         if (!row) throw Error("This session is no longer available.");
         const review = inbox.list().find((entry) => entry.kind === "completion" && sessionKey(entry) === sessionKey(row));
-        return dashboardFollowUp(row, terminalId, message, review, images);
+        return dashboardFollowUp(row, terminalId, message, review, images, queued);
       });
       handle("copy-inbox-reply", (id, text) => {
         if (!inbox.list().some((entry) => entry.id === id && entry.kind === "input") ||

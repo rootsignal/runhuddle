@@ -10,12 +10,12 @@ import { TerminalPane } from "./Terminal";
 import { SessionHistory } from "./SessionHistory";
 import { SessionStatus } from "./SessionStatus";
 import { ProjectFileDialog } from "./ReplyReferences";
-import { AttentionPreview, ReplyExcerpt } from "./AttentionPreview";
+import { AttentionPreview } from "./AttentionPreview";
 import { ProjectSessionReview } from "./ProjectSessionReview";
 import { ProjectConversationPreview, RecentConversationDialog } from "./ProjectConversationPreview";
 import { ProjectHistoryReview } from "./ProjectHistoryReview";
 import { DashboardCleanup, type CleanupSuggestion } from "./DashboardCleanup";
-import { emptyDraft, type useDashboardDrafts } from "./dashboard-drafts";
+import { emptyDraft, type FollowUpDraft, type useDashboardDrafts } from "./dashboard-drafts";
 import logo from "../assets/icon.png";
 import { AgentIcon, Icon } from "./Icons";
 import type { DashboardRequest, HistorySearchResult, InboxEntry, Session, SessionRecap, TerminalInfo } from "./types";
@@ -142,6 +142,11 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
   const [previewID, setPreviewID] = useState<string>();
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<string>();
+  const sendingRef = useRef(false);
+  const [queuedFollowUps, setQueuedFollowUps] = useState<Record<string, { terminalId: string; draft: FollowUpDraft }>>({});
+  function cancelQueuedFollowUp(id: string) {
+    setQueuedFollowUps(({ [id]: _removed, ...remaining }) => remaining);
+  }
   const [feedback, setFeedback] = useState<{ message: string; error?: boolean; composeId?: string }>();
   type LiveView = "Preview" | "Terminal" | "Changes";
   const [allProjectsPreview, setAllProjectsPreview] = useState(() => readPosition<string | undefined>("dashboardSelectedSession", undefined));
@@ -252,12 +257,13 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
       setOpeningShell(false);
     }
   }
-  async function sendMessage(id: string, title: string, send: (text: string, files: File[]) => Promise<void>, followUpID?: string) {
+  async function sendMessage(id: string, title: string, send: (text: string, files: File[]) => Promise<void>, followUpID?: string, queued = false) {
     if (followUpID && !followUps.ready) return;
     const draft = followUpID ? followUps.drafts[followUpID] ?? emptyDraft : { text: replyDrafts[id] ?? "", files: [] };
     const text = draft.text.trim();
     const { files } = draft;
-    if ((!text && !files.length) || sending) return;
+    if ((!text && !files.length) || sendingRef.current) return;
+    sendingRef.current = true;
     const at = Date.now();
     setSending(id);
     setFeedback(undefined);
@@ -275,8 +281,9 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
         : `Follow-up sent to ${title}.` });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setFeedback({ message: message.replace(/^Error invoking remote method '[^']+': Error: /, ""), error: true });
+      setFeedback({ composeId: id, message: (queued ? `Queued follow-up to ${title} couldn’t send. Your draft is ready to review. ` : "") + message.replace(/^Error invoking remote method '[^']+': Error: /, ""), error: true });
     } finally {
+      sendingRef.current = false;
       setSending(undefined);
     }
   }
@@ -363,6 +370,28 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
   const allLiveSessions = allWorkSessions.filter((row) => row.terminalId)
     .sort((a, b) => a.cwd.localeCompare(b.cwd) || key(a).localeCompare(key(b)));
   const liveSessions = allLiveSessions.filter((row) => inScope(row.cwd));
+  const inputIDsForQueue = new Set(allAlerts.filter((entry) => entry.kind === "input").map(key));
+  function submitLiveFollowUp(row: Session, queued = false) {
+    const id = key(row);
+    return sendMessage("live:" + row.terminalId, details[id]?.name || row.title,
+      async (text, files) => window.runhuddle.liveSessionFollowUp(row.provider, row.sessionID, row.terminalId!, text,
+        await Promise.all(files.map((file) => file.arrayBuffer())), queued), id, queued);
+  }
+  useEffect(() => {
+    if (!connected || !followUps.ready || sending || sendingRef.current) return;
+    for (const [id, { terminalId, draft }] of Object.entries(queuedFollowUps)) {
+      const row = allLiveSessions.find((item) => key(item) === id && item.terminalId === terminalId);
+      if (!row || draft !== followUps.drafts[id]) {
+        cancelQueuedFollowUp(id);
+        continue;
+      }
+      if (row.state !== "idle" || liveState(row) !== "idle" || inputIDsForQueue.has(id)) continue;
+      cancelQueuedFollowUp(id);
+      void submitLiveFollowUp(row, true);
+      break;
+    }
+  });
+
   const [workingSince, setWorkingSince] = useState<ReadonlyMap<string, number>>(() => new Map());
   useLayoutEffect(() => {
     const ids = allLiveSessions.filter((row) => liveState(row) === "working").map((row) => row.terminalId!);
@@ -1186,7 +1215,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
           </button>
         </div>
       </header>
-      {open && connected && allLiveSessions.filter((row) => row.provider === "Codex").map((row) =>
+      {connected && allLiveSessions.filter((row) => row.provider === "Codex" && (open || queuedFollowUps[key(row)])).map((row) =>
         <TerminalPermissionObserver key={row.terminalId} id={row.terminalId!} onPrompt={onPermission} onWorking={onTerminalWorking} />)}
       <div className="dashboard-body">
         {shellError && <p className="dashboard-attention-feedback" role="alert">{shellError}</p>}
@@ -1243,7 +1272,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                   const hasDraft = !!(draft?.text.trim() || draft?.files.length);
                   const hidden = hiddenTabs.includes(terminalId);
                   return <button key={terminalId} className="dashboard-open dashboard-rail-row" data-working={state === "working"}
-                    aria-label={`Inspect ${title}`} aria-description={hasDraft ? "Unsent follow-up draft" : undefined}
+                    aria-label={`Inspect ${title}`} aria-description={queuedFollowUps[key(row)] ? "Queued follow-up" : hasDraft ? "Unsent follow-up draft" : undefined}
                     aria-current={key(row) === livePreview ? "true" : undefined}
                     onClick={() => selectLive(key(row))}
                     onContextMenu={(event) => {
@@ -1263,7 +1292,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                     <span className="dashboard-rail-text">
                       <span className="dashboard-rail-title">
                         <strong title={title}>{title}</strong>
-                        {hasDraft && <span className="dashboard-draft-badge">Draft</span>}
+                        {hasDraft && <span className="dashboard-draft-badge">{queuedFollowUps[key(row)] ? "Queued" : "Draft"}</span>}
                         {hidden && <span className="dashboard-rail-hidden">Tab hidden</span>}
                       </span>
                       <small className="dashboard-rail-meta">
@@ -1299,6 +1328,8 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                 const state = liveState(row);
                 const followUpID = key(row);
                 const draft = followUps.drafts[followUpID] ?? emptyDraft;
+                const queued = queuedFollowUps[followUpID]?.terminalId === terminalId;
+                const canQueue = row.provider === "Codex" && !navigator.platform.startsWith("Win") && state === "working" && connected;
                 const { files } = draft;
                 const view = views[followUpID] ?? "Preview";
                 const current = row === activeLive;
@@ -1312,7 +1343,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                 const input = {
                   value: question ? replyDrafts[replyDraftId] ?? "" : draft.text,
                   maxLength: 2000,
-                  disabled: sending === replyDraftId || (!question && !followUps.ready),
+                  disabled: sending === replyDraftId || (!question && (!followUps.ready || queued)),
                   onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
                     const text = event.currentTarget.value;
                     if (question) setReplyDrafts((previous) => ({ ...previous, [replyDraftId]: text }));
@@ -1335,7 +1366,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                           <WorkingDuration since={workingSince.get(terminalId)!} />}
                         {hideRail && current && <>
                           {hiddenTabs.includes(terminalId) && <span>Tab hidden</span>}
-                          {!!(draft.text.trim() || files.length) && <span className="dashboard-draft-badge">Draft</span>}
+                          {!!(draft.text.trim() || files.length) && <span className="dashboard-draft-badge">{queued ? "Queued" : "Draft"}</span>}
                         </>}
                       </small>
                     </div>
@@ -1391,10 +1422,16 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                           void sendMessage(replyDraftId, title, (text) => window.runhuddle.copyInboxReply(question.id, text));
                           return;
                         }
-                        if (state !== "idle") return;
-                        void sendMessage(id, title, async (text, files) =>
-                          window.runhuddle.liveSessionFollowUp(row.provider, row.sessionID, terminalId, text,
-                            await Promise.all(files.map((file) => file.arrayBuffer()))), followUpID);
+                        if (queued || sendingRef.current || !followUps.ready || (!draft.text.trim() && !files.length)) return;
+                        if (canQueue) {
+                          const text = draft.text.trim();
+                          if (/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(text) || /^[!/]/.test(text)) {
+                            setFeedback({ composeId: id, message: "Enter a single-line message of up to 2,000 characters.", error: true });
+                            return;
+                          }
+                          setFeedback(undefined);
+                          setQueuedFollowUps((previous) => ({ ...previous, [followUpID]: { terminalId, draft } }));
+                        } else if (state === "idle") void submitLiveFollowUp(row);
                       }}>
                         <label><span>{question ? "Draft a reply" : "Follow up"} · {title} · {name(row.cwd)} · {row.provider}</span>
                           {question ? <textarea {...input} rows={2} placeholder="Write a reply to copy" />
@@ -1411,15 +1448,19 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                                 }));
                               }} />}
                         </label>
-                        <button className="primary" disabled={(!question && (!followUps.ready || state !== "idle")) || !!sending || (!input.value.trim() && (!!question || !files.length))}
-                            title={question || state === "idle" ? undefined : "Send when the agent is idle"}>{question ? "Copy reply" : "Send follow-up"}</button>
+                        <button className="primary" disabled={(!question && (!followUps.ready || queued || (state !== "idle" && !canQueue))) || !!sending || (!input.value.trim() && (!!question || !files.length))}
+                            title={question || state === "idle" || canQueue ? undefined : "Send when the agent is idle"}>{question ? "Copy reply" : queued ? "Queued" : canQueue ? "Queue follow-up" : "Send follow-up"}</button>
                       </form>
-                      {state === "working" && (input.value.trim() || files.length > 0) &&
+                      {queued && <div className="dashboard-draft-wait">
+                        <span role="status">{state === "working" ? "Queued · sends when the agent is ready" : "Queued · waiting for terminal"}</span>
+                        <button type="button" onClick={() => cancelQueuedFollowUp(followUpID)} title="Keep this as an editable draft">Cancel queue</button>
+                      </div>}
+                      {!canQueue && state === "working" && (draft.text.trim() || files.length > 0) &&
                         <small className="dashboard-draft-wait">Send this draft when the agent is ready.</small>}
                       {!!files.length && <ul className="dashboard-draft-attachments" aria-label="Draft screenshots">
                         {files.map((file, index) => <li key={index}>
                           <span title={file.name}>{file.name === "image.png" ? `Screenshot ${index + 1}` : file.name}</span>
-                          <button type="button" aria-label={`Remove screenshot ${index + 1}`} disabled={sending === id}
+                          <button type="button" aria-label={`Remove screenshot ${index + 1}`} disabled={sending === id || queued}
                             onClick={() => followUps.updateDraft(followUpID, (previous) => ({
                               ...previous, files: previous.files.filter((item) => item !== file),
                             }))}>×</button>
@@ -1679,7 +1720,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
         </div>
       </div>
       {open && filePreview && <ProjectFileDialog source={filePreview.source} file={filePreview.file}
-        onClose={() => setFilePreview(undefined)} renderMarkdown={(text) => <ReplyExcerpt text={text} />} />}
+        onClose={() => setFilePreview(undefined)} />}
       {open && recentSelection && <RecentConversationDialog actions={recentRow ? recentSessionActions(recentRow) : undefined}
         onBack={() => closeRecentPreview(true)} onClose={() => closeRecentPreview(false)}>
         {recentRow ? conversationPreview(recentRow, true) : <p>This session is no longer available.</p>}

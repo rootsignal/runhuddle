@@ -1,3 +1,4 @@
+import { Icon } from "./Icons";
 import { ReplyReferences } from "./ReplyReferences";
 import type { TerminalPermissionPrompt } from "./TerminalPermission";
 import { useEffect, useRef, useState } from "react";
@@ -48,6 +49,7 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
   onBrowserReference?: (url: string) => Promise<void>;
   liveSession?: Pick<Session, "provider" | "sessionID" | "terminalId">;
 }) {
+  const [selectedTurn, setSelectedTurn] = useState<string>();
   const [preview, setPreview] = useState<InboxPreview>();
   const [loadedReview, setLoadedReview] = useState<string>();
   const acknowledgedReview = useRef<string>(undefined);
@@ -87,11 +89,21 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
     ? recap : undefined;
   const waitingForTranscript = !!submitted && preview?.instruction !== submitted.text &&
     (preview?.instructionAt ?? 0) < submitted.at;
-  const screenshotCount = waitingForTranscript ? submitted.screenshots : preview?.screenshots;
-  const answer = waitingForTranscript ? undefined : preview?.answer;
-  const update = waitingForTranscript ? undefined : currentRecap?.done || preview?.update || preview?.answer?.slice(0, 280);
+  const recent = preview?.recentTurns ?? [];
+  const olderTurns = (waitingForTranscript ? recent : recent.slice(0, -1)).slice(-4).reverse().map((turn, index, turns) => {
+    const same = (other: typeof turn) => other.instructionAt === turn.instructionAt && other.instruction === turn.instruction;
+    return { ...turn, key: JSON.stringify([turn.instructionAt, turn.instruction, turns.slice(index + 1).filter(same).length]) };
+  });
+  const olderIndex = selectedTurn ? olderTurns.findIndex((turn) => turn.key === selectedTurn) : -1;
+  const previous = olderTurns[olderIndex + 1];
+  const historical = olderTurns[olderIndex];
+  const shown = historical ?? preview;
+  const waiting = waitingForTranscript && !historical;
+  const screenshotCount = waiting ? submitted?.screenshots : shown?.screenshots;
+  const answer = waiting ? undefined : shown?.answer;
+  const update = waiting ? undefined : (historical ? undefined : currentRecap?.done) || shown?.update || shown?.answer?.slice(0, 280);
   useEffect(() => {
-    if (!enabled || !reviewID || loadedReview !== reviewID || !update || failed) return;
+    if (historical || !enabled || !reviewID || loadedReview !== reviewID || !update || failed) return;
     function acknowledgeVisibleReview() {
       if (!reviewID || acknowledgedReview.current === reviewID ||
           document.visibilityState !== "visible" || !document.hasFocus()) return;
@@ -105,7 +117,7 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
       window.removeEventListener("focus", acknowledgeVisibleReview);
       document.removeEventListener("visibilitychange", acknowledgeVisibleReview);
     };
-  }, [enabled, reviewID, loadedReview, update, failed, onReview]);
+  }, [historical?.key, enabled, reviewID, loadedReview, update, failed, onReview]);
   const pending = waitingForTranscript ? undefined : currentRecap?.pending || currentRecap?.next;
   const questions = kind === "input" ? preview?.questions : undefined;
   const choices = permission ? [{ text: permission.question, choices: permission.choices }] : questions;
@@ -117,11 +129,22 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
       : "Review the agent’s update.");
   return <>
     <div className="dashboard-review-preview dashboard-briefing">
+      {liveSession && olderTurns.length > 0 && <nav className="dashboard-turn-navigation" aria-label="Recent turns">
+        <span aria-live="polite">{historical
+          ? <>Turn {olderTurns.length - olderIndex} of {olderTurns.length + 1}{historical.instructionAt && <> · <time
+            dateTime={new Date(historical.instructionAt).toISOString()}>{new Date(historical.instructionAt).toLocaleString()}</time></>}</>
+          : "Latest"}</span>
+        {historical && <button type="button" onClick={() => setSelectedTurn(undefined)}>Back to latest</button>}
+        <button type="button" className="dashboard-tool-icon turn-older" aria-label="Previous turn" data-tooltip="Previous turn"
+          disabled={!previous} onClick={() => setSelectedTurn(previous?.key)}><Icon name="chevron" size={18} /></button>
+        <button type="button" className="dashboard-tool-icon turn-newer" aria-label="Next turn" data-tooltip="Next turn"
+          disabled={!historical} onClick={() => setSelectedTurn(olderTurns[olderIndex - 1]?.key)}><Icon name="chevron" size={18} /></button>
+      </nav>}
       <dl>
         <div>
           <dt>Your instruction</dt>
-          <dd><span>{waitingForTranscript ? submitted.text : preview?.instruction ? previewInline(preview.instruction)
-            : preview?.screenshots ? null : !preview && !failed ? "Loading instruction…" : "No instruction available in the transcript."}</span>
+          <dd><span>{waiting ? submitted?.text : shown?.instruction ? previewInline(shown.instruction)
+            : shown?.screenshots ? null : !preview && !failed ? "Loading instruction…" : "No instruction available in the transcript."}</span>
             {!!screenshotCount && <span className="dashboard-briefing-attachment">
               {screenshotCount} {screenshotCount === 1 ? "screenshot" : "screenshots"} attached
             </span>}
@@ -130,9 +153,9 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
         <div>
           <dt>Agent update</dt>
           <dd>{liveSession && answer ? <>
-            <ReplyExcerpt text={answer + (preview?.truncated ? "…" : "")} linksAsLabels={!!onFileReference && !!onBrowserReference} />
-            {preview?.truncated && <p className="dashboard-reply-truncated">Open in workspace to read the rest.</p>}
-          </> : update ? previewInline(update) : waitingForTranscript ? "Waiting for the agent’s next recorded update." : failed ? "Couldn’t load the update."
+            <ReplyExcerpt text={answer + (shown?.truncated ? "…" : "")} linksAsLabels={!!onFileReference && !!onBrowserReference} />
+            {shown?.truncated && <p className="dashboard-reply-truncated">Open in workspace to read the rest.</p>}
+          </> : update ? previewInline(update) : waiting ? "Waiting for the agent’s next recorded update." : failed ? "Couldn’t load the update."
             : preview ? "No reply recorded for this turn yet." : permission ? "Waiting for permission." : "Loading preview…"}</dd>
         </div>
         <div>
