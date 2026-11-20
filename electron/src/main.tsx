@@ -1,6 +1,11 @@
+import { CommandPalette, KeyboardShortcutSettings, QuickTerminal, bindingForEvent, bindingText, defaultBindings } from "./KeyboardTools";
+import type { AppCommand, DashboardRequest } from "./types";
+import { RenameSession } from "./RenameSession";
 import { useDismissMenus } from "./useDismissMenus";
 import { UsageControls } from "./UsageControls";
 import { HiddenHistoryDialog } from "./HiddenHistoryDialog";
+import { useDashboardDrafts } from "./dashboard-drafts";
+import { ProjectsDashboard, type SessionDetails } from "./ProjectsDashboard";
 import { ProjectOverview } from "./ProjectOverview";
 import { SessionStatus } from "./SessionStatus";
 import { SessionContinuation, type ContinuationRequest } from "./SessionContinuation";
@@ -131,6 +136,60 @@ function App() {
   const [sessionAlert, setSessionAlert] = useState<{ key: string; alert: SessionAlert }>();
   const [showNotes, setShowNotes] = useState(0);
   const [showHiddenHistory, setShowHiddenHistory] = useState(false);
+  const [dashboardCommand, setDashboardCommand] = useState<DashboardRequest>();
+  const [keyboardTool, setKeyboardTool] = useState<"command-palette" | "quick-terminal" | "keyboard-shortcuts">();
+  const [keyboardBindings, setKeyboardBindings] = useState(defaultBindings);
+  const [dashboardFolder, setDashboardFolder] = useState("");
+  const [quickTerminalID, setQuickTerminalID] = useState(() => localStorage.getItem("quickTerminalID") || "");
+  const [animateQuickTerminal, setAnimateQuickTerminal] = useState(() => readSetting("animateQuickTerminal", true));
+  useEffect(() => {
+    localStorage.setItem("animateQuickTerminal", JSON.stringify(animateQuickTerminal));
+  }, [animateQuickTerminal]);
+  const quickStart = useRef<Promise<void> | null>(null);
+  useEffect(() => {
+    void window.runhuddle.keyboardShortcuts().then(setKeyboardBindings).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (quickTerminalID) localStorage.setItem("quickTerminalID", quickTerminalID);
+    else localStorage.removeItem("quickTerminalID");
+  }, [quickTerminalID]);
+  function runAppCommand(action: AppCommand | DashboardRequest) {
+    if (typeof action === "string" &&
+        (action === "command-palette" || action === "quick-terminal" || action === "keyboard-shortcuts")) {
+      setKeyboardTool((previous) => previous === action ? undefined : action);
+      return;
+    }
+    setKeyboardTool(undefined);
+    const request = typeof action === "string" ? { command: action } : action;
+    dashboardOnStartup.current = false;
+    setDashboardOpen(request.command !== "workspace");
+    if (request.command !== "workspace" && request.command !== "dashboard") setDashboardCommand(request);
+  }
+  useEffect(() => {
+    function keyboardShortcut(event: KeyboardEvent) {
+      if (keyboardTool === "keyboard-shortcuts" || event.isComposing) return;
+      const shortcut = bindingForEvent(event);
+      const tool = shortcut === keyboardBindings.palette ? "command-palette"
+        : shortcut === keyboardBindings.terminal ? "quick-terminal" : undefined;
+      if (!tool) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) setKeyboardTool((old) => old === tool ? undefined : tool);
+    }
+    window.addEventListener("keydown", keyboardShortcut, true);
+    return () => window.removeEventListener("keydown", keyboardShortcut, true);
+  }, [keyboardBindings, keyboardTool]);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [dashboardSubmitted, setDashboardSubmitted] = useState<Record<string, { text: string; at: number; screenshots?: number }>>({});
+  const dashboardDrafts = useDashboardDrafts();
+  const [dashboardTerminal, setDashboardTerminal] = useState<string | null>(null);
+  const [dashboardDraftTerminal, setDashboardDraftTerminal] = useState<string | null>(null);
+  const [openedSessions, setOpenedSessions] = useState(() => readSetting<Record<string, number>>("dashboardOpenedSessions", {}));
+  const [renameTarget, setRenameTarget] = useState<string>();
+  const [sessionDetails, setSessionDetails] = useState(() => readSetting<Record<string, SessionDetails>>("projectSessionDetails", {}));
+  useEffect(() => {
+    localStorage.setItem("projectSessionDetails", JSON.stringify(sessionDetails));
+  }, [sessionDetails]);
   const [overviewFolder, setOverviewFolder] = useState("");
   const [continuation, setContinuation] = useState<(ContinuationRequest & { id: number })>();
   const continuationID = useRef(0);
@@ -148,6 +207,13 @@ function App() {
     const status = localStorage.getItem("gettingStarted");
     return status === "pending" || (!status && localStorage.getItem("sidebarMode") === null);
   });
+  const dashboardOnStartup = useRef(true);
+  useEffect(() => {
+    if (!showGuide && dashboardOnStartup.current) {
+      dashboardOnStartup.current = false;
+      setDashboardOpen(true);
+    }
+  }, [showGuide]);
   useEffect(() => {
     if (showGuide && !localStorage.getItem("gettingStarted"))
       localStorage.setItem("gettingStarted", "pending");
@@ -194,7 +260,9 @@ function App() {
   useEffect(() => {
     localStorage.setItem("terminalAppearance", JSON.stringify(appearance));
   }, [appearance]);
-  const [launchKind, setLaunchKind] = useState<"all" | "ai">("all");
+  const [dashboardLaunchTerminal, setDashboardLaunchTerminal] = useState<string>();
+  const [dashboardLaunchScope, setDashboardLaunchScope] = useState<string[]>([]);
+  const [launchKind, setLaunchKind] = useState<"all" | "ai" | "dashboard">("all");
   const [mode, setMode] = useState<"recent" | "workspaces" | "notes">(() =>
     readSetting<string>("sidebarMode", "recent") === "workspaces"
       ? "workspaces"
@@ -268,6 +336,7 @@ function App() {
       })
       .catch((e) => setError(String(e)));
     return window.runhuddle.onEvent((event) => {
+      if (event.event === "dashboard-command") runAppCommand(event.command);
       if (event.event === "terminals") {
         setSnapshot((previous) => ({
           ...previous,
@@ -289,12 +358,16 @@ function App() {
       if (event.event === "inbox")
         setSnapshot((previous) => ({ ...previous, inbox: event.entries }));
       if (event.event === "connection") setConnection(event.state);
+      if (event.event === "keep-awake") setSnapshot((old) => ({ ...old, keepAwakeActive: event.active }));
       if (event.event === "app-theme") setSnapshot((old) => ({ ...old, appTheme: event.theme }));
       if (event.event === "update-download") setSnapshot((old) => ({ ...old, updateDownload: event.download }));
       if (event.event === "session-continuations") setSnapshot((old) => ({ ...old, continuations: event.continuations }));
       if (event.event === "app-accent") setSnapshot((old) => ({ ...old, accent: event.accent }));
       if (event.event === "custom-app-accent") setCustomAccentOpen(true);
-      if (event.event === "getting-started") setShowGuide(true);
+      if (event.event === "getting-started") {
+        setDashboardOpen(false);
+        setShowGuide(true);
+      }
       if (event.event === "error") setError(event.message);
       if (event.event === "open-alert-session") setOpenAlert(event.target);
       if (event.event === "session-alert") setSessionAlert(event);
@@ -320,13 +393,9 @@ function App() {
   }, [workspaceSelections]);
   useEffect(() => {
     function shortcuts(event: KeyboardEvent) {
-      if (document.querySelector(".getting-started[open]")) return;
+      if (document.querySelector(".getting-started[open], .projects-dashboard[open]")) return;
       if (!(event.metaKey || (event.ctrlKey && event.shiftKey)) || event.altKey)
         return;
-      if (event.key.toLowerCase() === "t") {
-        event.preventDefault();
-        setLauncher(true);
-      }
       if (event.key.toLowerCase() === "b") {
         event.preventDefault();
         setSidebar((old) => !old);
@@ -350,10 +419,41 @@ function App() {
         .sort((a, b) => name(a).localeCompare(name(b))),
     [folders, snapshot.sessions, snapshot.terminals, snapshot.notes],
   );
+  useEffect(() => {
+    const linked = snapshot.terminals.filter((terminal) => terminal.sessionID && sessionDetails["terminal:" + terminal.id]?.name);
+    if (!linked.length) return;
+    setSessionDetails((previous) => {
+      const next = { ...previous };
+      for (const terminal of linked) {
+        const pending = "terminal:" + terminal.id;
+        const session = terminalSessionKey(terminal);
+        if (next[pending]?.name && !next[session]?.name)
+          next[session] = { ...next[pending], ...next[session], name: next[pending].name };
+        delete next[pending];
+      }
+      return next;
+    });
+  }, [snapshot.terminals, sessionDetails]);
   const allSessions = useMemo(
-    () => sessionRows(snapshot, connection === "connected"),
-    [snapshot.sessions, snapshot.terminals, connection],
+    () => sessionRows(snapshot, connection === "connected").map((row) => {
+      const customName = sessionDetails[key(row)]?.name || (row.terminalId && sessionDetails["terminal:" + row.terminalId]?.name);
+      const automaticTitle = /^<environment_context(?:\s[^>]*)?>\s*$/i.test(row.title.trim())
+        ? row.provider + " session" : row.title;
+      return customName || automaticTitle !== row.title
+        ? { ...row, title: customName || automaticTitle } : row;
+    }),
+    [snapshot.sessions, snapshot.terminals, connection, sessionDetails],
   );
+  const namedInbox = (snapshot.inbox ?? []).map((entry) => {
+    const customName = sessionDetails[key(entry)]?.name;
+    return customName ? { ...entry, body: customName } : entry;
+  });
+  function saveSessionName(id: string, name: string) {
+    setSessionDetails((previous) => ({ ...previous, [id]: { next: previous[id]?.next ?? "", name } }));
+  }
+  function renameTerminal(t: TerminalInfo) {
+    setRenameTarget(t.sessionID ? terminalSessionKey(t) : "terminal:" + t.id);
+  }
   const projects = useMemo(() => allProjects.filter((folder) => !hiddenHistory.projects.includes(folder)),
     [allProjects, hiddenHistory]);
   const visibleSessions = useMemo(() => allSessions.filter((row) =>
@@ -375,7 +475,7 @@ function App() {
     [visibleSessions, snapshot.pinned, workspace, scope, query, searching],
   );
   const availableTerminals = snapshot.terminals.filter(
-    (t) => !hiddenHistory.projects.includes(t.cwd) &&
+    (t) => t.id !== quickTerminalID && !hiddenHistory.projects.includes(t.cwd) &&
       !hiddenHistory.sessions.includes(terminalSessionKey(t)),
   );
   const workspaceTerminals = availableTerminals.filter((t) => !workspace || t.cwd === workspace);
@@ -418,6 +518,19 @@ function App() {
     (t) => "terminal:" + t.id === selection,
   );
   const shownSession = allSessions.find((row) => row.terminalId === shown?.id);
+  const openedSessionID = session ? key(session) : shown && shownSession ? key(shownSession) : undefined;
+  useEffect(() => {
+    if (!loaded || dashboardOpen || showGuide || !openedSessionID) return;
+    const openedAt = Date.now();
+    setOpenedSessions((previous) => {
+      const next = { ...previous };
+      delete next[openedSessionID];
+      return Object.fromEntries([...Object.entries(next).slice(-99), [openedSessionID, openedAt]]);
+    });
+  }, [loaded, dashboardOpen, showGuide, openedSessionID]);
+  useEffect(() => {
+    localStorage.setItem("dashboardOpenedSessions", JSON.stringify(openedSessions));
+  }, [openedSessions]);
   const conversationLocked = !!shown && lockedTerminals.has(shown.id);
   const attachmentTarget = shown && shown.agent !== "shell" && !shown.exited && connection === "connected"
     ? {
@@ -426,12 +539,32 @@ function App() {
         busy: conversationLocked || ["working", "needsInput"].includes(shownSession?.state || ""),
       }
     : undefined;
-  const viewedTerminal = shown && !shown.exited && connection === "connected" ? shown.id : null;
+  const dashboardAttachment = dashboardOpen && snapshot.terminals.find((t) => t.id === dashboardDraftTerminal && !t.exited);
+  const dashboardAttachmentSession = dashboardAttachment && allSessions.find((row) => row.terminalId === dashboardAttachment.id);
+  const screenshotDraftID = dashboardAttachmentSession ? key(dashboardAttachmentSession) : undefined;
+  const screenshotTarget = dashboardOpen
+    ? dashboardAttachment && dashboardAttachmentSession && connection === "connected" ? {
+        id: dashboardAttachment.id,
+        title: terminalTitle(dashboardAttachment),
+        locked: lockedTerminals.has(dashboardAttachment.id),
+        busy: dashboardAttachmentSession.state !== "idle",
+      } : undefined
+    : attachmentTarget;
+  const showingAlertSession = !dashboardOpen && openedSessionID === sessionAlert?.key;
+  useEffect(() => {
+    if (!showingAlertSession || !sessionAlert) return;
+    setSessionAlert((current) => current === sessionAlert ? undefined : current);
+  }, [showingAlertSession, sessionAlert]);
+  const viewedTerminal = connection === "connected"
+    ? dashboardOpen ? dashboardTerminal : shown && !shown.exited ? shown.id : null
+    : null;
   useEffect(() => {
     void window.runhuddle.viewedTerminal(viewedTerminal).catch(() => {});
   }, [viewedTerminal]);
   useEffect(() => {
     if (!loaded || !openAlert) return;
+    dashboardOnStartup.current = false;
+    setDashboardOpen(false);
     setHistoryResult(undefined);
     const row = allSessions.find((candidate) =>
       candidate.provider === openAlert.provider && candidate.sessionID === openAlert.sessionID);
@@ -510,24 +643,31 @@ function App() {
       setError(String(e));
     }
   }
-  async function create(agent: string, cwd: string) {
+  async function create(agent: string, cwd: string, sessionName = "", selectInWorkspace = true) {
     if (hiddenHistory.projects.includes(cwd)) await window.runhuddle.setHistoryHidden("projects", cwd, false);
     const t = await window.runhuddle.create(cwd, agent);
+    if (sessionName) saveSessionName(t.sessionID ? terminalSessionKey(t) : "terminal:" + t.id, sessionName);
     setSnapshot((old) => ({
       ...old,
       terminals: [...old.terminals.filter((x) => x.id !== t.id), t],
     }));
-    setMode("recent");
-    setScope("all");
-    setQuery("");
-    if (workspace && workspace !== cwd) setWorkspace(cwd);
-
-    setSelection("terminal:" + t.id);
+    if (selectInWorkspace) {
+      setMode("recent");
+      setScope("all");
+      setQuery("");
+      if (workspace && workspace !== cwd) setWorkspace(cwd);
+      setSelection("terminal:" + t.id);
+    }
     setLastUsed(agent);
     setLastFolder(cwd);
     localStorage.setItem("lastLaunchType", JSON.stringify(agent));
     localStorage.setItem("lastLaunchFolder", JSON.stringify(cwd));
     return t;
+  }
+  function showProjectShell(folder: string) {
+    setOverviewFolder("");
+    setWorkspace(folder);
+    setDashboardOpen(false);
   }
   function continueWithContext(source: Session, anotherAgent = false) {
     setContinuation({ id: ++continuationID.current, source, anotherAgent, recap: snapshot.recaps?.[key(source)] });
@@ -594,7 +734,9 @@ function App() {
   function terminalTitle(t: TerminalInfo) {
     if (t.agent !== "shell")
       return (
-        snapshot.sessions.find(
+        sessionDetails[terminalSessionKey(t)]?.name ||
+        sessionDetails["terminal:" + t.id]?.name ||
+        allSessions.find(
           (s) =>
             s.sessionID === t.sessionID && s.provider.toLowerCase() === t.agent,
         )?.title ||
@@ -621,12 +763,13 @@ function App() {
     const pinned = snapshot.pinned.includes(key(row));
     return (
       <>
+        <button onClick={() => setRenameTarget(key(row))}>Rename session…</button>
         <button onClick={() => void window.runhuddle.pinSession(row.provider, row.sessionID, !pinned)
           .catch((reason) => setError(String(reason)))}>
           {pinned ? "Unpin session" : "Pin session"}
         </button>
         {!row.terminalId && <button onClick={() => void changeHistoryVisibility("sessions", key(row), true)}>
-          Hide session
+          Hide from history
         </button>}
       </>
     );
@@ -662,6 +805,7 @@ function App() {
               {historyActions(saved)}
             </>}
             {t && <>
+              {!saved && t.agent !== "shell" && <button onClick={() => renameTerminal(t)}>Rename session…</button>}
               {!hidden && !t.exited && <button onClick={() => hideTab(t)}>Hide tab (keep running)</button>}
               <button onClick={() => close(t)}>
                 {t.exited ? "Remove terminal" : t.agent === "shell" ? "Close terminal" : "End session"}
@@ -711,6 +855,7 @@ function App() {
     provider: string,
     sessionID: string,
     previous?: string,
+    fromDashboard = false,
   ) {
     setResuming(true);
     try {
@@ -718,6 +863,7 @@ function App() {
       if (row && hiddenHistory.projects.includes(row.cwd)) await window.runhuddle.setHistoryHidden("projects", row.cwd, false);
       if (row && hiddenHistory.sessions.includes(key(row))) await window.runhuddle.setHistoryHidden("sessions", key(row), false);
       const t = await window.runhuddle.resume(provider, sessionID);
+      if (fromDashboard && !t) throw new Error("Couldn’t resume this conversation.");
       if (t) {
         if (previous && previous !== t.id) {
           setTabReplacement({ from: previous, to: t.id });
@@ -730,8 +876,10 @@ function App() {
         setHiddenTabs((old) => old.filter((id) => id !== t.id));
         if (workspace && workspace !== t.cwd) setWorkspace(t.cwd);
         setSelection("terminal:" + t.id);
+        if (fromDashboard) setDashboardLaunchTerminal(t.id);
       }
     } catch (e) {
+      if (fromDashboard) throw e;
       setError(String(e));
     } finally {
       setResuming(false);
@@ -776,7 +924,7 @@ function App() {
               : openCompanion(t)
           }
         >
-          Shell
+          {visibleShells.includes(t.id) ? "Hide companion shell" : "Open shell beside session"}
         </button>
         <EditorButton target={t.cwd} />
         {t.agent !== "shell" && <UsageControls
@@ -785,6 +933,10 @@ function App() {
         <details className="folder-actions">
           <summary aria-label="Session actions">•••</summary>
           <div>
+            {t.agent !== "shell" && <button onClick={(event) => {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+              renameTerminal(t);
+            }}>Rename session…</button>}
             {shownSession && (
               <button onClick={() => {
                 setHistoryResult(undefined);
@@ -868,6 +1020,7 @@ function App() {
           owner={t}
           terminal={snapshot.terminals.find((x) => x.id === companions[t.id])}
           visible={visibleShells.includes(t.id)}
+          active={!dashboardOpen}
           connected={connection === "connected"}
           onHide={() =>
             setVisibleShells((old) => old.filter((id) => id !== t.id))
@@ -941,13 +1094,17 @@ function App() {
             ) : (
               <TerminalPane
                 id={t.id}
+                redrawOnTruncatedReplay={t.agent === "codex"}
                 readOnly={t.exited}
                 visible={true}
-                focused={shown?.id === t.id}
+                active={!dashboardOpen}
+                focused={!dashboardOpen && shown?.id === t.id}
                 onError={setError}
                 onConversationLock={t.agent === "codex" && !t.exited
                   ? (locked) => updateConversationLock(t.id, locked) : undefined}
                 onTitle={(title) => {
+                  // Codex animates its OSC title. Its transcript supplies the session title.
+                  if (t.agent === "codex") return;
                   if (t.sessionID && title.trim())
                     window.runhuddle.title(t.id, title).catch(() => {});
                   if (t.agent !== "shell" && title.trim())
@@ -984,7 +1141,7 @@ function App() {
       <button
         data-tour-anchor="launch"
         aria-label="New session or terminal"
-        title="New session or terminal (⌘T)"
+        title={`New session or terminal (${bindingText("CmdOrCtrl+N")})`}
         onClick={() => setLauncher(true)}
       >
         <Icon name="plus" size={16} />
@@ -1005,6 +1162,36 @@ function App() {
       </button>
     </div>
   ) : undefined;
+  async function reopenBrowserSession(id: string, fromDashboard = false) {
+    const previous = terminalsById.get(id);
+    const reopened = await window.runhuddle.reopenBrowserSession(id);
+    if (!reopened) return;
+    if (previous?.sessionID) setTabReplacement({ from: id, to: reopened.id });
+    setSnapshot((old) => ({
+      ...old,
+      terminals: [...old.terminals.filter((t) => t.id !== reopened.id && (!previous?.sessionID || t.id !== id)), reopened],
+    }));
+    setHiddenTabs((old) => old.filter((item) => item !== reopened.id));
+    setSelection((old) => old === "terminal:" + id ? "terminal:" + reopened.id : old);
+    if (fromDashboard) setDashboardLaunchTerminal(reopened.id);
+  }
+  const quickTerminal = snapshot.terminals.find((terminal) => terminal.id === quickTerminalID && !terminal.exited);
+  const quickDirectory = (dashboardOpen ? dashboardFolder : shown?.cwd || session?.cwd || workspace) || snapshot.home;
+  function startQuickTerminal() {
+    if (quickStart.current) return quickStart.current;
+    const start = window.runhuddle.create(quickDirectory, "shell").then((terminal) => {
+      setQuickTerminalID(terminal.id);
+      setSnapshot((old) => ({ ...old, terminals: [...old.terminals.filter((item) => item.id !== terminal.id), terminal] }));
+    }).finally(() => { quickStart.current = null; });
+    quickStart.current = start;
+    return start;
+  }
+  async function endQuickTerminal(id: string) {
+    if (!await window.runhuddle.close(id)) return false;
+    setSnapshot((old) => ({ ...old, terminals: old.terminals.filter((terminal) => terminal.id !== id) }));
+    setQuickTerminalID((current) => current === id ? "" : current);
+    return true;
+  }
   return (
     <AppearanceContext.Provider value={appearance}>
       <div className={"app " + (!sidebar ? "collapsed" : "")}>
@@ -1014,6 +1201,95 @@ function App() {
           onClose={() => setContinuation((current) => current === continuation ? undefined : current)} />}
         {showHiddenHistory && <HiddenHistoryDialog hidden={hiddenHistory} sessions={allSessions}
           onRestore={(kind, id) => void changeHistoryVisibility(kind, id, false)} onClose={() => setShowHiddenHistory(false)} />}
+        <ProjectsDashboard keepAwakeActive={Boolean(snapshot.keepAwakeActive)} open={dashboardOpen} menuCommand={dashboardCommand}
+          onProjectContext={setDashboardFolder} paletteShortcut={bindingText(keyboardBindings.palette)}
+          onCommandPalette={() => runAppCommand("command-palette")}
+          onReopenBrowserSession={(id) => reopenBrowserSession(id, true)}
+          folders={projects} sessions={visibleSessions} pinned={snapshot.pinned}
+          inbox={namedInbox.filter((entry) =>
+            !hiddenHistory.sessions.includes(key(entry)) &&
+            !allSessions.some((row) => key(row) === key(entry) && hiddenHistory.projects.includes(row.cwd)))}
+          submitted={dashboardSubmitted}
+          onSubmitted={(id, instruction) => setDashboardSubmitted((previous) => ({ ...previous, [id]: instruction }))}
+          hiddenTabs={hiddenTabs}
+          connected={connection === "connected"}
+          followUps={dashboardDrafts}
+          onDraftTerminal={setDashboardDraftTerminal}
+          onViewTerminal={setDashboardTerminal}
+          onTerminalLock={updateConversationLock}
+          onHideTab={(id) => {
+            const terminal = availableTerminals.find((row) => row.id === id && !row.exited);
+            if (terminal) hideTab(terminal);
+          }}
+          onEndSession={async (id) => {
+            const terminal = availableTerminals.find((row) => row.id === id && !row.exited);
+            if (terminal && allSessions.some((row) => row.terminalId === id && row.state === "idle")) await close(terminal);
+          }}
+          recaps={snapshot.recaps} lockedTerminals={lockedTerminals} details={sessionDetails} openedSessions={openedSessions}
+          workspaceLabel={workspace ? name(workspace) : undefined}
+          terminals={snapshot.terminals} compactShell={snapshot.compactShell ?? null}
+          terminalServiceUpdate={!!snapshot.terminalServiceUpdate}
+          onStartDrawerShell={async (folder, compactPrompt) => {
+            const terminal = await window.runhuddle.create(folder, "shell", compactPrompt);
+            setSnapshot((old) => ({
+              ...old,
+              terminals: [...old.terminals.filter((row) => row.id !== terminal.id), terminal],
+            }));
+            return terminal.id;
+          }}
+          launchedTerminal={dashboardLaunchTerminal} onLaunchHandled={() => setDashboardLaunchTerminal(undefined)}
+          onOpenShell={async (folder) => {
+            await create("shell", folder);
+            showProjectShell(folder);
+          }}
+          onLaunch={(folders) => {
+            setDashboardLaunchScope(folders);
+            setLaunchKind("dashboard");
+            setLauncher(true);
+          }}
+          protectedSessions={new Set([
+            ...continuationsBySession.keys(),
+            ...snapshot.notes.flatMap((note) => note.sourceSessionID ? [
+              key({ provider: note.sourceProvider, sessionID: note.sourceSessionID }),
+            ] : []),
+          ])}
+          onCleanup={async (ids, hide) => {
+            const changed = await window.runhuddle.setSessionsHidden(ids, hide);
+            if (hide && session && changed.includes(key(session))) {
+              setHistoryResult(undefined);
+              setSelection("");
+            }
+            return changed;
+          }}
+          onRename={(row) => setRenameTarget(key(row))}
+          onEdit={(id, details) => setSessionDetails((previous) => ({ ...previous, [id]: details }))}
+          onPin={(row, value) => void window.runhuddle.pinSession(row.provider, row.sessionID, value)
+            .catch((reason) => setError(String(reason)))}
+          onResume={(row) => resumeSession(row.provider, row.sessionID, undefined, true)}
+          onOpen={(row) => { setDashboardOpen(false); setOpenAlert(row); }}
+          onEvidence={(result) => {
+            const row = allSessions.find((item) => key(item) === key(result));
+            if (!row) return;
+            setDashboardOpen(false);
+            setMode("recent");
+            setQuery("");
+            setScope("all");
+            if (workspace && row.cwd !== workspace) setWorkspace(row.cwd);
+            setHistoryResult(result);
+            setSelection("session:" + key(row));
+          }}
+          onReview={(id) => void window.runhuddle.inboxAction(id, "dismiss").catch((reason) => setError(String(reason)))}
+          onClose={() => setDashboardOpen(false)} />
+        {keyboardTool === "command-palette" && <CommandPalette bindings={keyboardBindings}
+          projects={projects} sessions={visibleSessions.filter((row) => !row.guardianReview)}
+          onClose={() => setKeyboardTool(undefined)} onChoose={runAppCommand} />}
+        {keyboardTool === "keyboard-shortcuts" && <KeyboardShortcutSettings bindings={keyboardBindings}
+          onSave={(next) => { setKeyboardBindings(next); setKeyboardTool(undefined); }}
+          onClose={() => setKeyboardTool(undefined)} />}
+        {keyboardTool === "quick-terminal" && <QuickTerminal terminal={quickTerminal} cwd={quickDirectory}
+          connected={connection === "connected"} animate={animateQuickTerminal} onAnimate={setAnimateQuickTerminal}
+          onStart={startQuickTerminal} onEnd={endQuickTerminal}
+          onClose={() => setKeyboardTool(undefined)} />}
         {overviewFolder && <ProjectOverview name={name(overviewFolder)} folder={overviewFolder}
           sessions={visibleSessions.filter((row) => row.cwd === overviewFolder).sort((a, b) => b.updated - a.updated)}
           running={snapshot.terminals.filter((row) => row.cwd === overviewFolder && !row.exited).length}
@@ -1030,18 +1306,28 @@ function App() {
         )}
         {launcher && (
           <LaunchMenu
-            cwd={launchFolder}
-            projects={projects}
+            cwd={launchKind === "dashboard" ? dashboardLaunchScope.length === 1 ? dashboardLaunchScope[0] : "" : launchFolder}
+            chooseDestination={launchKind === "dashboard"}
+            projects={launchKind === "dashboard" && dashboardLaunchScope.length ? dashboardLaunchScope : projects}
             lastUsed={lastUsed}
-            kind={launchKind}
+            kind={launchKind === "ai" ? "ai" : "all"}
             pane={layoutInfo.focused}
-            onLaunch={create}
+            onLaunch={async (agent, folder, name) => {
+              const dashboardAgent = launchKind === "dashboard" && agent !== "shell";
+              const terminal = await create(agent, folder, name, !dashboardAgent);
+              if (dashboardAgent) setDashboardLaunchTerminal(terminal.id);
+              else if (launchKind === "dashboard" && agent === "shell") showProjectShell(folder);
+              return terminal;
+            }}
             onDismiss={() => {
               setLauncher(false);
               setLaunchKind("all");
             }}
           />
         )}
+        {renameTarget && <RenameSession key={renameTarget} name={sessionDetails[renameTarget]?.name ?? ""}
+          onClose={() => setRenameTarget(undefined)}
+          onSave={(name) => { saveSessionName(renameTarget, name); setRenameTarget(undefined); }} />}
         {noteDraft && (
           <NoteEditor initial={noteDraft} projects={projects}
             onCancel={() => setNoteDraft(undefined)}
@@ -1309,7 +1595,7 @@ function App() {
                     )}
                 </>
               )}
-              <ConversationSearch key={JSON.stringify(hiddenHistory)} query={query} scope={mode === "recent" ? scope : "all"}
+              <ConversationSearch sessionNames={sessionDetails} key={JSON.stringify(hiddenHistory)} query={dashboardOpen ? "" : query} scope={mode === "recent" ? scope : "all"}
                 onOpen={(result) => {
                   const row = allSessions.find((item) => key(item) === key(result));
                   if (workspace && row && row.cwd !== workspace) setWorkspace(row.cwd);
@@ -1345,9 +1631,9 @@ function App() {
               {snapshot.updateDownload.percent !== null && <span>{snapshot.updateDownload.percent}%</span>}
             </section>
           )}
-          {sessionAlert && (
+          {sessionAlert && !showingAlertSession && (
             <div className="session-alert-banner" role="status" aria-label="Session notification">
-              <div><strong>{sessionAlert.alert.title}</strong> <span>{sessionAlert.alert.body}</span></div>
+              <div><strong>{sessionAlert.alert.title}</strong> <span>{sessionDetails[sessionAlert.key]?.name || sessionAlert.alert.body}</span></div>
               {sessionAlert.alert.provider && sessionAlert.alert.sessionID && (
                 <button onClick={() => {
                   const { provider, sessionID, inboxId } = sessionAlert.alert;
@@ -1576,7 +1862,7 @@ function App() {
                         ))}
                     </div>
                     <div className="welcome-details">
-                      <span>⌘T / Ctrl+Shift+T to start something new</span>
+                      <span>{bindingText("CmdOrCtrl+N")} to start something new</span>
                     </div>
                   </section>
                 ))}
@@ -1584,25 +1870,15 @@ function App() {
             <WorkspaceTools
               notes={snapshot.notes}
               attachmentTarget={attachmentTarget}
-              onReopenBrowserSession={async (id) => {
-                const previous = terminalsById.get(id);
-                const reopened = await window.runhuddle.reopenBrowserSession(id);
-                if (!reopened) return;
-                if (previous?.sessionID) setTabReplacement({ from: id, to: reopened.id });
-                setSnapshot((old) => ({
-                  ...old,
-                  terminals: [...old.terminals.filter((t) => t.id !== reopened.id && (!previous?.sessionID || t.id !== id)), reopened],
-                }));
-                setHiddenTabs((old) => old.filter((item) => item !== reopened.id));
-                setSelection((old) => old === "terminal:" + id ? "terminal:" + reopened.id : old);
-              }}
+              browserEnabled={!dashboardOpen}
+              onReopenBrowserSession={reopenBrowserSession}
               selection={selection}
               onSelectNote={(id) => select("note:" + id)}
               onNewNote={() => setNoteDraft({
                 title: "", text: "", project: shown?.cwd || session?.cwd || note?.project || workspace,
               })}
               showNotes={showNotes}
-              inbox={snapshot.inbox || []}
+              inbox={namedInbox}
               onInboxAction={(id, action) =>
                 void window.runhuddle.inboxAction(id, action).catch((e) => setError(String(e)))}
               cwd={
@@ -1610,8 +1886,18 @@ function App() {
               }
             />
           </div>
-          <ScreenshotPopup target={attachmentTarget} />
+          <ScreenshotPopup target={screenshotTarget} attachToDraft={dashboardOpen && screenshotDraftID
+            ? async (_terminalId, screenshot) => {
+                const bytes = await window.runhuddle.screenshotDraft(screenshot.id);
+                const file = new File([new Uint8Array(bytes)], screenshot.name, { type: "image/png" });
+                dashboardDrafts.updateDraft(screenshotDraftID, (draft) => {
+                  if (draft.files.length >= 8) throw Error("This draft already has 8 screenshots.");
+                  return { ...draft, files: [...draft.files, file] };
+                });
+              } : undefined}
+            draftFull={!!screenshotDraftID && (!dashboardDrafts.ready || (dashboardDrafts.drafts[screenshotDraftID]?.files.length ?? 0) >= 8)} />
           <footer className="statusbar">
+            <button data-tour-anchor="project-dashboard" onClick={() => setDashboardOpen(true)}>Project dashboard</button>
             <button data-tour-anchor="appearance" onClick={() => setAppearanceOpen(true)}>
               Terminal appearance…
             </button>

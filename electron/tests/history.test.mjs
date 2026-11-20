@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseHistory } from "../main/history.mjs";
+import { parseHistory, pendingQuestions } from "../main/history.mjs";
 import { HistoryIndex } from "../main/history-index.mjs";
 import { historyIndexClient } from "../main/history-index-client.mjs";
 
@@ -70,6 +70,34 @@ test("history extracts text, excludes tool payloads and handles incomplete recor
     )[0].text,
     "reply",
   );
+});
+
+test("attention previews show pending questions and leave out resolved requests", () => {
+  const question = "Which environment should I use?";
+  const codex = (type, call_id, fields = {}) => ({ type: "response_item", payload: { type, call_id, ...fields } });
+  const ask = (id, text, options = []) => codex("function_call", id, {
+    name: "request_user_input", arguments: JSON.stringify({ questions: [{ question: text, options }] }),
+  });
+  assert.deepEqual(pendingQuestions("codex", lines([
+    ask("old", "Already answered"),
+    codex("function_call_output", "old"),
+    ask("pending", question, [{ label: "Staging" }, { label: "Local" }]),
+    codex("function_call", "other", { name: "shell", arguments: "Tool payload" }),
+  ])), [{ text: question, choices: ["Staging", "Local"] }]);
+
+  const claude = (type, ...content) => ({ type, message: { content } });
+  assert.deepEqual(pendingQuestions("claude", lines([
+    claude("assistant", { type: "tool_use", id: "old", name: "AskUserQuestion", input: { questions: [{ question: "Old question" }] } }),
+    claude("user", { type: "tool_result", tool_use_id: "old" }),
+    claude("assistant", { type: "tool_use", id: "pending", name: "AskUserQuestion", input: { questions: [{ question }] } }),
+  ])), [{ text: question, choices: [] }]);
+
+  assert.deepEqual(pendingQuestions("copilot", lines([
+    { type: "user_input.requested", data: { requestId: "old", question: "Old question" } },
+    { type: "user_input.completed", data: { requestId: "old" } },
+    { type: "user_input.requested", data: { requestId: "pending", question } },
+    { type: "permission.requested", data: { requestId: "permission", command: "Tool command" } },
+  ])), [{ text: question, choices: [] }]);
 });
 
 test("full history search jumps beyond the recent window and rejects a stale match", async () => {

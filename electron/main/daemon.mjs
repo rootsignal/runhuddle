@@ -76,6 +76,15 @@ const describe = (t) => ({
 const broadcast = (message) => {
   for (const client of clients) send(client, message);
 };
+
+function flushOutput(t) {
+  clearTimeout(t.flush);
+  t.flush = undefined;
+  if (!t.pending) return;
+  broadcast({ event: "output", id: t.id, data: t.pending, sequence: t.sequence });
+  t.pending = "";
+}
+
 function stop() {
   if (stopping) return;
   stopping = true;
@@ -94,7 +103,7 @@ function stop() {
   });
   setTimeout(() => process.exit(0), 1000).unref();
 }
-async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
+async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume, compactShell = false }) {
   dimensions(cols, rows);
   if (
     typeof cwd !== "string" ||
@@ -121,7 +130,10 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
     : undefined;
   const browserAgent = agent === "shell" ? undefined : prepareBrowserAgent(agent, directory);
   if (browserAgent) argsForAgent.push(...browserAgent.flags);
+  if (compactShell && (agent !== "shell" || process.platform === "win32" || !fs.existsSync("/bin/bash")))
+    throw Error("Compact prompt requires Bash on this system.");
   const launch =
+    compactShell ? { file: "/bin/bash", args: ["--noprofile", "--norc", "-i"] } :
     agent === "shell"
       ? {
           file:
@@ -134,6 +146,21 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
   const shell = launch.file,
     args = launch.args,
     env = terminalEnvironment();
+  if (compactShell) {
+    env.PS1 = String.raw`\[\e[36m\]\W\[\e[0m\] \[\e[32m\]❯\[\e[0m\] `;
+    env.BASH_SILENCE_DEPRECATION_WARNING = "1";
+    delete env.PS0;
+    delete env.RPROMPT;
+    env.PROMPT_COMMAND = [
+      "if [[ $PWD != *[[:cntrl:]]* ]]; then",
+      "_rh_path=${PWD//%/%25}",
+      "_rh_path=${_rh_path//#/%23}",
+      "_rh_path=${_rh_path//\\?/%3F}",
+      String.raw`printf '\033]7;file://localhost%s\007' "$_rh_path"`,
+      "unset _rh_path",
+      "fi",
+    ].join("\n");
+  }
   let child;
   try {
     child = pty.spawn(shell, args, { name: "xterm-256color", cwd, cols, rows, env });
@@ -151,6 +178,8 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
     sessionID: identity.sessionID,
     exited: false,
     history: "",
+    historyEnd: 0,
+    sizes: [{ offset: 0, cols: child.cols, rows: child.rows }],
     pending: "",
     sequence: 0,
   };
@@ -169,7 +198,7 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
       if (row?.terminalId === t.id) {
         const { promptTitle, ...changes } = patch;
         if (hasHookActivity) delete changes.state;
-        if (promptTitle && !row.hasUserTitle) {
+        if (promptTitle && (!row.hasUserTitle || /^<environment_context\b/i.test(row.title))) {
           changes.title = promptTitle;
           changes.hasUserTitle = true;
         }
@@ -198,19 +227,12 @@ async function create({ cwd, agent = "shell", cols = 100, rows = 30, resume }) {
   }
   child.onData((data) => {
     t.sequence++;
+    t.historyEnd += data.length;
     t.history = (t.history + data).slice(-512 * 1024);
+    const start = t.historyEnd - t.history.length;
+    while (t.sizes.length > 1 && t.sizes[1].offset <= start) t.sizes.shift();
     t.pending += data;
-    if (!t.flush)
-      t.flush = setTimeout(() => {
-        t.flush = undefined;
-        broadcast({
-          event: "output",
-          id: t.id,
-          data: t.pending,
-          sequence: t.sequence,
-        });
-        t.pending = "";
-      }, 16);
+    t.flush ??= setTimeout(() => flushOutput(t), 16);
   });
   child.onExit(({ exitCode }) => {
     t.unwatch?.();
@@ -260,7 +282,7 @@ const server = net.createServer((socket) => {
         clients.add(socket);
         send(socket, {
           request: request.request,
-          result: { protocol: PROTOCOL, pid: process.pid, browserTools: true },
+          result: { protocol: PROTOCOL, pid: process.pid, browserTools: true, shellPromptVersion: 2, compactShell: process.platform !== "win32" && fs.existsSync("/bin/bash") },
         });
         return;
       }
@@ -299,18 +321,12 @@ const server = net.createServer((socket) => {
           break;
         case "replay":
           if (!t) throw new Error("Terminal no longer exists");
-          clearTimeout(t.flush);
-          t.flush = undefined;
-          if (t.pending) {
-            broadcast({
-              event: "output",
-              id: t.id,
-              data: t.pending,
-              sequence: t.sequence,
-            });
-            t.pending = "";
-          }
-          result = { data: t.history, sequence: t.sequence };
+          flushOutput(t);
+          const start = t.historyEnd - t.history.length;
+          result = {
+            data: t.history, sequence: t.sequence, cols: t.pty.cols, rows: t.pty.rows,
+            sizes: t.sizes.map(({ offset, cols, rows }) => ({ offset: Math.max(0, offset - start), cols, rows })),
+          };
           break;
         case "write":
           if (!t || t.exited) throw new Error("Terminal is closed");
@@ -323,7 +339,14 @@ const server = net.createServer((socket) => {
           break;
         case "resize":
           dimensions(request.cols, request.rows);
-          if (t && !t.exited) t.pty.resize(request.cols, request.rows);
+          if (t && !t.exited && (t.pty.cols !== request.cols || t.pty.rows !== request.rows)) {
+            flushOutput(t);
+            t.pty.resize(request.cols, request.rows);
+            const size = { offset: t.historyEnd, cols: t.pty.cols, rows: t.pty.rows };
+            if (t.sizes.at(-1).offset === size.offset) t.sizes.pop();
+            t.sizes.push(size);
+            broadcast({ event: "terminal-size", id: t.id, sequence: ++t.sequence, cols: size.cols, rows: size.rows });
+          }
           break;
         case "close":
           if (!t) throw new Error("Terminal no longer exists");

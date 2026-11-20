@@ -1,9 +1,11 @@
+import { reviewProjectHistory } from "../main/project-history-review.mjs";
+import { readHistoryAround } from "../main/history-search.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { generateRecap, parseRecap, recapPrompt, recapStore } from "../main/recaps.mjs";
+import { generateRecap, installedReviewAgents, parseRecap, recapPrompt, recapStore } from "../main/recaps.mjs";
 
 const draft = { done: "Reviewed workspace navigation.", pending: "", next: "Open the terminal." };
 test("recaps bound conversation context and persist only validated text", () => {
@@ -55,6 +57,12 @@ test("recap generation can use each CLI independently of the source agent", {
     process.env.PATH = dir + path.delimiter + original.PATH;
     process.env.CLAUDE_CONFIG_DIR = dir;
     process.env.COPILOT_HOME = dir;
+    const cliFolder = path.join(dir, "available-agents");
+    fs.mkdirSync(cliFolder);
+    fs.writeFileSync(path.join(cliFolder, "claude"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+    process.env.PATH = cliFolder;
+    assert.deepEqual(await installedReviewAgents(), ["claude"]);
+    process.env.PATH = dir + path.delimiter + original.PATH;
     for (const agent of ["codex", "claude", "copilot"]) {
       const output = agent === "codex" ? " > recap.json" : "";
       const flag = { codex: "--ephemeral", claude: "--no-session-persistence", copilot: "--available-tools=" }[agent];
@@ -73,6 +81,30 @@ test("recap generation can use each CLI independently of the source agent", {
       assert.equal(result.sourceUpdated, 42);
       assert.equal(result.next, draft.next);
     }
+    const saved = Array.from({ length: 23 }, (_, index) => ({
+      ...session, sessionID: `88888888-8888-4888-8888-${String(index).padStart(12, "0")}`, title: `Saved session ${index + 1}`,
+    }));
+    for (const row of saved) {
+      fs.writeFileSync(path.join(projects, row.sessionID + ".jsonl"), JSON.stringify({
+        type: "assistant", message: { content: [{ type: "text", text: `Next step for ${row.title}. Verify the release checklist.` }] },
+      }) + "\n");
+    }
+    const response = [{ session: 22, message: 0, next: "Verify the release checklist.", quote: "Verify the release checklist." }];
+    fs.writeFileSync(path.join(dir, "claude"), [
+      "#!/bin/sh",
+      `case "$(cat)" in *'Next step for Saved session 23.'*'"contextOnly":true'*) ;; *) exit 24 ;; esac`,
+      "printf '%s' '" + JSON.stringify(response) + "'",
+    ].join("\n") + "\n", { mode: 0o700 });
+    const review = await reviewProjectHistory(saved, "claude", new AbortController().signal, {
+      project: "Fixture project",
+      liveSessions: [session],
+    });
+    assert.equal(review.reviewed, 23);
+    assert.equal(review.total, 23);
+    assert.equal(review.suggestions[0].source.sessionID, saved[22].sessionID);
+    const source = await readHistoryAround(saved[22], review.suggestions[0].source.anchor);
+    assert.equal(source.matchMissing, false);
+    assert.match(source.messages.find((message) => message.match).text, /Verify the release checklist/);
     fs.unlinkSync(path.join(dir, "claude"));
     fs.writeFileSync(path.join(dir, "claude"), "#!/bin/sh\nexit 127\n", { mode: 0o700 });
     await assert.rejects(generateRecap(session, "claude", new AbortController().signal), /choose another agent/);

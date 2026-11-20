@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { pasteTerminalPath } from "./Terminal";
+import { canPasteTerminalDraft, pasteTerminalPath } from "./Terminal";
 import type { AttachmentTarget, ScreenshotNotice } from "./types";
 
 function attachmentAction(target?: AttachmentTarget) {
@@ -13,10 +13,8 @@ function attachmentAction(target?: AttachmentTarget) {
     hint: "This conversation is open elsewhere. Select another session to attach.",
   };
   if (target.busy) return {
-    label: "Waiting for session",
-    hint: target.needsInput
-      ? "Answer the agent’s current prompt first. Attach will be available when the session is idle."
-      : "The agent is working. Attach will be available when the session is idle.",
+    label: "Queue for current session",
+    hint: "Adds the screenshot to this session’s draft when the terminal is ready. Nothing is submitted.",
   };
   return {
     label: "Attach to current session",
@@ -25,11 +23,15 @@ function attachmentAction(target?: AttachmentTarget) {
 }
 
 export function ScreenshotPopup({
-  target,
+  target, attachToDraft, draftFull,
 }: {
   target?: AttachmentTarget;
+  attachToDraft?: (terminalId: string, screenshot: ScreenshotNotice) => Promise<void>;
+  draftFull?: boolean;
 }) {
   const [queue, setQueue] = useState<ScreenshotNotice[]>([]);
+  const [attachments, setAttachments] = useState<{ id: string; terminalId: string; title: string; file: string }[]>([]);
+  const [attachmentError, setAttachmentError] = useState("");
   const [pending, setPending] = useState(false);
   const [copied, setCopied] = useState("");
   const [error, setError] = useState<{ id: string; text: string }>();
@@ -37,34 +39,63 @@ export function ScreenshotPopup({
   const currentTarget = useRef(target);
   currentTarget.current = target;
 
+  const nextAttachment = attachments.find((item) => item.terminalId === target?.id);
+  useEffect(() => {
+    if (attachToDraft || !nextAttachment || !target || target.busy || target.locked || attachmentError) return;
+    let inFlight = false;
+    const timer = setInterval(() => {
+      if (inFlight || currentTarget.current?.id !== nextAttachment.terminalId ||
+          currentTarget.current.busy || currentTarget.current.locked || !canPasteTerminalDraft(nextAttachment.terminalId)) return;
+      inFlight = true;
+      clearInterval(timer);
+      void pasteTerminalPath(nextAttachment.terminalId, nextAttachment.file, "", false).then(() => {
+        setAttachments((previous) => previous.filter((item) => item.id !== nextAttachment.id));
+      }, (error) => setAttachmentError(error instanceof Error ? error.message : String(error)));
+    }, 160);
+    return () => clearInterval(timer);
+  }, [nextAttachment, target?.id, target?.busy, target?.locked, attachmentError, !!attachToDraft]);
+
   useEffect(
     () =>
       window.runhuddle.onEvent((event) => {
         if (event.event === "screenshot")
-          setQueue((previous) => [...previous.slice(-3), event.screenshot]);
+          setQueue((previous) => [...previous.slice(-15), event.screenshot]);
         if (event.event === "screenshots-off") setQueue([]);
       }),
     [],
   );
 
   const screenshot = queue[0];
-  if (!screenshot) return null;
-  const blocked = Boolean(target?.busy);
-  const { label, hint } = attachmentAction(target);
+  if (!screenshot && !attachments.length) return null;
+  const blocked = Boolean(target?.locked);
+  const { label, hint } = attachToDraft && target && !blocked ? {
+    label: "Add to follow-up draft",
+    hint: draftFull ? "This draft already has 8 screenshots." : "Keeps the screenshot with this session’s follow-up.",
+  } : attachmentAction(target);
   const dismiss = () =>
     setQueue((previous) =>
-      previous.filter((item) => item.id !== screenshot.id),
+      previous.filter((item) => item.id !== screenshot?.id),
     );
 
   async function attach() {
-    if (!target || target.busy || pending) return;
+    if (!screenshot || !target || target.locked || pending || draftFull) return;
     setError(undefined);
     setPending(true);
     try {
+      if (attachToDraft) {
+        await attachToDraft(target.id, screenshot);
+        dismiss();
+        return;
+      }
       const file = await window.runhuddle.screenshotPath(screenshot.id);
-      if (currentTarget.current?.id !== target.id || currentTarget.current.busy)
-        throw Error("Select a session ready for input and try again.");
-      await pasteTerminalPath(target.id, file);
+      const current = currentTarget.current;
+      if (current?.id !== target.id || current.locked)
+        throw Error("The selected session changed. Select it again to attach.");
+      if (current.busy || attachments.some((item) => item.terminalId === target.id)) {
+        setAttachments((previous) => [...previous, { id: screenshot.id, terminalId: target.id, title: target.title, file }]);
+      } else {
+        await pasteTerminalPath(target.id, file);
+      }
       dismiss();
     } catch (e) {
       setError({
@@ -77,6 +108,7 @@ export function ScreenshotPopup({
   }
 
   async function copy() {
+    if (!screenshot) return;
     try {
       await window.runhuddle.copyScreenshotPath(screenshot.id);
       setCopied(screenshot.id);
@@ -91,6 +123,14 @@ export function ScreenshotPopup({
 
   return createPortal(
     <aside className="screenshot-popup" aria-label="Screenshot taken">
+      {attachments.length > 0 && <div className="screenshot-queued">
+        <p role="status">{attachments.length} {attachments.length === 1 ? "screenshot" : "screenshots"} queued
+          {nextAttachment ? ` for ${nextAttachment.title}` : ". Open the destination terminal to attach."}</p>
+        {attachmentError && <p role="alert">{attachmentError}</p>}
+        {attachmentError && <button onClick={() => setAttachmentError("")}>Retry attachments</button>}
+        <button onClick={() => { setAttachments([]); setAttachmentError(""); }}>Cancel queued attachments</button>
+      </div>}
+      {screenshot && <>
       <div className="screenshot-preview" role="status">
         <img src={screenshot.thumbnail} alt="Screenshot thumbnail" />
         <div>
@@ -106,7 +146,7 @@ export function ScreenshotPopup({
       <div className="screenshot-actions">
         <button
           className={target && !blocked ? "primary" : undefined}
-          disabled={!target || blocked || pending}
+          disabled={!target || blocked || pending || draftFull}
           aria-describedby={attachmentHintId}
           onClick={attach}
         >
@@ -117,7 +157,8 @@ export function ScreenshotPopup({
         </button>
         <button onClick={dismiss}>Dismiss</button>
       </div>
+      </>}
     </aside>,
-    document.body,
+    document.querySelector(".projects-dashboard[open]") || document.body,
   );
 }

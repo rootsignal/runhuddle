@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -8,6 +8,24 @@ import { DatabaseSync } from "node:sqlite";
 import { providers, shellLaunch, terminalEnvironment } from "./lifecycle.mjs";
 import { readHistory } from "./history.mjs";
 import recapModels from "./recap-models.json" with { type: "json" };
+
+export async function installedReviewAgents() {
+  const names = Object.keys(recapModels);
+  const options = { env: terminalEnvironment(), timeout: 4500, maxBuffer: 64 * 1024, windowsHide: true };
+  if (process.platform === "win32") {
+    const results = await Promise.all(names.map((name) => new Promise((resolve) => {
+      execFile("where.exe", [name], options, (error) => resolve(!error));
+    })));
+    return names.filter((_, index) => results[index]);
+  }
+  const probe = names.map((name) => `command -v ${name} >/dev/null 2>&1 && printf '%s\\n' 'runhuddle-agent:${name}'`).join("\n");
+  const launch = shellLaunch(["/bin/sh", "-c", probe + "\nexit 0"]);
+  const output = await new Promise((resolve, reject) => {
+    execFile(launch.file, launch.args, options, (error, stdout) => error ? reject(error) : resolve(stdout));
+  });
+  const lines = new Set(output.split(/\r?\n/));
+  return names.filter((name) => lines.has("runhuddle-agent:" + name));
+}
 
 export function recapPrompt(messages) {
   // Limit the input sent to the selected account. Preserve recent turns in order.
@@ -97,8 +115,13 @@ export async function generateRecap(session, agent, signal) {
 }
 
 export async function summarizeMessages(messages, agent, signal) {
-  if (typeof agent !== "string" || !Object.hasOwn(providers, agent)) throw Error("Choose Codex, Claude, or Copilot.");
   if (!messages.length) throw Error("No recorded messages are available to summarize.");
+  const { output, ...metadata } = await runRecapPrompt(recapPrompt(messages), agent, signal);
+  return { ...parseRecap(output), ...metadata };
+}
+
+export async function runRecapPrompt(prompt, agent, signal) {
+  if (typeof agent !== "string" || !Object.hasOwn(providers, agent)) throw Error("Choose Codex, Claude, or Copilot.");
   const cwd = await mkdtemp(path.join(os.tmpdir(), "runhuddle-recap-"));
   let helperHistory;
   try {
@@ -140,7 +163,7 @@ export async function summarizeMessages(messages, agent, signal) {
       env.GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS = "false";
       env.SESSION_TRACKER_COPILOT_STATE = path.join(cwd, "tracker.sqlite");
     }
-    const response = await launchRecap([agent, ...args], cwd, env, recapPrompt(messages), agent, signal);
+    const response = await launchRecap([agent, ...args], cwd, env, prompt, agent, signal);
     let result = response;
     if (agent === "codex") {
       const file = path.join(cwd, output);
@@ -151,7 +174,7 @@ export async function summarizeMessages(messages, agent, signal) {
         throw Error("Codex returned an unusable recap. Try again or choose another agent.");
       result = await readFile(file, "utf8");
     }
-    return { ...parseRecap(result), agent: providers[agent], model: label, generatedAt: Date.now() };
+    return { output: result, agent: providers[agent], model: label, generatedAt: Date.now() };
   } finally {
     try {
       if (helperHistory) await rm(helperHistory, { recursive: true, force: true });

@@ -1,4 +1,7 @@
+export type ProjectFilePreview = { path: string; markdown: boolean; text: string; truncated: boolean };
+
 export interface Session {
+  guardianReview?: boolean;
   terminalId?: string;
   provider: string;
   sessionID: string;
@@ -61,7 +64,10 @@ export interface Snapshot {
   continuations?: ContinuationLink[];
   terminals: TerminalInfo[];
   home: string;
+  keepAwakeActive?: boolean;
   connection?: "connected" | "reconnecting" | "disconnected";
+  compactShell?: boolean | null;
+  terminalServiceUpdate?: boolean;
   openAlert?: SessionAlertTarget;
   inbox?: InboxEntry[];
   recaps?: Record<string, SessionRecap>;
@@ -80,6 +86,8 @@ export interface SessionAlert {
   body: string;
   inboxId?: string;
 }
+export type InboxQuestion = { text: string; choices: string[] };
+export type InboxPreview = { instruction?: string; screenshots?: number; instructionAt?: number; update?: string; questions?: InboxQuestion[]; answer?: string; truncated?: boolean };
 export interface InboxEntry extends SessionAlertTarget {
   id: string;
   kind: "input" | "completion";
@@ -104,7 +112,15 @@ export interface BrowserPreviewState {
 export type AttachmentTarget = { id: string; title: string; busy: boolean; locked?: boolean; needsInput?: boolean; canResume?: boolean; browserTools?: boolean };
 export interface EditorChoice { id: string; name: string; application: string }
 export interface Editors { editors: EditorChoice[]; preferred: string }
+export type KeyboardBindings = { palette: string; terminal: string };
+export type DashboardCommand = "dashboard" | "workspace" | "new-session" | "projects" | "recent" |
+  "next-review" | "next-attention" | "return-session" | "open-browser";
+export type DashboardRequest = { command: DashboardCommand } | { command: "open-project"; folder: string } | { command: "open-session"; session: string };
+export type AppCommand = DashboardCommand | "command-palette" | "quick-terminal" | "keyboard-shortcuts";
+
 export type AppEvent =
+  | { event: "keep-awake"; active: boolean }
+  | { event: "dashboard-command"; command: AppCommand }
   | { event: "app-accent"; accent: string }
   | { event: "app-theme"; theme: "system" | "light" | "dark" }
   | { event: "update-download"; download: UpdateDownload | null }
@@ -122,6 +138,7 @@ export type AppEvent =
   | { event: "git"; cwd: string }
   | { event: "history-index-updated" }
   | { event: "recap"; key: string; recap: SessionRecap }
+  | { event: "terminal-size"; id: string; sequence: number; cols: number; rows: number }
   | { event: "output"; id: string; data: string; sequence: number }
   | { event: "terminals"; terminals: TerminalInfo[] }
   | ({ event: "store" } & Omit<Snapshot, "home" | "terminals">)
@@ -151,13 +168,28 @@ export interface UsageInfo {
   provider: string; windows: { label: string; remaining: number; resetsAt: string }[];
   checkedAt?: string; credits?: string | null; message?: string;
 }
+export interface ProjectHistoryReview {
+  reviewed: number;
+  total: number;
+  suggestions: { next: string; updated: number; source: HistorySearchResult }[];
+}
 export interface API {
+  cancelProjectHistoryReview(folder: string): Promise<void>;
+  installedReviewAgents(): Promise<string[]>;
+  reviewProjectHistory(folder: string, agent: string): Promise<ProjectHistoryReview>;
   generateRecap(provider: string, id: string, agent: string): Promise<SessionRecap>;
   cancelRecap(provider: string, id: string): Promise<void>;
-  searchHistory(query: string, folder: string, scope: string, refresh?: boolean): Promise<{ results: HistorySearchResult[]; incomplete: boolean; indexing?: boolean }>;
+  searchHistory(query: string, folder: string | string[], scope: string, refresh?: boolean): Promise<{ results: HistorySearchResult[]; incomplete: boolean; indexing?: boolean }>;
   cancelHistorySearch(): Promise<void>;
+  codexPromptReady(id: string, terminalId: string): Promise<boolean>;
+  liveSessionPreview(provider: string, id: string, terminalId: string): Promise<InboxPreview>;
+  liveSessionFollowUp(provider: string, id: string, terminalId: string, message: string, screenshots?: ArrayBuffer[]): Promise<void>;
+  screenshotDraft(id: string): Promise<Uint8Array<ArrayBuffer>>;
+  copyInboxReply(id: string, text: string): Promise<void>;
+  inboxPreview(id: string): Promise<InboxPreview>;
   inboxAction(id: string, action: "open" | "dismiss"): Promise<boolean>;
   reopenBrowserSession(id: string): Promise<TerminalInfo | null>;
+  previewProjectFile(provider: string, id: string, file: string): Promise<ProjectFilePreview>;
   openTerminalLink(url: string): Promise<void>;
   setAppAccent(accent: string): Promise<void>;
   locateCodexSession(id: string): Promise<void>;
@@ -187,6 +219,7 @@ export interface API {
     messages: { role: string; text: string; time: string; match?: boolean }[];
     truncated: boolean;
     matchMissing?: boolean;
+    unavailable?: boolean;
   }>;
   openFolder(cwd: string, target: "folder"): Promise<void>;
   gitChanges(
@@ -201,24 +234,31 @@ export interface API {
     mode?: string,
     revision?: string,
   ): Promise<string>;
+  keyboardShortcuts(): Promise<KeyboardBindings>;
+  saveKeyboardShortcuts(value: KeyboardBindings): Promise<KeyboardBindings>;
+  recordKeyboardShortcuts(recording: boolean): Promise<void>;
   reconnect(): Promise<void>;
   snapshot(): Promise<Snapshot>;
   chooseFolder(): Promise<string | null>;
-  create(cwd: string, agent: string): Promise<TerminalInfo>;
+  create(cwd: string, agent: string, compactShell?: boolean): Promise<TerminalInfo>;
   pinSession(provider: string, id: string, pinned: boolean): Promise<void>;
+  setSessionsHidden(ids: string[], hidden: boolean): Promise<string[]>;
   setHistoryHidden(kind: keyof HiddenHistory, id: string, hidden: boolean): Promise<void>;
   recordSessionContinuation(from: SessionAlertTarget, to: SessionAlertTarget, title: string): Promise<boolean>;
   title(id: string, title: string): Promise<void>;
   resume(provider: string, id: string): Promise<TerminalInfo | null>;
-  replay(id: string): Promise<{ data: string; sequence: number }>;
+  replay(id: string): Promise<{ data: string; sequence: number; cols?: number; rows?: number; sizes?: { offset: number; cols: number; rows: number }[] }>;
   write(id: string, data: string): Promise<void>;
   resize(id: string, cols: number, rows: number): Promise<void>;
   close(id: string): Promise<boolean>;
+  updateTerminalService(): Promise<void>;
   onEvent(callback: (event: AppEvent) => void): () => void;
 }
 export interface HistoryAnchor { offset: number; fingerprint: string; textOffset: number }
 export interface HistorySearchResult extends SessionAlertTarget {
   title: string;
+  cwd?: string;
+  updated?: number;
   snippet: string;
   anchor: HistoryAnchor;
 }

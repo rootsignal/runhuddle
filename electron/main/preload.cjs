@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const invoke = (method, ...args) => ipcRenderer.invoke(method, ...args);
 contextBridge.exposeInMainWorld("runhuddle", {
+  keyboardShortcuts: () => invoke("keyboard-shortcuts"),
+  recordKeyboardShortcuts: (recording) => invoke("record-keyboard-shortcuts", recording),
+  saveKeyboardShortcuts: (value) => invoke("save-keyboard-shortcuts", value),
   usage: provider => invoke("usage", provider),
   connectClaudeUsage: enable => invoke("claude-usage-connect", enable),
   editors: () => invoke("editors"),
@@ -10,6 +13,9 @@ contextBridge.exposeInMainWorld("runhuddle", {
   gitAction: (cwd, action, input) => invoke("git-action", cwd, action, input),
   noteAction: (id, action) => ipcRenderer.invoke("note-action", id, action),
   saveNote: (draft) => invoke("save-note", draft),
+  cancelProjectHistoryReview: (folder) => invoke("cancel-project-history-review", folder),
+  installedReviewAgents: () => invoke("installed-review-agents"),
+  reviewProjectHistory: (folder, agent) => invoke("review-project-history", folder, agent),
   generateRecap: (provider, id, agent) => invoke("generate-recap", provider, id, agent),
   cancelRecap: (provider, id) => invoke("cancel-recap", provider, id),
   history: (provider, id, anchor) => invoke("history", provider, id, anchor),
@@ -32,13 +38,22 @@ contextBridge.exposeInMainWorld("runhuddle", {
   setAppAccent: (accent) => invoke("set-app-accent", accent),
   snapshot: () => invoke("snapshot"),
   reopenBrowserSession: (id) => invoke("reopen-browser-session", id),
+  previewProjectFile: (provider, id, file) => invoke("preview-project-file", provider, id, file),
   openTerminalLink: (url) => invoke("open-terminal-link", url),
   locateCodexSession: (id) => invoke("locate-codex-session", id),
   viewedTerminal: (id) => invoke("viewed-terminal", id),
+  codexPromptReady: (id, terminalId) => invoke("codex-prompt-ready", id, terminalId),
+  liveSessionPreview: (provider, id, terminalId) => invoke("live-session-preview", provider, id, terminalId),
+  liveSessionFollowUp: (provider, id, terminalId, message, screenshots) =>
+    invoke("live-session-follow-up", provider, id, terminalId, message, screenshots),
+  screenshotDraft: (id) => invoke("screenshot-draft", id),
+  copyInboxReply: (id, text) => invoke("copy-inbox-reply", id, text),
+  inboxPreview: (id) => invoke("inbox-preview", id),
   inboxAction: (id, action) => invoke("inbox-action", id, action),
   chooseFolder: () => invoke("choose-folder"),
-  create: (cwd, agent) => invoke("create", cwd, agent),
+  create: (cwd, agent, compactShell) => invoke("create", cwd, agent, compactShell),
   pinSession: (provider, id, pinned) => invoke("pin-session", provider, id, pinned),
+  setSessionsHidden: (ids, hidden) => invoke("set-history-hidden", "sessions", ids, hidden),
   setHistoryHidden: (kind, id, hidden) => invoke("set-history-hidden", kind, id, hidden),
   recordSessionContinuation: (from, to, title) => invoke("record-session-continuation", from, to, title),
   title: (id, title) => invoke("title", id, title),
@@ -47,6 +62,7 @@ contextBridge.exposeInMainWorld("runhuddle", {
   write: (id, data) => invoke("write", id, data),
   resize: (id, cols, rows) => invoke("resize", id, cols, rows),
   close: (id) => invoke("close", id),
+  updateTerminalService: () => invoke("update-terminal-service"),
   onEvent: (callback) => {
     const listener = (_, value) => callback(value);
     ipcRenderer.on("event", listener);

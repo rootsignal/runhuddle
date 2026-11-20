@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { readPosition, savePosition } from "./dashboard-position";
 import { DiffReview } from "./DiffReview";
 import type { GitChanges, GitFile } from "./types";
+type ChangesPosition = { mode: string; revision: string; file?: Pick<GitFile, "path" | "area">; scrollTop?: number };
+
 export function ChangesPanel({
   cwd,
   onClose,
+  inline = false,
+  active = true,
+  positionKey,
 }: {
   cwd: string;
   onClose: () => void;
+  inline?: boolean;
+  active?: boolean;
+  positionKey?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -17,8 +26,21 @@ export function ChangesPanel({
   const openRef = useRef(open);
   openRef.current = open;
   const host = document.getElementById("review-stage");
-  const [mode, setMode] = useState("working");
-  const [revision, setRevision] = useState("");
+  const storageKey = positionKey ? "dashboardChanges:" + positionKey : undefined;
+  const [initial] = useState(() => storageKey
+    ? readPosition<ChangesPosition>(storageKey, { mode: "working", revision: "" })
+    : { mode: "working", revision: "" });
+  const position = useRef<ChangesPosition>(initial);
+  const [mode, setMode] = useState(initial.mode);
+  const [revision, setRevision] = useState(initial.revision);
+  function saveChanges(next: ChangesPosition) {
+    position.current = next;
+    if (storageKey) savePosition(storageKey, next);
+  }
+  function selectFile(file: GitFile) {
+    saveChanges({ mode, revision: data?.revision ?? revision, file: { path: file.path, area: file.area }, scrollTop: 0 });
+    void preview(file);
+  }
   const [data, setData] = useState<GitChanges | null>(null);
   const [selected, setSelected] = useState<GitFile | null>(null);
   const [diff, setDiff] = useState("");
@@ -80,12 +102,12 @@ export function ChangesPanel({
       window.dispatchEvent(
         new CustomEvent("repository-refreshed", { detail: cwd }),
       );
-      const file =
-        next.files.find(
-          (f) => f.path === selected?.path && f.area === selected.area,
-        );
+      const saved = storageKey ? position.current.file : undefined;
+      const target = saved ?? selected;
+      const file = target && next.files.find((f) => f.path === target.path && f.area === target.area);
       setSelected(file || null);
-      if (file && keepReview && openRef.current) void preview(file, version, next.revision);
+      if (file && (saved || (keepReview && openRef.current))) void preview(file, version, next.revision);
+      if (!file && saved) saveChanges({ mode, revision: next.revision ?? revision });
       if (!file) setOpen(false);
     } catch (e) {
       if (version === generation.current) {
@@ -98,7 +120,7 @@ export function ChangesPanel({
     }
   }
   useEffect(() => {
-    setRevision("");
+    if (!storageKey) setRevision("");
     setMessage(""); setActionError(""); setNotice("");
   }, [cwd]);
   useEffect(() => {
@@ -136,8 +158,19 @@ export function ChangesPanel({
     } catch(e) { setActionError(String(e).replace(/^Error: /, "")); }
     finally { setBusy(false); }
   }
-  return (
-    <aside className="changes-panel" aria-label="Workspace changes">
+  const review = open && selected && data && !loading ? (
+    <DiffReview inline={inline} active={active} root={data.root} file={selected} diff={diff} loading={reading}
+      scrollTop={storageKey ? position.current.scrollTop : undefined}
+      onScrollPosition={storageKey ? (scrollTop) => saveChanges({ ...position.current, scrollTop }) : undefined}
+      onClose={() => {
+        if (storageKey) saveChanges({ mode, revision: data.revision ?? revision });
+        openRef.current = false;
+        setOpen(false);
+      }} />
+  ) : null;
+
+  return <>
+    <aside className="changes-panel" aria-label="Workspace changes" tabIndex={inline ? 0 : undefined} inert={inline && !!review}>
       <header>
         <strong>Changes</strong>
         <button disabled={loading || !cwd} onClick={() => refresh(true)}>
@@ -159,6 +192,8 @@ export function ChangesPanel({
             key={value}
             aria-pressed={mode === value}
             onClick={() => {
+              if (value === mode && !revision) return;
+              saveChanges({ mode: value, revision: "" });
               setRevision("");
               setMode(value);
             }}
@@ -171,7 +206,11 @@ export function ChangesPanel({
         <select
           aria-label="Commit to review"
           value={data.revision}
-          onChange={(e) => setRevision(e.target.value)}
+          onChange={(e) => {
+            const revision = e.target.value;
+            saveChanges({ mode, revision });
+            setRevision(revision);
+          }}
         >
           {data.commits.map((c) => (
             <option key={c.id} value={c.id}>
@@ -260,7 +299,7 @@ export function ChangesPanel({
                                   ? "selected"
                                   : ""
                               }
-                              onClick={() => preview(file)}
+                              onClick={() => selectFile(file)}
                             >
                               <span className="file-status">{file.status}</span>
                               <span>{file.path}</span>
@@ -276,9 +315,6 @@ export function ChangesPanel({
                     );
                   })}
                 </nav>
-                {open && selected && host && createPortal(
-                  <DiffReview root={data.root} file={selected} diff={diff} loading={reading}
-                    onClose={() => { openRef.current = false; setOpen(false); }} />, host)}
               </>
             )}
 
@@ -286,5 +322,6 @@ export function ChangesPanel({
         )
       )}
     </aside>
-  );
+    {review && (inline ? review : host ? createPortal(review, host) : null)}
+  </>;
 }

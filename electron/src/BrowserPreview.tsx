@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./Icons";
 import { pasteTerminalPath } from "./Terminal";
 import type { AttachmentTarget, BrowserPreviewState } from "./types";
 
-const cover = "dialog[open], .screenshot-popup, .usage-warning";
+const cover = "dialog[open], [popover]:popover-open, .dashboard-project-picker-panel, .screenshot-popup, .usage-warning";
 
-export function BrowserPreview({ target, onClose, onReopenSession }: {
+export function BrowserPreview({ target, enabled = true, canGrantControl = true, onShareReport, onClose, onReopenSession }: {
   target?: AttachmentTarget;
+  enabled?: boolean;
+  canGrantControl?: boolean;
+  onShareReport?: (target: AttachmentTarget, file: string) => void;
   onClose: () => void;
   onReopenSession: (id: string) => Promise<void>;
 }) {
@@ -18,12 +21,14 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
   const [granting, setGranting] = useState(false);
   const [attached, setAttached] = useState("");
   const agentSession = state?.agentSession;
+  const shareHelp = useId();
   const host = useRef<HTMLDivElement>(null);
   const currentTarget = useRef(target);
   const active = useRef(false);
   currentTarget.current = target;
 
   useEffect(() => {
+    if (!enabled) return;
     active.current = true;
     const off = window.runhuddle.onEvent((event) => {
       if (event.event === "browser-preview") setState(event.state);
@@ -38,7 +43,7 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
       off();
       void window.runhuddle.browserAgent(null).catch(() => {});
     };
-  }, []);
+  }, [enabled]);
 
   useEffect(() => { setAttached(""); }, [target?.id]);
 
@@ -47,14 +52,17 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
   }, [state?.url]);
 
   useEffect(() => {
+    if (!enabled) return;
     const element = host.current!;
+    const owner = element.closest("dialog");
     let frame = 0;
     let previous: string | undefined;
     function update() {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const { x, y, width, height } = element.getBoundingClientRect();
-        const rect = document.querySelector(cover) || width < 2 || height < 2
+        const covered = Array.from(document.querySelectorAll(cover)).some((node) => node !== owner);
+        const rect = covered || width < 2 || height < 2
           ? null : { x, y, width, height };
         const next = JSON.stringify(rect);
         if (next === previous) return;
@@ -71,20 +79,25 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
         if (record.type === "attributes") return target instanceof HTMLDialogElement;
         if (target instanceof Element && target.closest(".xterm")) return false;
         return [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element &&
-          (node.matches("dialog, .screenshot-popup, .usage-warning") || node.querySelector(cover)));
+          (node.matches("dialog, .dashboard-project-picker-panel, .screenshot-popup, .usage-warning") || node.querySelector(cover)));
       })) update();
     });
     overlays.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
+    function popoverToggled(event: Event) {
+      if (event.target instanceof HTMLElement && event.target.hasAttribute("popover")) update();
+    }
+    document.addEventListener("toggle", popoverToggled, true);
     window.addEventListener("resize", update);
     update();
     return () => {
       resize.disconnect();
       overlays.disconnect();
       cancelAnimationFrame(frame);
+      document.removeEventListener("toggle", popoverToggled, true);
       window.removeEventListener("resize", update);
       void window.runhuddle.browserLayout(null).catch(() => {});
     };
-  }, []);
+  }, [enabled]);
 
   async function navigate() {
     setError("");
@@ -106,8 +119,11 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
       const { file } = await window.runhuddle.captureBrowser();
       if (!active.current || currentTarget.current?.id !== target.id || currentTarget.current.busy)
         throw Error("Select a session ready for input and try again.");
-      await pasteTerminalPath(target.id, file, "Inspect the page screenshot, visible text, and console diagnostics in ");
-      if (active.current) setAttached("Report added to " + target.title + ". Press Enter in the terminal to send.");
+      if (onShareReport) onShareReport(target, file);
+      else await pasteTerminalPath(target.id, file, "Inspect the page screenshot, visible text, and console diagnostics in ");
+      if (active.current) setAttached(onShareReport
+        ? `Report added to the follow-up draft for ${target.title}.`
+        : `Report added to ${target.title}. Press Enter in the terminal to send.`);
     } catch (reason) {
       if (active.current) setError(displayError(reason));
     } finally {
@@ -167,23 +183,23 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
         {state?.loading && <p role="status">Loading page…</p>}
         {attached && <p role="status">{attached}</p>}
         <button type="button" className="primary browser-share" disabled={!target || target.busy || !state?.ready || attaching}
-          aria-describedby="browser-share-help" onClick={() => void attach()} title={target?.title}>
+          aria-describedby={shareHelp} onClick={() => void attach()} title={target?.title}>
           {attaching ? "Capturing…" : target ? `Share page with ${target.title}` : "Share page"}
         </button>
-        <p id="browser-share-help" className="muted">
+        <p id={shareHelp} className="muted browser-share-help">
           {!target ? "Select an AI session to share this page." :
             target.locked ? "Close the conversation in the other app and retry in Codex." :
             target.busy ? "Wait until the active session is ready for input." :
-            "Adds a screenshot, page text, and console errors to your draft. Press Enter to send."}
+            onShareReport ? "Adds a page report to the follow-up draft." : "Adds a screenshot, page text, and console errors to your draft. Press Enter to send."}
         </p>
         <div className="browser-agent-controls">
-          {(agentSession || (state?.url && target?.browserTools && !target.locked)) && (
+          {(agentSession || (canGrantControl && state?.url && target?.browserTools && !target.locked)) && (
             <button type="button" disabled={granting || (!agentSession && !state?.ready)}
               onClick={() => void agentAccess(agentSession ? null : target!.id)}>
               {agentSession ? "Stop agent control" : "Allow agent control"}
             </button>
           )}
-          {state?.url && target && !target.locked && !target.browserTools && (
+          {canGrantControl && state?.url && target && !target.locked && !target.browserTools && (
             <button type="button" disabled={reopening} onClick={() => void reopenSession(target.id)}>
               {target.canResume ? "Reopen with browser control" : "Start session with browser control"}
             </button>
@@ -193,6 +209,7 @@ export function BrowserPreview({ target, onClose, onReopenSession }: {
               !state?.url ? "Open a page to allow agent control." :
               !target ? "Select an AI session to allow browser control." :
               target.locked ? "This Codex conversation is in use elsewhere." :
+              !canGrantControl ? "Open the session’s Terminal tab to allow agent control." :
               !target.browserTools ? target.canResume
                 ? "Reopen the saved conversation to load live browser tools."
                 : "Start a new conversation in this folder with live browser tools." :

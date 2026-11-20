@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HiddenHistory, Session } from "./types";
 
 export function HiddenHistoryDialog({ hidden, sessions, onRestore, onClose }: {
@@ -8,12 +8,18 @@ export function HiddenHistoryDialog({ hidden, sessions, onRestore, onClose }: {
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [query, setQuery] = useState("");
   useEffect(() => {
     const element = dialog.current!;
     element.showModal();
     return () => element.close();
   }, []);
   const recordedSessions = new Map(sessions.map((row) => [row.provider + ":" + row.sessionID, row]));
+  const search = query.trim().toLowerCase();
+  const matchingSessions = hidden.sessions.filter((id) => {
+    const row = recordedSessions.get(id);
+    return [row?.title, row?.cwd, row?.provider, id].join(" ").toLowerCase().includes(search);
+  });
   return (
     <dialog ref={dialog} className="appearance-dialog hidden-history" aria-labelledby="hidden-history-heading"
       onCancel={(event) => { event.preventDefault(); onClose(); }}>
@@ -39,8 +45,11 @@ export function HiddenHistoryDialog({ hidden, sessions, onRestore, onClose }: {
       {hidden.sessions.length > 0 && (
         <section aria-label="Hidden sessions">
           <h3>Sessions</h3>
+          <input type="search" aria-label="Find hidden sessions" placeholder="Find hidden sessions"
+            value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+          {!matchingSessions.length && <p>No matching hidden sessions.</p>}
           <ul>
-            {hidden.sessions.map((id) => {
+            {matchingSessions.map((id) => {
               const row = recordedSessions.get(id);
               return (
                 <li key={id}>

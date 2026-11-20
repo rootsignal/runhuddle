@@ -14,6 +14,7 @@ export function WorkspaceTools({
   inbox,
   onInboxAction,
   attachmentTarget,
+  browserEnabled,
   onReopenBrowserSession,
 }: {
   cwd: string;
@@ -25,6 +26,7 @@ export function WorkspaceTools({
   inbox: InboxEntry[];
   onInboxAction: (id: string, action: "open" | "dismiss") => void;
   attachmentTarget?: AttachmentTarget;
+  browserEnabled: boolean;
   onReopenBrowserSession: (id: string) => Promise<void>;
 }) {
   useEffect(() => {
@@ -120,7 +122,7 @@ export function WorkspaceTools({
           {open === "changes" ? (
             <ChangesPanel cwd={cwd} onClose={() => setOpen("")} />
           ) : isBrowser ? (
-            <BrowserPreview target={attachmentTarget} onReopenSession={onReopenBrowserSession} onClose={() => setOpen("")} />
+            <BrowserPreview enabled={browserEnabled} target={attachmentTarget} onReopenSession={onReopenBrowserSession} onClose={() => setOpen("")} />
           ) : open === "inbox" ? (
             <Inbox
               entries={inbox}

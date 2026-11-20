@@ -322,8 +322,11 @@ export function transcriptEvent(agent, event) {
   }
   const patch = {};
   if (prompt) {
-    if (typeof preview === "string" && preview.trim())
-      patch.promptTitle = preview.trim().split("\n")[0].slice(0, 120);
+    if (typeof preview === "string") {
+      const title = preview.replace(/<environment_context(?:\s[^>]*)?>[\s\S]*?<\/environment_context>/gi, "")
+        .trim().split("\n")[0];
+      if (title && !/^<environment_context\b/i.test(title)) patch.promptTitle = title.slice(0, 120);
+    }
   }
   if (state) patch.state = state;
   if (agent === "codex" && event.type === "event_msg" && p.type === "turn_aborted")

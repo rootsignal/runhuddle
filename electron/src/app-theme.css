@@ -10,6 +10,7 @@
   --app-muted: light-dark(#566474, #a0a0ac);
 
   --app-accent-base: #8fcbd0;
+  --app-on-accent: #17222a;
   --app-accent: color-mix(in srgb, var(--app-accent-base) 70%, white);
   --app-accent-hover: color-mix(in srgb, var(--app-accent-base) 52%, white);
   --app-accent-text: light-dark(

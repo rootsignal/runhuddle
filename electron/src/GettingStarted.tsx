@@ -4,7 +4,7 @@ const steps = [
   {
     id: "launch",
     title: "Start a session",
-    text: "Use New session or terminal to choose a project folder, then open a shell or start Codex, Claude, or Copilot.",
+    text: "Use New session or terminal to choose a project folder, add an optional session name, then open a shell or start Codex, Claude, or Copilot.",
   },
   {
     id: "projects",
@@ -65,6 +65,11 @@ const steps = [
     id: "notes",
     title: "Save project notes",
     text: "Open Notes to write or find a note. You can also save text from a conversation to keep it with its source.",
+  },
+  {
+    id: "project-dashboard",
+    title: "See all projects",
+    text: "Open Project dashboard to preview items that need attention, switch between live sessions and open their preview, terminal, or changes in place. Use Next attention for a session waiting on you and Next review for a finished turn. Open Browser from the session toolbar to keep a page beside your work. Preview also shows referenced files and web links below the latest reply. Choose Open workspace for your full terminal layout. The Command Palette lets you find sessions, projects, and actions, including Quick Terminal. Find the current bindings in Session → Keyboard Shortcuts.",
   },
   {
     id: "inbox",

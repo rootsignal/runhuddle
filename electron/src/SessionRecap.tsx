@@ -82,7 +82,13 @@ export function SessionRecap({
             disabled={loading}
             aria-disabled={busy || undefined}
             onClick={() => {
-              if (!busy) configuring ? closeOptions() : setConfiguring(true);
+              if (busy) return;
+              if (configuring) closeOptions();
+              else {
+                const preferred = agents.find((value) => value === localStorage.getItem("recapAgent"));
+                if (preferred) setAgent(preferred);
+                setConfiguring(true);
+              }
             }}
           >
             {recap ? "Refresh recap…" : "Generate recap…"}

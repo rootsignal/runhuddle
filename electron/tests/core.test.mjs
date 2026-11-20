@@ -26,6 +26,15 @@ test(
     let client = new Service(dir);
     try {
       await client.connect();
+      if (client.hello.compactShell) {
+        const compact = await client.call("create", { cwd: dir, agent: "shell", compactShell: true });
+        const prompt = "\x1b[36m" + path.basename(dir) + "\x1b[0m \x1b[32m❯\x1b[0m ";
+        await until(async () => (await client.call("replay", { id: compact.id })).data.includes(prompt));
+        assert.doesNotMatch((await client.call("replay", { id: compact.id })).data, /default interactive shell is now zsh/);
+        await client.call("write", { id: compact.id, data: "cd /\r" });
+        await until(async () => (await client.call("replay", { id: compact.id })).data.includes("\x1b]7;file://localhost/\x07"));
+        await client.call("close", { id: compact.id });
+      }
       const terminal = await client.call("create", {
         cwd: dir,
         agent: "shell",
@@ -46,6 +55,10 @@ test(
           "RH_START",
         ),
       );
+      const sizesSeen = [];
+      client.on("event", (event) => {
+        if (event.id === terminal.id) sizesSeen.push(event);
+      });
       await client.call("resize", { id: terminal.id, cols: 110, rows: 35 });
       if (!windows) {
         await client.call("write", {
@@ -58,6 +71,16 @@ test(
         });
       }
       const first = await client.call("replay", { id: terminal.id });
+      assert.equal(first.sizes.length, 2);
+      assert.deepEqual(first.sizes[0], { offset: 0, cols: 90, rows: 28 });
+      const newSize = first.sizes[1];
+      assert.deepEqual({ cols: newSize.cols, rows: newSize.rows }, { cols: 110, rows: 35 });
+      assert.ok(first.data.slice(0, newSize.offset).includes("RH_START"));
+      if (!windows) assert.ok(first.data.slice(newSize.offset).includes("35 110"));
+      const resizeEvent = sizesSeen.findIndex((event) => event.event === "terminal-size");
+      assert.ok(resizeEvent >= 0);
+      assert.ok(sizesSeen.slice(0, resizeEvent).every((event) => event.sequence < sizesSeen[resizeEvent].sequence));
+      assert.ok(sizesSeen.slice(resizeEvent + 1).every((event) => event.sequence > sizesSeen[resizeEvent].sequence));
       client.disconnect();
       await sleep(100);
       client = new Service(dir);

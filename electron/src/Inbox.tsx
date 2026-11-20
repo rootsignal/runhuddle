@@ -47,8 +47,8 @@ export function Inbox({
                   </button>
                   {kind === "completion" && (
                     <button
-                      aria-label={`Dismiss ${row.body}`}
-                      title="Dismiss"
+                      aria-label={`Mark ${row.body} reviewed`}
+                      title="Mark reviewed"
                       onClick={() => onAction(row.id, "dismiss")}
                     >
                       ×

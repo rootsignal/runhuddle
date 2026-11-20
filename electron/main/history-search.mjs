@@ -58,6 +58,8 @@ export function historyMatch(session, message, words, offset, hash) {
     provider: session.provider,
     sessionID: session.sessionID,
     title: session.title,
+    cwd: session.cwd,
+    updated: session.updated,
     snippet: (start ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : ""),
     anchor: {
       offset,

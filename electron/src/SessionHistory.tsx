@@ -7,14 +7,17 @@ export function SessionHistory({
   anchor,
   onLatest,
   recap,
+  inline = false,
 }: {
   session: Session;
-  onSaveExcerpt: (text: string) => void;
+  onSaveExcerpt?: (text: string) => void;
+  inline?: boolean;
   anchor?: HistoryAnchor;
-  onLatest: () => void;
+  onLatest?: () => void;
   recap?: Recap;
 }) {
   const preparedExcerpt = useRef("");
+  const history = useRef<HTMLElement>(null);
   const matched = useRef<HTMLElement>(null);
   const [messages, setMessages] = useState<
     { role: string; text: string; time: string; match?: boolean }[]
@@ -57,6 +60,11 @@ export function SessionHistory({
       matched.current.focus({ preventScroll: true });
     }
   }, [messages, loading, anchor]);
+  useEffect(() => {
+    if (!inline || loading || !history.current) return;
+    const scrollView = history.current;
+    scrollView.scrollTop = scrollView.scrollHeight;
+  }, [inline, loading, messages]);
   const shown = messages.filter((m) =>
     m.text.toLowerCase().includes(query.toLowerCase()),
   );
@@ -72,8 +80,8 @@ export function SessionHistory({
   }
   return (
     <>
-      {!anchor && <SessionRecap session={session} messages={messages} recap={recap} loading={loading} />}
-      <section className="conversation-history" aria-label="Conversation history">
+      {!anchor && !inline && <SessionRecap session={session} messages={messages} recap={recap} loading={loading} />}
+      <section ref={history} tabIndex={inline ? 0 : undefined} className="conversation-history" aria-label="Conversation history">
         <div className="history-toolbar">
           <input
             type="search"
@@ -124,7 +132,7 @@ export function SessionHistory({
                   <strong>{m.role === "user" ? "You" : session.provider}</strong>
                   <div className="history-message-actions">
                     {m.time && <time>{new Date(m.time).toLocaleString()}</time>}
-                    <button
+                    {onSaveExcerpt && <button
                       type="button"
                       title="Save selected text or the entire message"
                       onPointerDown={(event) => {
@@ -145,7 +153,7 @@ export function SessionHistory({
                       }}
                     >
                       Save as note
-                    </button>
+                    </button>}
                   </div>
                 </header>
                 <div className="preserve">{m.text}</div>
@@ -162,9 +170,9 @@ export function SessionHistory({
               <>
                 <h3>Last recorded message</h3>
                 <div className="preserve">{session.preview}</div>
-                <button onClick={() => onSaveExcerpt(session.preview)}>
+                {onSaveExcerpt && <button onClick={() => onSaveExcerpt(session.preview)}>
                   Save as note
-                </button>
+                </button>}
               </>
             )}
           </div>

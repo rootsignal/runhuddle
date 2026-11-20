@@ -1,3 +1,5 @@
+import { readProjectPreview } from "./preview-file.mjs";
+import { defaultShortcuts, shortcutForInput, validateShortcuts } from "./shortcuts.mjs";
 import electronUpdater from "electron-updater";
 import { createUpdateCheck, terminalUpdateBlocker } from "./app-updates.mjs";
 import { usageService, configureClaudeRelay } from "./usage.mjs";
@@ -10,7 +12,9 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  nativeImage,
   Notification,
+  powerSaveBlocker,
   shell,
 } from "electron";
 import { Worker } from "node:worker_threads";
@@ -28,8 +32,10 @@ import { codexLockOwner } from "./codex-lock-owner.mjs";
 import { browserPreview } from "./browser-preview.mjs";
 import { notesStore } from "./notes.mjs";
 import { createSessionAlerts } from "./session-alerts.mjs";
+import { codexPromptReady, sendDashboardFollowUp } from "./dashboard-follow-up.mjs";
 import { createInbox } from "./inbox.mjs";
-import { generateRecap, recapStore } from "./recaps.mjs";
+import { reviewProjectHistory } from "./project-history-review.mjs";
+import { generateRecap, installedReviewAgents, recapStore } from "./recaps.mjs";
 import { historyIndexClient } from "./history-index-client.mjs";
 import { providers, validateID } from "./lifecycle.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +46,12 @@ app.setPath(
     process.env.RUNHUDDLE_PREVIEW_DATA ||
     path.join(app.getPath("appData"), "RunHuddle Preview"),
 );
+const shortcutsFile = path.join(app.getPath("userData"), "keyboard-shortcuts.json");
+let shortcuts = defaultShortcuts;
+let recordingShortcuts = false;
+try {
+  shortcuts = validateShortcuts(JSON.parse(fs.readFileSync(shortcutsFile, "utf8")));
+} catch {}
 const appearanceFile = path.join(app.getPath("userData"), "app-appearance.json");
 const themeChoices = ["system", "light", "dark"];
 const accentChoices = {
@@ -87,19 +99,24 @@ let notes = [];
 let connection = "connected",
   quitting = false,
   recovering;
-let updateBrowserService = () => {};
-let updatingBrowserService;
+let updateTerminalService = () => {};
+const terminalServiceCurrent = () => service.hello?.browserTools && service.hello?.shellPromptVersion === 2;
+let updatingTerminalService;
 let launchingTerminals = 0;
 let reopeningForBrowser = false;
 async function createTerminal(args, browserReopen = false) {
   if (reopeningForBrowser && !browserReopen) throw Error("Wait for the session to finish reopening.");
-  if (updatingBrowserService) await updatingBrowserService;
+  if (updatingTerminalService) await updatingTerminalService;
+  if (args.compactShell && !service.hello?.compactShell)
+    throw Error(service.hello?.compactShell === false
+      ? "Compact prompt requires Bash on this system."
+      : "Compact prompt is available after the terminal service updates. Use your normal prompt for now.");
   launchingTerminals++;
   try {
     return await service.call("create", args);
   } finally {
     launchingTerminals--;
-    updateBrowserService();
+    updateTerminalService();
   }
 }
 let ledgerSessions = [], providerSessions = [], managed = [];
@@ -109,7 +126,9 @@ function mergeSessionHistory() {
   const sessions = new Map(providerSessions.map((row) => [sessionKey(row), row]));
   // A helper from an earlier release can keep running across an update.
   for (const row of ledgerSessions) {
-    sessions.set(sessionKey(row), row.state === "archived" ? { ...row, state: "saved" } : row);
+    const id = sessionKey(row);
+    const saved = row.state === "archived" ? { ...row, state: "saved" } : row;
+    sessions.set(id, sessions.get(id)?.guardianReview ? { ...saved, guardianReview: true } : saved);
   }
   managed = [...sessions.values()];
 }
@@ -135,10 +154,30 @@ function refreshProviderHistory() {
   lastProviderHistoryScan = Date.now();
   providerHistoryWorker.postMessage(null);
 }
+const keepAwakeFile = path.join(app.getPath("userData"), "keep-awake-while-working");
+let keepAwakeEnabled = fs.existsSync(keepAwakeFile);
+let keepAwakeBlocker;
+let liveAgentTerminalIds = new Set();
+
+function syncKeepAwake() {
+  const active = keepAwakeEnabled && !quitting && connection === "connected" &&
+    ledgerSessions.some((row) => row.state === "working" && liveAgentTerminalIds.has(row.terminalId));
+  if (active === (keepAwakeBlocker !== undefined)) return;
+  if (active) {
+    keepAwakeBlocker = powerSaveBlocker.start("prevent-app-suspension");
+  } else {
+    powerSaveBlocker.stop(keepAwakeBlocker);
+    keepAwakeBlocker = undefined;
+  }
+  publish({ event: "keep-awake", active });
+}
+
 let ownedIds = new Set();
 const allTerminals = async () => {
   const rows = await service.call("list");
   ownedIds = new Set(rows.map((t) => t.id));
+  liveAgentTerminalIds = new Set(rows.filter((row) => !row.exited && row.agent !== "shell").map((row) => row.id));
+  syncKeepAwake();
   return inventory.reconcile(rows);
 };
 const pinsFile = path.join(app.getPath("userData"), "pinned-sessions.json");
@@ -168,6 +207,8 @@ const publishStore = () => {
   scheduleHistoryIndex();
   publish({
     event: "store",
+    compactShell: service.hello?.compactShell ?? null,
+    terminalServiceUpdate: !terminalServiceCurrent(),
     sessions: managed,
     pinned,
     hidden,
@@ -181,9 +222,10 @@ async function serviceEvent(event) {
       browserAgent.revoke();
     publish({ ...event, terminals });
     publishStore();
-    updateBrowserService();
+    updateTerminalService();
   } else if (event.event === "history") {
     ledgerSessions = event.sessions;
+    syncKeepAwake();
     mergeSessionHistory();
     publishStore();
     if (connection === "connected") {
@@ -200,6 +242,8 @@ const publish = (event) => {
 };
 const inbox = createInbox(path.join(app.getPath("userData"), "inbox.json"),
   (entries) => publish({ event: "inbox", entries }));
+const followingUp = new Set();
+const sentFollowUps = new WeakSet();
 const alertPreference = path.join(app.getPath("userData"), "hide-session-alerts");
 const alertIcon = app.isPackaged
   ? path.join(process.resourcesPath, "runhuddle-icon.png")
@@ -209,18 +253,8 @@ let viewedTerminal = null;
 let pendingAlertSession;
 let alertRendererReady = false;
 
-function clearInboxCompletion(id) {
-  if (!id) return;
-  try {
-    inbox.dismiss(id);
-  } catch (error) {
-    publish({ event: "error", message: "Could not update the Inbox: " + error.message });
-  }
-}
-
 function openAlertSession(target) {
   if (!target || quitting) return;
-  clearInboxCompletion(target.inboxId);
   const { provider, sessionID } = target;
   target = { provider, sessionID };
   if (!window || window.isDestroyed()) createWindow();
@@ -381,10 +415,21 @@ function createWindow() {
       sandbox: true,
     },
   });
+  recordingShortcuts = false;
+  window.webContents.on("before-input-event", (event, input) => {
+    if (recordingShortcuts || input.type !== "keyDown") return;
+    const key = shortcutForInput(input, process.platform === "darwin");
+    const command = key === shortcuts.palette ? "command-palette" : key === shortcuts.terminal ? "quick-terminal" : undefined;
+    if (!command) return;
+    event.preventDefault();
+    if (!input.isAutoRepeat) publish({ event: "dashboard-command", command });
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   previewBrowser = browserPreview(window, publish, app.getPath("temp"), browserAgent.revoke);
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.webContents.on("did-start-loading", () => {
+    recordingShortcuts = false;
+    window.webContents.setIgnoreMenuShortcuts(false);
     browserAgent.revoke();
     previewBrowser.layout(null);
     viewedTerminal = null;
@@ -450,6 +495,7 @@ else {
         if (recovering) return recovering;
         browserAgent.revoke();
         connection = "reconnecting";
+        syncKeepAwake();
         publish({ event: "connection", state: connection });
         recovering = (async () => {
           for (let attempt = 0; attempt < 3 && !quitting; attempt++) {
@@ -468,6 +514,7 @@ else {
               publishStore();
               publish({ event: "terminals", terminals });
               connection = "connected";
+              syncKeepAwake();
               publish({ event: "connection", state: connection });
               return;
             } catch {}
@@ -481,10 +528,10 @@ else {
         });
         return recovering;
       }
-      updateBrowserService = () => {
-        if (quitting || service.hello?.browserTools || recovering || updatingBrowserService ||
+      updateTerminalService = () => {
+        if (quitting || terminalServiceCurrent() || recovering || updatingTerminalService ||
             launchingTerminals || inventory.rows.some((row) => ownedIds.has(row.id) && !row.exited)) return;
-        updatingBrowserService = (async () => {
+        updatingTerminalService = (async () => {
           // Recheck the service immediately before stopping it. New launches
           // through this window wait for the replacement service.
           const rows = await service.call("list");
@@ -492,13 +539,38 @@ else {
           await service.call("shutdown");
           await recover();
         })().catch(() => {}).finally(() => {
-          updatingBrowserService = undefined;
+          updatingTerminalService = undefined;
         });
       };
       service.on("disconnected", recover);
-      updateBrowserService();
-      if (updatingBrowserService) await updatingBrowserService;
+      updateTerminalService();
+      if (updatingTerminalService) await updatingTerminalService;
       handle("reconnect", recover);
+      handle("update-terminal-service", async () => {
+        if (terminalServiceCurrent()) return;
+        const result = await dialog.showMessageBox(window, {
+          type: "warning",
+          message: "Stop all terminals and update the terminal service?",
+          detail: "This stops every running shell and agent process. Saved conversations stay in history.",
+          buttons: ["Cancel", "Stop terminals and update"],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        if (result.response !== 1 || terminalServiceCurrent()) return;
+        if (connection !== "connected" || launchingTerminals || updatingTerminalService)
+          throw Error("Wait for RunHuddle to finish connecting to its terminals, then try again.");
+        updatingTerminalService = (async () => {
+          await service.call("shutdown");
+          await recover();
+          if (connection !== "connected" || !terminalServiceCurrent())
+            throw Error("RunHuddle couldn’t update the terminal service. Try reopening RunHuddle.");
+        })();
+        try {
+          await updatingTerminalService;
+        } finally {
+          updatingTerminalService = undefined;
+        }
+      });
       handle("open-terminal-link", async (value) => {
         const url = typeof value === "string" && !/[\x00-\x1f\x7f]/.test(value)
           ? URL.parse(value) : null;
@@ -507,7 +579,7 @@ else {
         const { response } = await dialog.showMessageBox(window, {
           type: "warning",
           message: "Open this link in your default browser?",
-          detail: url.href + "\n\nOnly open links from terminal output if you trust the destination.",
+          detail: url.href + "\n\nOnly open links if you trust the destination.",
           buttons: ["Cancel", "Open Link"],
           defaultId: 0,
           cancelId: 0,
@@ -524,12 +596,74 @@ else {
         const next = typeof id === "string" && id.length < 128 ? id : null;
         if (next !== viewedTerminal) browserAgent.revoke();
         viewedTerminal = next;
+        const row = next && ledgerSessions.find((session) => session.terminalId === next);
+        if (row && activeAlerts.has(sessionKey(row))) dismissSessionAlert(sessionKey(row));
+      });
+      handle("inbox-preview", (id) => {
+        const entry = inbox.list().find((item) => item.id === id);
+        if (!entry) return {};
+        const row = managed.find((item) => sessionKey(item) === sessionKey(entry));
+        if (!row || !hasHistory(row)) return {};
+        return runHistoryWorker({ session: historySource(row), attentionKind: entry.kind }, 10000).result;
+      });
+      function liveDashboardSession(provider, sessionID, terminalId) {
+        return ledgerSessions.find((row) => row.provider === provider && row.sessionID === sessionID &&
+          row.terminalId && row.terminalId === terminalId && hasHistory(row));
+      }
+      handle("codex-prompt-ready", async (sessionID, terminalId) => {
+        const row = liveDashboardSession("Codex", sessionID, terminalId);
+        if (connection !== "connected" || row?.state !== "disconnected" || row.simulated) return false;
+        return codexPromptReady(await service.call("replay", { id: terminalId }));
+      });
+      handle("preview-project-file", (provider, sessionID, file) => {
+        const row = managed.find((session) => session.provider === provider && session.sessionID === sessionID);
+        if (!row) throw Error("This session is no longer available.");
+        return readProjectPreview(row.cwd, file);
+      });
+      handle("live-session-preview", (provider, sessionID, terminalId) => {
+        const row = liveDashboardSession(provider, sessionID, terminalId);
+        if (!row || connection !== "connected") return {};
+        return runHistoryWorker({ session: historySource(row),
+          attentionKind: row.state === "needsInput" ? "input" : "completion" }, 10000).result;
+      });
+      async function dashboardFollowUp(row, terminalId, message, review, images) {
+        const key = sessionKey(row);
+        if (connection !== "connected" || followingUp.has(key) || (review && sentFollowUps.has(review)))
+          throw Error("This session is no longer available for a follow-up.");
+        followingUp.add(key);
+        try {
+          await sendDashboardFollowUp(service, row, terminalId, message, () =>
+            connection === "connected" && (!review || inbox.list().includes(review)),
+            images, (bytes) => nativeImage.createFromBuffer(Buffer.from(bytes)).toPNG());
+          if (!review) return;
+          sentFollowUps.add(review);
+          try {
+            inbox.dismiss(review.id);
+            if (activeAlerts.get(key)?.inboxId === review.id) dismissSessionAlert(key);
+          } catch (error) {
+            publish({ event: "error", message: "Follow-up sent. Could not update the Inbox: " + error.message });
+          }
+        } finally {
+          followingUp.delete(key);
+        }
+      }
+      handle("live-session-follow-up", (provider, sessionID, terminalId, message, images) => {
+        const row = liveDashboardSession(provider, sessionID, terminalId);
+        if (!row) throw Error("This session is no longer available.");
+        const review = inbox.list().find((entry) => entry.kind === "completion" && sessionKey(entry) === sessionKey(row));
+        return dashboardFollowUp(row, terminalId, message, review, images);
+      });
+      handle("copy-inbox-reply", (id, text) => {
+        if (!inbox.list().some((entry) => entry.id === id && entry.kind === "input") ||
+            typeof text !== "string" || !text.trim() || text.length > 2000)
+          throw Error("This reply is no longer available.");
+        clipboard.writeText(text);
       });
       handle("inbox-action", (id, action) => {
         const entry = inbox.list().find((row) => row.id === id);
         if (!entry) return false;
         if (action === "open") {
-          openAlertSession({ ...entry, inboxId: entry.kind === "completion" ? id : undefined });
+          openAlertSession(entry);
         } else if (action === "dismiss" && entry.kind === "completion") {
           inbox.dismiss(id);
           const key = entry.provider + ":" + entry.sessionID;
@@ -538,6 +672,18 @@ else {
         return true;
       });
       handle("screenshot-path", (id) => screenshots.file(id));
+      handle("screenshot-draft", async (id) => {
+        const file = await screenshots.file(id);
+        const handle = await fs.promises.open(file, "r");
+        try {
+          const buffer = Buffer.alloc(10 * 1024 * 1024 + 1);
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+          if (bytesRead === buffer.length) throw Error("Screenshots must be 10 MB or smaller.");
+          return buffer.subarray(0, bytesRead);
+        } finally {
+          await handle.close();
+        }
+      });
       handle("browser-state", () => previewBrowser.state());
       handle("browser-layout", (rect) => previewBrowser.layout(rect));
       handle("browser-navigate", (url) => previewBrowser.navigate(url));
@@ -568,6 +714,9 @@ else {
           notes,
           terminals,
           connection,
+          keepAwakeActive: keepAwakeBlocker !== undefined,
+          compactShell: service.hello?.compactShell ?? null,
+          terminalServiceUpdate: !terminalServiceCurrent(),
           openAlert,
           inbox: inbox.list(),
           recaps,
@@ -629,6 +778,27 @@ else {
         }
         return runHistoryWorker({ session: historySource(row), anchor }, 10000).result;
       });
+      handle("installed-review-agents", installedReviewAgents);
+      handle("review-project-history", async (folder, agent) => {
+        if (typeof folder !== "string" || !Object.hasOwn(providers, agent)) throw Error("Choose a project and an agent.");
+        if (recapRequest) throw Error("An AI review is already running.");
+        const projectSessions = managed.filter((row) => row.cwd === folder && hasHistory(row) &&
+          !row.guardianReview && !hidden.projects.includes(folder) &&
+          !hidden.sessions.includes(sessionKey(row))).sort((a, b) => b.updated - a.updated);
+        const controller = new AbortController();
+        recapRequest = { controller, folder };
+        try {
+          return await reviewProjectHistory(projectSessions.filter((row) => !row.terminalId), agent, controller.signal, {
+            project: path.basename(folder),
+            liveSessions: projectSessions.filter((row) => row.terminalId),
+          });
+        } finally {
+          recapRequest = undefined;
+        }
+      });
+      handle("cancel-project-history-review", (folder) => {
+        if (typeof folder === "string" && recapRequest?.folder === folder) recapRequest.controller.abort();
+      });
       handle("generate-recap", async (provider, sessionID, agent) => {
         if (recapRequest) throw Error("A recap is already being generated.");
         const row = managed.find((session) =>
@@ -661,10 +831,11 @@ else {
         const hiddenProjects = new Set(hidden.projects);
         const hiddenSessions = new Set(hidden.sessions);
         const generation = searchGeneration;
+        const folders = new Set(Array.isArray(folder) ? folder : folder ? [folder] : []);
         const sessions = managed.filter((row) =>
           hasHistory(row) &&
           !hiddenProjects.has(row.cwd) && !hiddenSessions.has(sessionKey(row)) &&
-          (!folder || row.cwd === folder) &&
+          (!folders.size || folders.has(row.cwd)) &&
           (scope !== "pinned" || pins.has(sessionKey(row))),
         ).sort((a, b) => b.updated - a.updated).map(historySource);
         const indexed = historyIndex.search(sessions, query, refresh !== false);
@@ -716,7 +887,7 @@ else {
         });
         return result.canceled ? null : result.filePaths[0];
       });
-      handle("create", (cwd, agent) => createTerminal({ cwd, agent }));
+      handle("create", (cwd, agent, compactShell) => createTerminal({ cwd, agent, compactShell: compactShell === true }));
       handle("resume", async (provider, sessionID) => {
         const row = managed.find(
           (s) => s.provider === provider && s.sessionID === sessionID,
@@ -736,27 +907,48 @@ else {
       handle("title", async (id, title) => {
         if (ownedIds.has(id)) await service.call("title", { id, title });
       });
-      handle("set-history-hidden", async (kind, id, hide) => {
-        if ((kind !== "projects" && kind !== "sessions") || typeof id !== "string" ||
-            typeof hide !== "boolean" || (kind === "projects" && !path.isAbsolute(id)))
+      handle("set-history-hidden", async (kind, selection, hide) => {
+        const batch = Array.isArray(selection);
+        const selected = new Set(batch ? selection : [selection]);
+        if ((kind !== "projects" && kind !== "sessions") || (batch && kind !== "sessions") ||
+            typeof hide !== "boolean" || [...selected].some((id) =>
+              typeof id !== "string" || (kind === "projects" && !path.isAbsolute(id))))
           throw Error("Invalid cleanup selection.");
         if (hide) {
-          const session = kind === "sessions" ? managed.find((row) => sessionKey(row) === id) : undefined;
-          if (kind === "sessions" && !session) throw Error("Session not available.");
           const terminals = connection === "connected" ? await allTerminals() : inventory.rows;
-          const running = terminals.some((t) => !t.exited && (session
-            ? t.id === session.terminalId || (t.agent === session.provider.toLowerCase() && t.sessionID === session.sessionID)
-            : t.cwd === id));
-          if (running) throw Error(session ? "End the running session before hiding it." : "End this project’s running terminals before hiding it.");
+          const sessions = new Map(managed.map((row) => [sessionKey(row), row]));
+          const protectedSessions = batch ? new Set([
+            ...pinned,
+            ...inbox.list().map(sessionKey),
+            ...notes.flatMap((note) => note.sourceSessionID ? [
+              sessionKey({ provider: note.sourceProvider, sessionID: note.sourceSessionID }),
+            ] : []),
+            ...continuations.flatMap((link) => [sessionKey(link.from), sessionKey(link.to)]),
+          ]) : undefined;
+          for (const id of selected) {
+            const session = sessions.get(id);
+            if (kind === "sessions" && !session) throw Error("Session not available.");
+            if (protectedSessions?.has(id) || (batch && ["working", "needsInput"].includes(session?.state)))
+              throw Error("A selected session is now active, followed, linked, or needs attention. Review the suggestions again.");
+            const running = terminals.some((t) => !t.exited && (session
+              ? t.id === session.terminalId || (t.agent === session.provider.toLowerCase() && t.sessionID === session.sessionID)
+              : t.cwd === id));
+            if (running) throw Error(session ? "End the running session before hiding it." : "End this project’s running terminals before hiding it.");
+          }
         }
         const ids = new Set(hidden[kind]);
-        if (hide) ids.add(id);
-        else ids.delete(id);
+        const changed = [...selected].filter((id) => ids.has(id) !== hide);
+        if (!changed.length) return changed;
+        for (const id of changed) {
+          if (hide) ids.add(id);
+          else ids.delete(id);
+        }
         const next = { ...hidden, [kind]: [...ids] };
         fs.writeFileSync(cleanupFile + ".tmp", JSON.stringify(next), { mode: 0o600 });
         fs.renameSync(cleanupFile + ".tmp", cleanupFile);
         hidden = next;
         publishStore();
+        return changed;
       });
       handle("pin-session", (provider, sessionID, shouldPin) => {
         if (typeof shouldPin !== "boolean" || !managed.some((row) => row.provider === provider && row.sessionID === sessionID))
@@ -832,11 +1024,11 @@ else {
             inventory.forget(id);
           }
           if (!service.hello?.browserTools) {
-            if (!updatingBrowserService) {
+            if (!updatingTerminalService) {
               await allTerminals();
-              updateBrowserService();
+              updateTerminalService();
             }
-            if (updatingBrowserService) await updatingBrowserService;
+            if (updatingTerminalService) await updatingTerminalService;
             if (!service.hello?.browserTools) throw Error("RunHuddle couldn’t update the terminal service. Try again after the older terminals have ended.");
           }
           return createTerminal({ cwd: terminal.cwd, agent: terminal.agent, resume: terminal.sessionID }, true);
@@ -905,7 +1097,24 @@ else {
           return terminalUpdateBlocker(terminals, sessions, process.platform);
         },
       });
-      Menu.setApplicationMenu(
+      handle("keyboard-shortcuts", () => shortcuts);
+      handle("record-keyboard-shortcuts", (recording) => {
+        recordingShortcuts = recording === true;
+        window?.webContents.setIgnoreMenuShortcuts(recordingShortcuts);
+      });
+      handle("save-keyboard-shortcuts", (value) => {
+        const next = validateShortcuts(value);
+        fs.writeFileSync(shortcutsFile + ".tmp", JSON.stringify(next), { mode: 0o600 });
+        fs.renameSync(shortcutsFile + ".tmp", shortcutsFile);
+        shortcuts = next;
+        configureMenu();
+        return shortcuts;
+      });
+      const dashboardItem = (command, label, accelerator) => ({
+        id: "dashboard-" + command, label, accelerator,
+        click: () => publish({ event: "dashboard-command", command }),
+      });
+      const configureMenu = () => Menu.setApplicationMenu(
         Menu.buildFromTemplate([
           {
             label: "RunHuddle",
@@ -937,10 +1146,44 @@ else {
               },
             ],
           },
+          {
+            label: "Session",
+            submenu: [
+              dashboardItem("new-session", "New Session…", "CmdOrCtrl+N"),
+              dashboardItem("quick-terminal", "Quick Terminal", shortcuts.terminal),
+              dashboardItem("keyboard-shortcuts", "Keyboard Shortcuts…"),
+              dashboardItem("projects", "Browse Projects"),
+              dashboardItem("recent", "Recent Sessions"),
+              { type: "separator" },
+              {
+                id: "keep-awake-while-working",
+                label: process.platform === "darwin"
+                  ? "Keep Mac Awake While Agents Are Working"
+                  : "Keep Computer Awake While Agents Are Working",
+                type: "checkbox",
+                checked: keepAwakeEnabled,
+                click: (item) => {
+                  try {
+                    if (item.checked) fs.writeFileSync(keepAwakeFile, "");
+                    else fs.rmSync(keepAwakeFile, { force: true });
+                  } catch {
+                    item.checked = keepAwakeEnabled;
+                    publish({ event: "error", message: "Could not save the keep-awake preference." });
+                    return;
+                  }
+                  keepAwakeEnabled = item.checked;
+                  syncKeepAwake();
+                },
+              },
+            ],
+          },
           { role: "editMenu" },
           {
             label: "View",
             submenu: [
+              dashboardItem("dashboard", "Project Dashboard"),
+              dashboardItem("workspace", "Workspace"),
+              { type: "separator" },
               { role: "reload" },
               { role: "toggleDevTools" },
               {
@@ -1036,6 +1279,16 @@ else {
             ],
           },
           {
+            label: "Navigate",
+            submenu: [
+              dashboardItem("command-palette", "Command Palette…", shortcuts.palette),
+              { type: "separator" },
+              dashboardItem("next-review", "Next Review"),
+              dashboardItem("next-attention", "Next Attention", "Alt+Shift+Right"),
+              dashboardItem("return-session", "Return to Interrupted Session", "Alt+Shift+Left"),
+            ],
+          },
+          {
             label: "Help",
             submenu: [{
               id: "getting-started",
@@ -1045,6 +1298,7 @@ else {
           },
         ]),
       );
+      configureMenu();
       createWindow();
       refreshProviderHistory();
       if (!fs.existsSync(screenshotPreference)) screenshots.enable();
@@ -1059,6 +1313,7 @@ else {
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", () => {
     quitting = true;
+    syncKeepAwake();
     browserAgent.close();
     screenshots.stop();
     recapRequest?.controller.abort();

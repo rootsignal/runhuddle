@@ -23,6 +23,12 @@ function sessionRow(agent, id, cwd, title, preview, updated) {
   };
 }
 
+function isGuardianReview(row) {
+  if (row.thread_source === "guardian_review") return true;
+  try { return JSON.parse(row.source)?.subagent?.other === "guardian"; }
+  catch { return false; }
+}
+
 function codexRows(home) {
   const databases = entries(home).filter((entry) => entry.isFile() && /^state_\d+\.sqlite$/.test(entry.name))
     .sort((a, b) => Number(b.name.match(/\d+/)[0]) - Number(a.name.match(/\d+/)[0]));
@@ -31,14 +37,19 @@ function codexRows(home) {
     try {
       database = new DatabaseSync(path.join(home, name), { readOnly: true });
       const columns = new Set(database.prepare("PRAGMA table_info(threads)").all().map((column) => column.name));
-      const optional = ["first_user_message", "has_user_event", "preview"]
+      const optional = ["first_user_message", "has_user_event", "preview", "thread_source", "source"]
         .filter((column) => columns.has(column));
       const rows = database.prepare(
         "SELECT " + ["id", "cwd", "title", "updated_at", ...optional].join(", ") + " FROM threads",
       ).all();
-      return rows.filter((row) => row.has_user_event !== 0 || row.first_user_message || row.preview)
-        .map((row) => sessionRow("codex", row.id, row.cwd, row.title || row.first_user_message,
-          row.preview || row.first_user_message, row.updated_at)).filter(Boolean);
+      return rows.flatMap((row) => {
+        const guardianReview = isGuardianReview(row);
+        if (!guardianReview && row.has_user_event === 0 && !row.first_user_message && !row.preview) return [];
+        const session = sessionRow("codex", row.id, row.cwd, row.title || row.first_user_message,
+          row.preview || row.first_user_message, row.updated_at);
+        if (!session) return [];
+        return [guardianReview ? { ...session, guardianReview: true } : session];
+      });
     } catch {} finally { database?.close(); }
   }
   return [];

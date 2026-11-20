@@ -8,6 +8,7 @@ export function CompanionShell({
   owner,
   terminal,
   visible,
+  active,
   connected,
   children,
   onHide,
@@ -18,6 +19,7 @@ export function CompanionShell({
   owner: TerminalInfo;
   terminal?: TerminalInfo;
   visible: boolean;
+  active: boolean;
   connected: boolean;
   children: ReactNode;
   onHide: () => void;
@@ -32,7 +34,7 @@ export function CompanionShell({
   if (!visible) return <>{children}</>;
   return (
     <SplitView
-      axis="down"
+      axis="right"
       ratio={ratio}
       onRatio={(next) => {
         setRatio(next);
@@ -68,6 +70,7 @@ export function CompanionShell({
             <TerminalPane
               id={terminal.id}
               visible={true}
+              active={active}
               focused={focused}
               onError={onError}
               onTitle={() => {}}
