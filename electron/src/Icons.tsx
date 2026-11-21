@@ -7,12 +7,15 @@ export function Icon({
     | "notes"
     | "inbox"
     | "history"
+    | "refresh"
+    | "branch"
     | "changes"
     | "browser"
     | "terminal"
     | "plus"
     | "close"
     | "sidebar"
+    | "layout"
     | "folder"
     | "chevron"
     | "search"
@@ -28,13 +31,14 @@ export function Icon({
     | "check"
     | "pencil"
     | "more"
-    | "expand"
-    | "collapse"
     | "open-workspace";
   size?: number;
 }) {
   const paths = {
+    layout: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M13 4v16M13 12h8" /></>,
     browser: <><rect x="2.5" y="4" width="19" height="16" rx="2.5" /><path d="M3 9h18m-14-2h.1m3 0h.1" /></>,
+    branch: <><circle cx="7" cy="5" r="2" /><circle cx="7" cy="19" r="2" /><circle cx="17" cy="7" r="2" /><path d="M7 7v10m10-8c0 5-4 6-10 6" /></>,
+    refresh: <path d="M20 5v5h-5m4.4 0a7.5 7.5 0 1 0 .2 4.6" />,
     history: <path d="M3 4v5h5M3.8 9A8 8 0 1 1 4 16m8-8v4l3 2" />,
     inbox: <path d="M3 13l3-7h12l3 7v6H3Zm0 0h5l2 3h4l2-3h5" />,
     notes: (
@@ -80,8 +84,6 @@ export function Icon({
     attention: <path d="M12 9v4m0 3h.01M11 4 2.5 18a1 1 0 0 0 .9 1.5h17.2a1 1 0 0 0 .9-1.5L13 4a1.2 1.2 0 0 0-2 0Z" />,
     lock: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 5v1" /></>,
     pencil: <path d="m14 6 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20Z" />,
-    expand: <path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" />,
-    collapse: <path d="M4 9h5V4m11 5h-5V4M9 20v-5H4m11 5v-5h5" />,
     "open-workspace": <path d="M13 4h7v7m0-7-9 9m-1-7H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />,
     more: <path d="M5 12h.01m7 0h.01m7 0h.01" strokeWidth="3" />,
     play: <path d="M8 5v14l11-7L8 5Z" />,

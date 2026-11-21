@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { gitAction, gitChanges, watchRepository } from "../main/git.mjs";
+import { gitAction, gitChanges, gitPullRequestURL, prepareGitPullRequest, pullRequestPrompt, parsePullRequestDraft, gitRepositoryActions, watchRepository } from "../main/git.mjs";
 test("explicit staging, initial unstage, index-only commits and upstream push", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-actions-"));
   const work = path.join(dir, "work"), remote = path.join(dir, "remote");
@@ -80,5 +80,88 @@ test("bulk staging respects ignores and bulk unstaging preserves edits, deletion
     assert.equal(fs.readFileSync(path.join(dir, "kept.txt"), "utf8"), "later edit");
     assert.equal(fs.readFileSync(path.join(dir, "new[1].txt"), "utf8"), "new");
     assert.equal(fs.existsSync(path.join(dir, "deleted.txt")), false);
+  } finally { removeFixture(dir); }
+});
+
+test("feature branch workflow uses the selected base and fast-forward pulls", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-branch-workflow-"));
+  const work = path.join(dir, "work"), remote = path.join(dir, "remote"), peer = path.join(dir, "peer");
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const write = (cwd, text) => fs.writeFileSync(path.join(cwd, "feature.txt"), text);
+  const identity = (cwd) => {
+    git(cwd, "config", "user.name", "Test");
+    git(cwd, "config", "user.email", "test@example.invalid");
+  };
+  try {
+    fs.mkdirSync(work);
+    git(dir, "init", "--bare", "-q", remote);
+    git(work, "init", "-q", "-b", "develop");
+    identity(work);
+    write(work, "develop");
+    fs.mkdirSync(path.join(work, ".github"));
+    fs.writeFileSync(path.join(work, ".github", "PULL_REQUEST_TEMPLATE.md"), "## Summary\n\n## Test plan\n");
+    git(work, "add", ".");
+    git(work, "commit", "-qm", "Develop");
+    git(work, "remote", "add", "origin", remote);
+    git(work, "push", "-qu", "origin", "develop");
+    git(work, "switch", "-qc", "main");
+    write(work, "main");
+    git(work, "commit", "-qam", "Main differs");
+    assert.ok((await gitRepositoryActions(work)).refs.includes("refs/remotes/origin/develop"));
+    const create = { name: "feature/dashboard", ref: "refs/remotes/origin/develop" };
+    await assert.rejects(gitAction(work, "create-branch", create, async () => { throw Error("Agent working"); }), /Agent working/);
+    assert.equal(git(work, "branch", "--show-current"), "main");
+    await gitAction(work, "create-branch", create);
+    assert.equal(fs.readFileSync(path.join(work, "feature.txt"), "utf8"), "develop");
+    assert.equal((await gitChanges(work)).upstream, "");
+    write(work, "feature");
+    await assert.rejects(gitAction(work, "switch-branch", { ref: "refs/heads/main" }), /overwritten/);
+    assert.equal(fs.readFileSync(path.join(work, "feature.txt"), "utf8"), "feature");
+    await gitAction(work, "stage", "feature.txt");
+    await gitAction(work, "commit", "Feature");
+    await gitAction(work, "publish", { remote: "origin" });
+    assert.equal((await gitChanges(work)).upstream, "origin/feature/dashboard");
+    git(dir, "clone", "-q", "-b", "feature/dashboard", remote, peer);
+    identity(peer);
+    write(peer, "incoming");
+    git(peer, "commit", "-qam", "Incoming");
+    git(peer, "push", "-q");
+    await gitAction(work, "fetch", { remote: "origin" });
+    assert.equal((await gitChanges(work)).behind, 1);
+    assert.equal(fs.readFileSync(path.join(work, "feature.txt"), "utf8"), "feature");
+    await gitAction(work, "pull");
+    assert.equal(fs.readFileSync(path.join(work, "feature.txt"), "utf8"), "incoming");
+    write(work, "local");
+    git(work, "commit", "-qam", "Local");
+    write(peer, "remote");
+    git(peer, "commit", "-qam", "Remote");
+    git(peer, "push", "-q");
+    await assert.rejects(gitAction(work, "pull"), /diverged/);
+    assert.equal(fs.readFileSync(path.join(work, "feature.txt"), "utf8"), "local");
+    git(work, "remote", "set-url", "origin", "git@github.com:example/project.git");
+    assert.equal(await gitPullRequestURL(work, "refs/remotes/origin/develop"),
+      "https://github.com/example/project/compare/develop...feature%2Fdashboard?quick_pull=1");
+    const target = "refs/remotes/origin/develop";
+    const draft = await prepareGitPullRequest(work, target);
+    assert.equal(draft.title, "Dashboard");
+    assert.equal(draft.templatePath, ".github/PULL_REQUEST_TEMPLATE.md");
+    assert.match(draft.body, /## Test plan/);
+    assert.doesNotMatch(draft.body, /## Commits/);
+    assert.doesNotMatch(draft.body, /Changed files|feature\.txt/);
+    assert.doesNotMatch(draft.body, /- Local/);
+    assert.equal(draft.unpublished, 1);
+    const prompt = await pullRequestPrompt(work, target, [{ role: "user", text: "Explain the review workflow." }]);
+    assert.match(prompt, /Never claim tests ran or passed/);
+    assert.match(prompt, /\+remote/);
+    assert.match(prompt, /Explain the review workflow/);
+    assert.match(prompt, /published diff determines which changes belong/);
+    assert.doesNotMatch(prompt, /\+local/);
+    const generated = parsePullRequestDraft('```json\n{"title":"Describe behavior","body":"## Changes\\n- Preserves prior data."}\n```');
+    assert.deepEqual(generated, { title: "Describe behavior", body: "## Changes\n- Preserves prior data." });
+    assert.throws(() => parsePullRequestDraft('{"title":"No body"}'), /usable pull request draft/);
+    const address = new URL(await gitPullRequestURL(work, target, { head: draft.head, title: "Review & refine", body: "## Test plan\n- [x] app" }));
+    assert.equal(address.searchParams.get("title"), "Review & refine");
+    assert.equal(address.searchParams.get("body"), "## Test plan\n- [x] app");
+    await assert.rejects(gitPullRequestURL(work, target, { head: "other", title: draft.title, body: draft.body }), /branch changed/);
   } finally { removeFixture(dir); }
 });

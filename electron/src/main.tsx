@@ -5,6 +5,7 @@ import { useDismissMenus } from "./useDismissMenus";
 import { UsageControls } from "./UsageControls";
 import { HiddenHistoryDialog } from "./HiddenHistoryDialog";
 import { useDashboardDrafts } from "./dashboard-drafts";
+import { McpSettings } from "./GitHubPRControl";
 import { ProjectsDashboard, type SessionDetails } from "./ProjectsDashboard";
 import { ProjectOverview } from "./ProjectOverview";
 import { SessionStatus } from "./SessionStatus";
@@ -137,7 +138,7 @@ function App() {
   const [showNotes, setShowNotes] = useState(0);
   const [showHiddenHistory, setShowHiddenHistory] = useState(false);
   const [dashboardCommand, setDashboardCommand] = useState<DashboardRequest>();
-  const [keyboardTool, setKeyboardTool] = useState<"command-palette" | "quick-terminal" | "keyboard-shortcuts">();
+  const [keyboardTool, setKeyboardTool] = useState<"command-palette" | "quick-terminal" | "keyboard-shortcuts" | "mcp-settings">();
   const [keyboardBindings, setKeyboardBindings] = useState(defaultBindings);
   const [dashboardFolder, setDashboardFolder] = useState("");
   const [quickTerminalID, setQuickTerminalID] = useState(() => localStorage.getItem("quickTerminalID") || "");
@@ -155,7 +156,7 @@ function App() {
   }, [quickTerminalID]);
   function runAppCommand(action: AppCommand | DashboardRequest) {
     if (typeof action === "string" &&
-        (action === "command-palette" || action === "quick-terminal" || action === "keyboard-shortcuts")) {
+        (action === "command-palette" || action === "quick-terminal" || action === "keyboard-shortcuts" || action === "mcp-settings")) {
       setKeyboardTool((previous) => previous === action ? undefined : action);
       return;
     }
@@ -1286,6 +1287,7 @@ function App() {
         {keyboardTool === "keyboard-shortcuts" && <KeyboardShortcutSettings bindings={keyboardBindings}
           onSave={(next) => { setKeyboardBindings(next); setKeyboardTool(undefined); }}
           onClose={() => setKeyboardTool(undefined)} />}
+        {keyboardTool === "mcp-settings" && <McpSettings onClose={() => setKeyboardTool(undefined)} />}
         {keyboardTool === "quick-terminal" && <QuickTerminal terminal={quickTerminal} cwd={quickDirectory}
           connected={connection === "connected"} animate={animateQuickTerminal} onAnimate={setAnimateQuickTerminal}
           onStart={startQuickTerminal} onEnd={endQuickTerminal}

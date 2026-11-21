@@ -119,8 +119,7 @@ test("a terminal reset invalidates a retained bracketed-paste marker", async () 
 test("queued follow-up requires an empty Codex prompt even when the session reports idle", { skip: process.platform === "win32" }, async () => {
   const replay = { cols: 100, rows: 30, data: "\x1b[?2004h› Ask Codex to do anything\r\n← for agents · ? for shortcuts" };
   const blocked = fixture({ replay: { ...replay, data: replay.data.replace("Ask Codex to do anything", "unsent input") } });
-  await assert.rejects(sendDashboardFollowUp(blocked.service, entry, terminalId, "Continue.", () => true, [], undefined, true),
-    /empty Codex prompt/);
+  assert.equal(await sendDashboardFollowUp(blocked.service, entry, terminalId, "Continue.", () => true, [], undefined, true), "waiting");
   assert.deepEqual(blocked.writes, []);
   const ready = fixture({ replay });
   await sendDashboardFollowUp(ready.service, entry, terminalId, "Continue.", () => true, [], undefined, true);

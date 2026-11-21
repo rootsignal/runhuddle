@@ -59,7 +59,7 @@ const steps = [
   {
     id: "changes",
     title: "Review Git changes",
-    text: "Use Changes to review files and diffs for the current folder, compare your branch against main, and browse recent commits. Stage and commit from the same panel.",
+    text: "Use Changes to review files and diffs for the current folder, compare your branch against a chosen target, and browse recent commits. Stage and commit from the same panel.",
   },
   {
     id: "notes",
@@ -69,7 +69,7 @@ const steps = [
   {
     id: "project-dashboard",
     title: "See all projects",
-    text: "Open Project dashboard to preview items that need attention, switch between live sessions and open their preview, terminal, or changes in place. Use Next attention for a session waiting on you and Next review for a finished turn. Open Browser from the session toolbar to keep a page beside your work. Preview also shows referenced files and web links below the reply. Use Previous turn in Preview to read earlier instructions and replies. Choose Open workspace for your full terminal layout. The Command Palette lets you find sessions, projects, and actions, including Quick Terminal. Find the current bindings in Session → Keyboard Shortcuts.",
+    text: "Open Project dashboard to preview items that need attention, switch between live sessions and open their preview, terminal, or changes in place. Use Next attention for a session waiting on you and Next review for a finished turn. Open Browser from the session toolbar to keep a page beside your work. Preview also shows referenced files and web links below the reply. Dashboard follow-ups can show checkout changes captured during the turn. Use Preview layout to show or hide sections. Use Recent turns in Preview to read earlier instructions and replies. On a narrow pane, use Previous turn. Open the Uncommitted changes summary to inspect pending edits. In Changes, move between files and jump between hunks in the diff. Use Review scope to switch to a branch comparison or recent commits. The Git bar below Changes opens branch and remote actions and lets you prepare a pull request for a published GitHub branch. Connect GitHub in Integrations → GitHub MCP to see open PRs and checks in Changes. Choose Open workspace for your full terminal layout. The Command Palette lets you find sessions, projects, and actions, including Quick Terminal. Find the current bindings in Session → Keyboard Shortcuts.",
   },
   {
     id: "inbox",

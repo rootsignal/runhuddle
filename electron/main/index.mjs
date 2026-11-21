@@ -1,3 +1,5 @@
+import { turnCaptureStore } from "./turn-captures.mjs";
+import { githubActionsFailure, githubMcpAccount, githubPullRequest } from "./github-mcp.mjs";
 import { readProjectPreview } from "./preview-file.mjs";
 import { defaultShortcuts, shortcutForInput, validateShortcuts } from "./shortcuts.mjs";
 import electronUpdater from "electron-updater";
@@ -16,6 +18,7 @@ import {
   Notification,
   powerSaveBlocker,
   shell,
+  safeStorage,
 } from "electron";
 import { Worker } from "node:worker_threads";
 import fs from "node:fs";
@@ -24,7 +27,7 @@ import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { TerminalInventory } from "./terminal-inventory.mjs";
 import { editorService } from "./editors.mjs";
-import { gitChanges, gitDiff, gitAction, watchRepository } from "./git.mjs";
+import { gitChanges, gitDiff, gitTurnCommittedDiffs, gitTurnSnapshot, gitAction, gitRepositoryActions, githubBranch, gitPullRequestURL, prepareGitPullRequest, pullRequestPrompt, parsePullRequestDraft, repositoryRoot, watchRepository } from "./git.mjs";
 import { Service } from "./service.mjs";
 import { screenshotMonitor } from "./screenshots.mjs";
 import { browserAgentBridge } from "./browser-agent-bridge.mjs";
@@ -35,7 +38,7 @@ import { createSessionAlerts } from "./session-alerts.mjs";
 import { codexPromptReady, sendDashboardFollowUp } from "./dashboard-follow-up.mjs";
 import { createInbox } from "./inbox.mjs";
 import { reviewProjectHistory } from "./project-history-review.mjs";
-import { generateRecap, installedReviewAgents, recapStore } from "./recaps.mjs";
+import { generateRecap, installedReviewAgents, recapStore, runRecapPrompt } from "./recaps.mjs";
 import { historyIndexClient } from "./history-index-client.mjs";
 import { providers, validateID } from "./lifecycle.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -46,6 +49,18 @@ app.setPath(
     process.env.RUNHUDDLE_PREVIEW_DATA ||
     path.join(app.getPath("appData"), "RunHuddle Preview"),
 );
+const githubMcpFile = path.join(app.getPath("userData"), "github-mcp.token");
+function githubMcpSettings() {
+  return {
+    configured: fs.existsSync(githubMcpFile),
+    secureStorage: safeStorage.isEncryptionAvailable() && safeStorage.getSelectedStorageBackend?.() !== "basic_text",
+  };
+}
+function readGitHubToken() {
+  if (!githubMcpSettings().secureStorage) throw Error("Secure credential storage is unavailable.");
+  try { return safeStorage.decryptString(fs.readFileSync(githubMcpFile)); }
+  catch { throw Error("The stored GitHub credential could not be read. Reconnect in Integrations → GitHub MCP."); }
+}
 const shortcutsFile = path.join(app.getPath("userData"), "keyboard-shortcuts.json");
 let shortcuts = defaultShortcuts;
 let recordingShortcuts = false;
@@ -92,6 +107,7 @@ const inventory = new TerminalInventory(
   path.join(app.getPath("userData"), "terminal-inventory.json"),
 );
 const noteStore = notesStore(path.join(app.getPath("userData"), "notes", "notes.sqlite"));
+const turnCaptures = turnCaptureStore(path.join(app.getPath("userData"), "turn-captures.json"));
 const savedRecaps = recapStore(path.join(app.getPath("userData"), "recaps", "recaps.sqlite"));
 let recaps = {};
 let recapRequest;
@@ -610,9 +626,12 @@ else {
         return ledgerSessions.find((row) => row.provider === provider && row.sessionID === sessionID &&
           row.terminalId && row.terminalId === terminalId && hasHistory(row));
       }
-      handle("codex-prompt-ready", async (sessionID, terminalId) => {
+      handle("codex-prompt-ready", async (sessionID, terminalId, queued) => {
         const row = liveDashboardSession("Codex", sessionID, terminalId);
-        if (connection !== "connected" || row?.state !== "disconnected" || row.simulated) return false;
+        if (connection !== "connected" || !row || row.simulated ||
+            (row.state !== "disconnected" && (queued !== true || row.state !== "idle"))) return false;
+        if (queued === true && inbox.list().some((entry) => entry.kind === "input" && sessionKey(entry) === sessionKey(row)))
+          return false;
         return codexPromptReady(await service.call("replay", { id: terminalId }));
       });
       handle("preview-project-file", (provider, sessionID, file) => {
@@ -632,10 +651,11 @@ else {
           throw Error("This session is no longer available for a follow-up.");
         followingUp.add(key);
         try {
-          await sendDashboardFollowUp(service, row, terminalId, message, () =>
+          const result = await sendDashboardFollowUp(service, row, terminalId, message, () =>
             connection === "connected" && (!review || inbox.list().includes(review)) &&
               (!queued || !inbox.list().some((entry) => entry.kind === "input" && sessionKey(entry) === key)),
             images, (bytes) => nativeImage.createFromBuffer(Buffer.from(bytes)).toPNG(), queued === true);
+          if (result === "waiting") return result;
           if (!review) return;
           sentFollowUps.add(review);
           try {
@@ -878,9 +898,110 @@ else {
         if (generation !== gitWatchGeneration) stop();
         else stopGitWatch = stop;
       });
-      handle("git-action", gitAction);
+      async function checkoutSessions(root) {
+        if (connection !== "connected") throw Error("Reconnect the terminal service to check which sessions share this checkout.");
+        const canonicalRoot = await fs.promises.realpath(root);
+        const terminals = await allTerminals();
+        const matches = await Promise.all(terminals.filter((term) => !term.exited && term.agent !== "shell").map(async (term) => {
+          try {
+            const directory = await fs.promises.realpath(term.cwd);
+            const relative = path.relative(canonicalRoot, directory);
+            if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(".." + path.sep)) return;
+            const termRoot = await fs.promises.realpath(await repositoryRoot(directory));
+            if (canonicalRoot !== termRoot) return;
+            const session = ledgerSessions.find((row) => row.terminalId === term.id);
+            return { title: session?.title || term.title || term.agent, working: session?.state === "working" };
+          } catch {}
+        }));
+        return matches.filter(Boolean);
+      }
+      handle("git-repository-actions", async (cwd) => {
+        const repository = await gitRepositoryActions(cwd);
+        return { ...repository, sessions: await checkoutSessions(repository.root) };
+      });
+      handle("git-action", (cwd, action, input) => gitAction(cwd, action, input, async (root, options) => {
+        const sessions = await checkoutSessions(root);
+        const working = sessions.filter((session) => session.working);
+        if (working.length) throw Error("Wait for these sessions to finish before changing the checkout: " + working.map((session) => session.title).join(", "));
+        if (sessions.length && options?.confirmCheckout !== true)
+          throw Error("Review the sessions sharing this checkout before applying the change.");
+      }));
+      handle("prepare-git-pull-request", prepareGitPullRequest);
+      handle("draft-git-pull-request", async (cwd, target, agent, source) => {
+        if (recapRequest) throw Error("An AI review is already running.");
+        const key = JSON.stringify(["pull-request", cwd, target]);
+        const controller = new AbortController();
+        recapRequest = { key, controller };
+        try {
+          let context = [];
+          if (source) {
+            const row = managed.find((session) => session.provider === source.provider && session.sessionID === source.sessionID &&
+              hasHistory(session) && !session.guardianReview && !hidden.sessions.includes(sessionKey(session)));
+            const sameCheckout = row && await repositoryRoot(row.cwd) === await repositoryRoot(cwd);
+            if (!sameCheckout) throw Error("That session’s history is unavailable for this checkout.");
+            const { messages } = await runHistoryWorker({ session: historySource(row) }, 10000).result;
+            context = messages.slice(-10).map(({ role, text }) => ({ role, text: text.slice(0, 1400) }));
+            if (!context.length) throw Error("There is no recorded session history yet. Generate from the diff alone.");
+          }
+          controller.signal.throwIfAborted();
+          const prompt = await pullRequestPrompt(cwd, target, context);
+          controller.signal.throwIfAborted();
+          const response = await runRecapPrompt(prompt, agent, controller.signal);
+          controller.signal.throwIfAborted();
+          return parsePullRequestDraft(response.output);
+        } finally { recapRequest = undefined; }
+      });
+      handle("cancel-git-pull-request-draft", (cwd, target) => {
+        if (recapRequest?.key === JSON.stringify(["pull-request", cwd, target])) recapRequest.controller.abort();
+      });
+
+      handle("open-git-pull-request", async (cwd, targetRef, fields) => {
+        if (!fields || typeof fields.head !== "string") throw Error("Prepare the pull request first.");
+        await shell.openExternal(await gitPullRequestURL(cwd, targetRef, fields));
+      });
+      handle("github-mcp-settings", githubMcpSettings);
+      handle("verify-github-mcp", () => githubMcpAccount(readGitHubToken()));
+      handle("create-github-mcp-token", () => shell.openExternal("https://github.com/settings/personal-access-tokens/new"));
+      handle("save-github-mcp", (token) => {
+        if (token === null) fs.rmSync(githubMcpFile, { force: true });
+        else {
+          if (!githubMcpSettings().secureStorage) throw Error("Secure credential storage is unavailable on this device.");
+          if (typeof token !== "string" || !/^[A-Za-z0-9_]{20,300}$/.test(token.trim()))
+            throw Error("Enter a GitHub personal access token.");
+          const pending = githubMcpFile + ".tmp";
+          try {
+            fs.writeFileSync(pending, safeStorage.encryptString(token.trim()), { mode: 0o600 });
+            fs.renameSync(pending, githubMcpFile);
+          } finally { fs.rmSync(pending, { force: true }); }
+        }
+        const settings = githubMcpSettings();
+        publish({ event: "github-mcp-settings" });
+        return settings;
+      });
+      handle("github-actions-failure", async (cwd, jobURL) => {
+        const branch = await githubBranch(cwd);
+        if (!branch) throw Error("GitHub Actions details are available for published GitHub branches.");
+        return githubActionsFailure(readGitHubToken(), branch, jobURL);
+      });
+      handle("github-branch-pr", async (cwd, targetRef) => {
+        const branch = await githubBranch(cwd);
+        if (!branch) return { status: "unsupported" };
+        const settings = githubMcpSettings();
+        if (!settings.configured) return { status: "not-configured" };
+        const prefix = "refs/remotes/" + branch.remote + "/";
+        const target = typeof targetRef === "string"
+          ? targetRef.startsWith(prefix) ? targetRef.slice(prefix.length)
+            : targetRef.startsWith("refs/heads/") ? targetRef.slice("refs/heads/".length) : "" : "";
+        const pr = await githubPullRequest(readGitHubToken(), { ...branch, target });
+        return pr ? { status: "found", pr } : { status: "none" };
+      });
+
       handle("git-changes", gitChanges);
       handle("git-diff", gitDiff);
+      handle("git-turn-snapshot", gitTurnSnapshot);
+      handle("git-turn-committed-diffs", gitTurnCommittedDiffs);
+      handle("git-turn-captures", () => turnCaptures.list());
+      handle("save-git-turn-capture", (session, capture) => turnCaptures.save(session, capture));
       handle("choose-folder", async () => {
         const result = await dialog.showOpenDialog(window, {
           properties: ["openDirectory"],
@@ -1178,12 +1299,15 @@ else {
               },
             ],
           },
+          {
+            label: "Integrations",
+            submenu: [dashboardItem("mcp-settings", "GitHub MCP…")],
+          },
           { role: "editMenu" },
           {
             label: "View",
             submenu: [
               dashboardItem("dashboard", "Project Dashboard"),
-              dashboardItem("workspace", "Workspace"),
               { type: "separator" },
               { role: "reload" },
               { role: "toggleDevTools" },

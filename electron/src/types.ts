@@ -117,9 +117,10 @@ export type KeyboardBindings = { palette: string; terminal: string };
 export type DashboardCommand = "dashboard" | "workspace" | "new-session" | "projects" | "recent" |
   "next-review" | "next-attention" | "return-session" | "open-browser";
 export type DashboardRequest = { command: DashboardCommand } | { command: "open-project"; folder: string } | { command: "open-session"; session: string };
-export type AppCommand = DashboardCommand | "command-palette" | "quick-terminal" | "keyboard-shortcuts";
+export type AppCommand = DashboardCommand | "command-palette" | "quick-terminal" | "keyboard-shortcuts" | "mcp-settings";
 
 export type AppEvent =
+  | { event: "github-mcp-settings" }
   | { event: "keep-awake"; active: boolean }
   | { event: "dashboard-command"; command: AppCommand }
   | { event: "app-accent"; accent: string }
@@ -151,9 +152,27 @@ export type AppEvent =
 export interface GitFile {
   path: string;
   previous?: string;
+  additions?: number;
+  deletions?: number;
   status: string;
   area: "staged" | "unstaged" | "untracked" | "committed";
 }
+export type GitHubMcpSettings = { configured: boolean; secureStorage: boolean };
+export type GitHubPullRequest = {
+  number: number; title: string; head: string; target: string; url: string;
+  review: string; checksState: string; partial: boolean;
+  checks: { name: string; state: string; url?: string; updatedAt?: string }[];
+  feedback: { author: string; text: string; path?: string; line?: number; url?: string }[];
+};
+export type GitHubActionsFailure = { workflow: string; job: string; step: string; excerpt: string[]; logsUnavailable: boolean };
+export type GitHubBranchPR = { status: "not-configured" | "unsupported" | "none" } | { status: "found"; pr: GitHubPullRequest };
+export type GitRepositoryActions = { refs: string[]; remotes: string[]; sessions: { title: string; working: boolean }[] };
+export type GitCheckoutOptions = { ref?: string; name?: string; remote?: string; expectedBranch?: string; confirmCheckout?: boolean };
+export type GitPullRequestDraft = { head: string; target: string; title: string; body: string; templatePath?: string; unpublished: number };
+export type GitBranchAction = "switch-branch" | "create-branch" | "fetch" | "pull" | "publish";
+export type TurnDiff = { file: GitFile; diff?: string };
+export type GitTurnSnapshot = { root: string; branch: string; head: string; entries: (TurnDiff & { fingerprint: string })[] };
+export type TurnChanges = { instructionAt: number; root: string; files: TurnDiff[]; commitRange?: { from: string; to: string; omitted: number } };
 export interface GitChanges {
   upstream?: string;
   ahead?: number;
@@ -161,6 +180,8 @@ export interface GitChanges {
   commits?: { id: string; title: string }[];
   revision?: string;
   base?: string;
+  comparison?: { refs: string[]; targetRef: string; problem?: string };
+  uncommittedFiles?: number;
   root: string;
   branch: string;
   files: GitFile[];
@@ -182,9 +203,9 @@ export interface API {
   cancelRecap(provider: string, id: string): Promise<void>;
   searchHistory(query: string, folder: string | string[], scope: string, refresh?: boolean): Promise<{ results: HistorySearchResult[]; incomplete: boolean; indexing?: boolean }>;
   cancelHistorySearch(): Promise<void>;
-  codexPromptReady(id: string, terminalId: string): Promise<boolean>;
+  codexPromptReady(id: string, terminalId: string, queued?: boolean): Promise<boolean>;
   liveSessionPreview(provider: string, id: string, terminalId: string): Promise<InboxPreview>;
-  liveSessionFollowUp(provider: string, id: string, terminalId: string, message: string, screenshots?: ArrayBuffer[], queued?: boolean): Promise<void>;
+  liveSessionFollowUp(provider: string, id: string, terminalId: string, message: string, screenshots?: ArrayBuffer[], queued?: boolean): Promise<void | "waiting">;
   screenshotDraft(id: string): Promise<Uint8Array<ArrayBuffer>>;
   copyInboxReply(id: string, text: string): Promise<void>;
   inboxPreview(id: string): Promise<InboxPreview>;
@@ -209,7 +230,19 @@ export interface API {
   chooseEditor(): Promise<Editors | null>;
   openEditor(id: string, target: string, line?: number): Promise<void>;
   watchGit(cwd: string): Promise<void>;
-  gitAction(cwd: string, action: "stage" | "unstage" | "stage-all" | "unstage-all" | "commit" | "push", input?: string): Promise<GitChanges>;
+  createGithubMcpToken(): Promise<void>;
+  githubMcpSettings(): Promise<GitHubMcpSettings>;
+  verifyGithubMcp(): Promise<string>;
+  saveGithubMcp(token: string | null): Promise<GitHubMcpSettings>;
+  githubActionsFailure(cwd: string, jobURL: string): Promise<GitHubActionsFailure>;
+  githubBranchPR(cwd: string, target?: string): Promise<GitHubBranchPR>;
+  gitRepositoryActions(cwd: string): Promise<GitRepositoryActions>;
+  draftGitPullRequest(cwd: string, targetRef: string, agent: string, source?: Pick<Session, "provider" | "sessionID">): Promise<{ title: string; body: string }>;
+  cancelGitPullRequestDraft(cwd: string, targetRef: string): Promise<void>;
+  prepareGitPullRequest(cwd: string, targetRef: string): Promise<GitPullRequestDraft>;
+  openGitPullRequest(cwd: string, targetRef: string, fields: { head: string; title: string; body: string }): Promise<void>;
+  gitAction(cwd: string, action: GitBranchAction | "stage" | "unstage" | "stage-all" | "unstage-all" | "commit" | "push",
+    input?: string | GitCheckoutOptions): Promise<GitChanges>;
   noteAction(id: string, action: "copy" | "export"): Promise<void>;
   saveNote(draft: NoteDraft): Promise<Note>;
   history(
@@ -223,10 +256,15 @@ export interface API {
     unavailable?: boolean;
   }>;
   openFolder(cwd: string, target: "folder"): Promise<void>;
+  gitTurnCaptures(): Promise<Record<string, TurnChanges[]>>;
+  saveGitTurnCapture(session: string, capture: TurnChanges): Promise<Record<string, TurnChanges[]>>;
+  gitTurnCommittedDiffs(cwd: string, from: string, to: string): Promise<{ entries: TurnDiff[]; omitted: number } | undefined>;
+  gitTurnSnapshot(cwd: string): Promise<GitTurnSnapshot | undefined>;
   gitChanges(
     cwd: string,
     mode?: string,
     revision?: string,
+    compareRef?: string,
   ): Promise<GitChanges>;
   gitDiff(
     cwd: string,
@@ -234,6 +272,7 @@ export interface API {
     area: string,
     mode?: string,
     revision?: string,
+    compareRef?: string,
   ): Promise<string>;
   keyboardShortcuts(): Promise<KeyboardBindings>;
   saveKeyboardShortcuts(value: KeyboardBindings): Promise<KeyboardBindings>;

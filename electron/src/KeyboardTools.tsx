@@ -71,6 +71,7 @@ export function CommandPalette({ bindings, projects, sessions, onChoose, onClose
     { id: "return", label: "Return to interrupted session", hint: bindingText("Alt+Shift+←"), icon: "arrow", action: "return-session" },
     { id: "dashboard", label: "Project dashboard", icon: "activity", action: "dashboard" },
     { id: "workspace", label: "Open workspace", icon: "open-workspace", action: "workspace" },
+    { id: "github-mcp", label: "Connect or manage GitHub MCP", icon: "branch", action: "mcp-settings" },
     { id: "shortcuts", label: "Keyboard shortcuts", icon: "pencil", action: "keyboard-shortcuts" },
   ];
   const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) || path;
