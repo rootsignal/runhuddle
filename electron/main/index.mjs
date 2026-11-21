@@ -1,6 +1,6 @@
 import { turnCaptureStore } from "./turn-captures.mjs";
 import { githubActionsFailure, githubMcpAccount, githubPullRequest } from "./github-mcp.mjs";
-import { readProjectPreview } from "./preview-file.mjs";
+import { readProjectPreview, resolveFileToReveal } from "./preview-file.mjs";
 import { defaultShortcuts, shortcutForInput, validateShortcuts } from "./shortcuts.mjs";
 import electronUpdater from "electron-updater";
 import { createUpdateCheck, terminalUpdateBlocker } from "./app-updates.mjs";
@@ -638,6 +638,11 @@ else {
         const row = managed.find((session) => session.provider === provider && session.sessionID === sessionID);
         if (!row) throw Error("This session is no longer available.");
         return readProjectPreview(row.cwd, file);
+      });
+      handle("reveal-referenced-file", async (provider, sessionID, file) => {
+        const row = managed.find((session) => session.provider === provider && session.sessionID === sessionID);
+        if (!row) throw Error("This session is no longer available.");
+        shell.showItemInFolder(await resolveFileToReveal(row.cwd, file));
       });
       handle("live-session-preview", (provider, sessionID, terminalId) => {
         const row = liveDashboardSession(provider, sessionID, terminalId);

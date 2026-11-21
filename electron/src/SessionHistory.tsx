@@ -61,10 +61,10 @@ export function SessionHistory({
     }
   }, [messages, loading, anchor]);
   useEffect(() => {
-    if (!inline || loading || !history.current) return;
+    if (!inline || anchor || loading || !history.current) return;
     const scrollView = history.current;
     scrollView.scrollTop = scrollView.scrollHeight;
-  }, [inline, loading, messages]);
+  }, [inline, anchor, loading, messages]);
   const shown = messages.filter((m) =>
     m.text.toLowerCase().includes(query.toLowerCase()),
   );

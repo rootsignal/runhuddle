@@ -65,7 +65,7 @@ export function DashboardShell({ project, terminal, visible, connected, opening,
         <input type="checkbox" checked={compactPrompt} disabled={opening}
           onChange={(event) => onCompactPrompt(event.currentTarget.checked)} /> Compact prompt
       </label>}
-      <button disabled={!connected || opening || closing} title={`Start a new shell in ${project}. Existing shells stay open in Workspace.`}
+      <button disabled={!connected || opening || closing} title={`Start a new shell in ${project}`}
         onClick={() => { setTerminalError(""); onStart(); }}>Start shell here</button>
       {terminal && <button disabled={!connected || opening || closing}
         onClick={() => void stop(() => onEnd(terminal.id))}>End shell…</button>}

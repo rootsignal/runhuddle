@@ -17,9 +17,11 @@ function previewInline(text: string, linksAsLabels = false) {
 
 const MarkdownReply = lazy(() => import("./MarkdownFile"));
 
-export function ReplyExcerpt({ text, linksAsLabels = false }: { text: string; linksAsLabels?: boolean }) {
+export function ReplyExcerpt({ text, linksAsLabels = false, onFileReference }: {
+  text: string; linksAsLabels?: boolean; onFileReference?: (file: string) => void;
+}) {
   return <div className="dashboard-review-excerpt"><Suspense fallback={<p role="status">Formatting reply…</p>}>
-    <MarkdownReply text={text} reply linksAsLabels={linksAsLabels} />
+    <MarkdownReply text={text} reply linksAsLabels={linksAsLabels} onFileReference={onFileReference} />
   </Suspense></div>;
 }
 
@@ -191,7 +193,8 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
           <div>
             <dt>Agent update</dt>
             <dd>{liveSession && answer ? <>
-              <ReplyExcerpt text={answer + (shown?.truncated ? "…" : "")} linksAsLabels={!hiddenSections?.references && !!onFileReference && !!onBrowserReference} />
+              <ReplyExcerpt text={answer + (shown?.truncated ? "…" : "")} onFileReference={onFileReference}
+                linksAsLabels={!hiddenSections?.references && !!onFileReference && !!onBrowserReference} />
               {shown?.truncated && <p className="dashboard-reply-truncated">{onReadHistory
                 ? <button type="button" onClick={onReadHistory}>Read conversation history</button>
                 : "Open the session to read the rest."}</p>}

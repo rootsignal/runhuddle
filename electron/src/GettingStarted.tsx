@@ -1,86 +1,18 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
 const steps = [
-  {
-    id: "launch",
-    title: "Start a session",
-    text: "Use New session or terminal to choose a project folder, add an optional session name, then open a shell or start Codex, Claude, or Copilot.",
-  },
-  {
-    id: "projects",
-    title: "Browse by project",
-    text: "Expand a folder in Projects to browse its conversations. Right-click a folder for Project overview and other actions. Use the project list’s … menu to manage hidden projects and sessions.",
-    fallback: {
-      id: "sidebar",
-      text: "Open the sidebar and choose Projects. Expand a folder to browse its conversations.",
-    },
-  },
-  {
-    id: "project-scope",
-    title: "Focus a project",
-    text: "The Focused project label shows which project owns these tabs. Click All projects beside it to bring back your wider set of tabs. Each view remembers its layout, and sessions keep running as you switch.",
-    fallback: {
-      id: "projects",
-      text: "In Projects, expand a folder and choose Focus project to see just its sessions and tabs. Look for Focused project above the terminal. Click All projects to return.",
-    },
-  },
-  {
-    id: "search",
-    title: "Find a conversation",
-    text: "Search sessions and notes across all projects, even while focused on one. Select a conversation to open it. Right-click a session for actions, or hover over its status icon to see what it means.",
-    fallback: {
-      id: "sidebar",
-      text: "Open the sidebar to search sessions and notes across all projects. Right-click a session for its actions.",
-    },
-  },
-  {
-    id: "arrange",
-    title: "Organize open tabs",
-    text: "With two or more tabs in a pane, use Arrange to move a tab right or down. Closing a tab keeps its session running. Right-click the sidebar row to end it. When an agent exits, Restart session appears in its open tab.",
-    fallback: {
-      id: "launch",
-      text: "Open two sessions or terminals to try a split. Each pane has an Arrange menu to move a tab right or down. Right-click an open session in the sidebar to end it.",
-    },
-  },
-  {
-    id: "handoff",
-    title: "Hand off to another agent",
-    text: "Use Continue with another agent… to switch agents and review the handoff. To keep the same agent, choose Start new session with context… from session actions or a saved conversation. Review the draft before sending it.",
-    fallback: {
-      id: "launch",
-      text: "In an open AI session, use the usage menu (for example, Claude usage). Choose Continue with another agent… anytime to hand off work. Use Start new session with context… in saved history or session actions to keep the same agent.",
-    },
-  },
-  {
-    id: "appearance",
-    title: "Adjust terminal appearance",
-    text: "Set the terminal’s theme, font, spacing, and cursor. Use View for the app theme and accent color.",
-  },
-  {
-    id: "changes",
-    title: "Review Git changes",
-    text: "Use Changes to review files and diffs for the current folder, compare your branch against a chosen target, and browse recent commits. Stage and commit from the same panel.",
-  },
-  {
-    id: "notes",
-    title: "Save project notes",
-    text: "Open Notes to write or find a note. You can also save text from a conversation to keep it with its source.",
-  },
-  {
-    id: "project-dashboard",
-    title: "See all projects",
-    text: "Open Project dashboard to preview items that need attention, switch between live sessions and open their preview, terminal, or changes in place. Use Next attention for a session waiting on you and Next review for a finished turn. Open Browser from the session toolbar to keep a page beside your work. Preview also shows referenced files and web links below the reply. Dashboard follow-ups can show checkout changes captured during the turn. Use Preview layout to show or hide sections. Use Recent turns in Preview to read earlier instructions and replies. On a narrow pane, use Previous turn. Open the Uncommitted changes summary to inspect pending edits. In Changes, move between files and jump between hunks in the diff. Use Review scope to switch to a branch comparison or recent commits. The Git bar below Changes opens branch and remote actions and lets you prepare a pull request for a published GitHub branch. Connect GitHub in Integrations → GitHub MCP to see open PRs and checks in Changes. Choose Open workspace for your full terminal layout. The Command Palette lets you find sessions, projects, and actions, including Quick Terminal. Find the current bindings in Session → Keyboard Shortcuts.",
-  },
-  {
-    id: "inbox",
-    title: "Catch up in Inbox",
-    text: "Open Inbox to see which agents have finished or are waiting for input. Select an alert to return to its session.",
-  },
-  {
-    id: "browser",
-    title: "Preview and share a page",
-    text: "Preview a local dev server or HTTPS page beside your session. Share page adds a report to your draft. Allow agent control lets the selected session interact with the open site. Switching sites or sessions ends access. Reopen older sessions to load browser tools.",
-  },
+  { id: "dashboard-launch", title: "Start a session",
+    text: "Choose New session, pick a project folder, and start an agent. Give it a name if you want it to stay fixed." },
+  { id: "dashboard-projects", title: "Browse projects",
+    text: "Open Projects to focus on one project or filter to a few. Use Show all projects to clear the filter. Manage hidden… restores hidden sessions and projects." },
+  { id: "dashboard-palette", title: "Find work and tools",
+    text: "Open the Command Palette to find sessions, projects, and commands. Use Recent to read or resume a conversation, or search its messages from Projects → Conversations." },
+  { id: "dashboard-launch", title: "Review live work",
+    text: "Select a live session to switch between Preview, Terminal, and Changes. Use Next review for completed turns and Next attention for agents waiting on you." },
+  { id: "dashboard-palette", title: "Open a shell",
+    text: "Use Quick Terminal for a command from anywhere. Open the dashboard shell to keep a server or other command beside an agent, and hide it when you want the space back." },
+  { id: "dashboard-projects", title: "Keep useful context",
+    text: "Save excerpts as project notes, generate a recap from conversation details, or start a new session with reviewed context." },
 ] as const;
 
 function placeCallout(target: DOMRect, card: DOMRect, width: number, height: number) {
@@ -103,17 +35,14 @@ function placeCallout(target: DOMRect, card: DOMRect, width: number, height: num
   };
 }
 
-export function GettingStarted({ onClose, terminalVisible }: {
+export function GettingStarted({ onClose }: {
   onClose: () => void;
-  terminalVisible: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const card = useRef<HTMLElement>(null);
   const highlight = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
-  const [usingFallback, setUsingFallback] = useState(false);
   const step = steps[index];
-  const fallback = "fallback" in step ? step.fallback : undefined;
 
   useLayoutEffect(() => {
     const element = dialog.current!;
@@ -128,9 +57,7 @@ export function GettingStarted({ onClose, terminalVisible }: {
     const app = element.parentElement!;
     const find = (id: string) => [...app.querySelectorAll<HTMLElement>(`[data-tour-anchor="${id}"]`)]
       .find((anchor) => anchor.getClientRects().length > 0);
-    const primary = find(step.id);
-    const target = primary ?? (fallback && find(fallback.id));
-    setUsingFallback(Boolean(!primary && target));
+    const target = find(step.id);
 
     function update() {
       const bounds = target?.getBoundingClientRect();
@@ -157,7 +84,7 @@ export function GettingStarted({ onClose, terminalVisible }: {
     observer.observe(tip);
     if (target) observer.observe(target);
     return () => observer.disconnect();
-  }, [step, fallback, terminalVisible]);
+  }, [step]);
 
   const finished = index === steps.length - 1;
   return (
@@ -168,7 +95,7 @@ export function GettingStarted({ onClose, terminalVisible }: {
         <div aria-live="polite">
           <small>Getting started · {index + 1} of {steps.length}</small>
           <h2 id="tour-title">{step.title}</h2>
-          <p>{usingFallback && fallback ? fallback.text : step.text}</p>
+          <p>{step.text}</p>
         </div>
         <footer>
           <button onClick={onClose}>Skip guide</button>

@@ -306,7 +306,7 @@ export function ChangesPanel({
 
   const scopes = [["working", "Uncommitted"], ["compare", "Compare branch"], ["recent", "Recent commits"]];
   const comparison = data?.comparison;
-  const list = <aside className="changes-panel" aria-label="Workspace changes" tabIndex={inline ? 0 : undefined}>
+  const list = <aside className="changes-panel" aria-label="Project changes" tabIndex={inline ? 0 : undefined}>
       <header>
         <strong>{inline ? "Files" : "Changes"}{inline && !!data?.files.length && <small className="change-file-total">{data.files.length}</small>}</strong>
         {inline && <select className="changes-review-scope" aria-label="Review scope" value={mode} onChange={(event) => showMode(event.target.value)}>
@@ -343,7 +343,7 @@ export function ChangesPanel({
         </select>
       )}
       {!cwd ? (
-        <p>Select a workspace or session to review its repository.</p>
+        <p>Select a project or session to review its repository.</p>
       ) : error ? (
         <p role="alert">{error}</p>
       ) : loading ? (

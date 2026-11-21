@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, Icon } from "./Icons";
+import { SessionRecap } from "./SessionRecap";
 import { SessionHistory } from "./SessionHistory";
 import { ReplyExcerpt } from "./AttentionPreview";
 import { latestConversationTurn } from "./conversation-turn";
-import type { Session } from "./types";
+import type { HistoryAnchor, Session, SessionRecap as Recap } from "./types";
 
-export function ProjectConversationPreview({ row, title, metadata, next, onSave, onOpen, onResume, onReview, onProject, inlineHistory }: {
+export function ProjectConversationPreview({ row, title, metadata, next, onSave, onOpen, onResume, onReview, onProject, inlineHistory, anchor, onSaveExcerpt, linkedSessions, recap }: {
   row: Session;
   title: string;
   metadata?: string;
@@ -16,9 +17,15 @@ export function ProjectConversationPreview({ row, title, metadata, next, onSave,
   onReview?: () => void;
   onProject?: () => void;
   inlineHistory?: boolean;
+  anchor?: HistoryAnchor;
+  onSaveExcerpt?: (text: string) => void;
+  linkedSessions?: ReactNode;
+  recap?: Recap;
 }) {
   const [turn, setTurn] = useState<(ReturnType<typeof latestConversationTurn> & { unavailable?: boolean }) | null>();
-  const [readingHistory, setReadingHistory] = useState(false);
+  const [recapMessages, setRecapMessages] = useState<{ role: string; text: string }[]>([]);
+  const [readingHistory, setReadingHistory] = useState(!!anchor);
+  const [match, setMatch] = useState(anchor);
   const [editing, setEditing] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [error, setError] = useState("");
@@ -27,7 +34,13 @@ export function ProjectConversationPreview({ row, title, metadata, next, onSave,
   useEffect(() => {
     let active = true;
     void window.runhuddle.history(provider, sessionID).then(({ messages, unavailable }) => {
-      if (active) setTurn({ ...latestConversationTurn(messages), unavailable });
+      if (active) {
+        setTurn({ ...latestConversationTurn(messages), unavailable });
+        setRecapMessages([
+          messages.findLast((message) => message.role === "user"),
+          messages.findLast((message) => message.role === "assistant"),
+        ].filter((message) => !!message));
+      }
     }, () => {
       if (active) setTurn(null);
     });
@@ -53,12 +66,17 @@ export function ProjectConversationPreview({ row, title, metadata, next, onSave,
       <AgentIcon agent={provider.toLowerCase()} />
       <div><h3>{title}</h3><p className="dashboard-preview-meta">{metadata}</p></div>
     </div> : <h3>{title}</h3>}
-    {readingHistory ? <SessionHistory session={row} inline /> : turn === undefined ? <p role="status">Loading conversation…</p>
+    {readingHistory ? <SessionHistory session={row} inline onSaveExcerpt={onSaveExcerpt} anchor={match} onLatest={() => setMatch(undefined)} /> : turn === undefined ? <p role="status">Loading conversation…</p>
       : !turn || turn.unavailable ? <p>Transcript unavailable.</p>
       : <dl>
         <div><dt>Last instruction</dt><dd>{turn.instruction || "No instruction recorded."}</dd></div>
         <div><dt>Last agent reply</dt><dd>{turn.reply ? <ReplyExcerpt text={turn.reply} /> : "No reply recorded after the last instruction."}</dd></div>
       </dl>}
+    {(recap || recapMessages.length > 0) && <details className="dashboard-conversation-recap">
+      <summary>Recap</summary>
+      <SessionRecap session={row} messages={recapMessages} recap={recap} loading={turn === undefined} showExcerpts={false} />
+    </details>}
+    {linkedSessions}
     {next && <p><strong>Saved next step</strong><br />{next}</p>}
     {editing && <form onSubmit={(event) => {
       event.preventDefault();
@@ -97,9 +115,10 @@ export function ProjectConversationPreview({ row, title, metadata, next, onSave,
   </section>;
 }
 
-export function RecentConversationDialog({ children, actions, onBack, onClose }: {
+export function RecentConversationDialog({ children, actions, onBack, onClose, backLabel = "Back to Recent" }: {
   children: ReactNode;
   actions?: ReactNode;
+  backLabel?: string;
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -112,7 +131,7 @@ export function RecentConversationDialog({ children, actions, onBack, onClose }:
   return <dialog ref={ref} className="appearance-dialog dashboard-recent-preview" aria-label="Recent session details"
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onBack(); }}>
     <header>
-      <button className="dashboard-preview-back" autoFocus onClick={onBack}><Icon name="arrow" size={15} /> Back to Recent</button>
+      <button className="dashboard-preview-back" autoFocus onClick={onBack}><Icon name="arrow" size={15} /> {backLabel}</button>
       <div className="dashboard-preview-chrome">
         {actions}
         <button className="dashboard-tool-icon" aria-label="Close recent session details" data-tooltip="Close preview" onClick={onClose}>
