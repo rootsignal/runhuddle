@@ -179,6 +179,12 @@ test("workspace navigation, retained search, notes and persistent terminal acros
       if (title === "See all projects") {
         await expect(guide).toContainText("Open Browser from the session toolbar");
         await expect(guide).toContainText("Preview also shows referenced files and web links");
+        await expect(guide).toContainText("checkout changes captured during the turn");
+        await expect(guide).toContainText("Preview layout");
+        await expect(guide).toContainText("Uncommitted changes summary");
+        await expect(guide).toContainText("Use Recent turns in Preview");
+        await expect(guide).toContainText("move between files and jump between hunks");
+        await expect(guide).toContainText("Integrations → GitHub MCP");
         await expect(guide).toContainText("Session → Keyboard Shortcuts");
       }
       if (title === "Preview and share a page") {
@@ -2305,8 +2311,15 @@ test("browser preview shares reports and grants the active agent revocable live 
 });
 
 test("Inbox keeps unread completions across restart and opens the exact recorded session", async ({}, testInfo) => {
+  test.setTimeout(60000);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-inbox-ui-"));
-  fs.writeFileSync(path.join(dir, "Release notes.md"), "# Release checklist\n\n- Verify the mobile layout.\n");
+  fs.writeFileSync(path.join(dir, "Release notes.md"), [
+    "# Release checklist", "", "- Verify the mobile layout.", "- [x] Build passed.", "",
+    "| Area | Status |", "| --- | --- |", "| Dashboard | Ready |", "",
+    "> Review before publishing.", "", "```sh", "npm test", "```", "",
+    "[Release site](https://example.test/markdown)", "", "![Remote image](https://example.test/image.png)",
+    "", "<script>shouldNotRender()</script>",
+  ].join("\n"));
   const data = path.join(dir, "preview");
   fs.mkdirSync(data);
   const sessionID = "55555555-5555-4555-8555-555555555555";
@@ -2559,7 +2572,8 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
         return state;
       });
       dialog.showMessageBox = async (_window, options) => {
-        if (!options.detail?.includes("https://example.test/release")) throw Error("Wrong browser confirmation");
+        if (!options.detail || !/^https:\/\/example\.test\/(release|markdown)\n/.test(options.detail))
+          throw Error("Wrong browser confirmation");
         return { response: 1, checkboxChecked: false };
       };
       shell.openExternal = async (href) => { (globalThis as any).openedReplyLink = href; };
@@ -2567,22 +2581,75 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
       ipcMain.handle("live-session-preview", (_event, provider, sessionID, terminalId) => {
         if (provider !== "Codex" || sessionID !== terminal.sessionID || terminalId !== terminal.id)
           throw Error("Wrong preview destination");
+        const completed = (globalThis as any).completedTurnAt;
+        if (completed) return { instruction: "Review the desktop layout next.", instructionAt: completed,
+          answer: "Desktop layout verified. See [Release notes](<Release notes.md>) and the [release site](https://example.test/release).", screenshots: 2 };
         return { instruction: "Check the mobile layout.", update: "Ready for the next instruction.",
-        answer: "Ready for the next instruction.\n\n- Mobile layout checked\n- Desktop layout is next\n\nSee [Release notes](<Release notes.md>) and the [release site](https://example.test/release)." };
+          recentTurns: [
+            { instruction: "Inspect the checkout.", instructionAt: 1700000000000, answer: "Checkout inspected." },
+            { instruction: "Check the mobile layout.", answer: "Ready for the next instruction." },
+          ],
+        answer: "Ready for the next instruction.\n\n- Mobile layout checked\n- Desktop layout is next\n\n| Area | Status |\n| --- | --- |\n| Mobile | Checked |\n\nSee [Release notes](<Release notes.md>) and the [release site](https://example.test/release)." };
       });
+      const queue = { ready: false, attempts: 0, sent: 0 };
+      Object.assign(globalThis, { followUpQueueFixture: queue });
+      ipcMain.removeHandler("codex-prompt-ready");
+      ipcMain.handle("codex-prompt-ready", (_event, sessionID, terminalId, queued) =>
+        queued === true && sessionID === terminal.sessionID && terminalId === terminal.id && queue.ready);
       ipcMain.removeHandler("live-session-follow-up");
-      ipcMain.handle("live-session-follow-up", (_event, provider, sessionID, terminalId, text, screenshots) => {
-        if (provider !== "Codex" || sessionID !== terminal.sessionID || terminalId !== terminal.id ||
+      ipcMain.handle("live-session-follow-up", (_event, provider, sessionID, terminalId, text, screenshots, queued) => {
+        if (queued !== (process.platform !== "win32") || provider !== "Codex" || sessionID !== terminal.sessionID || terminalId !== terminal.id ||
             text !== "Review the desktop layout next." || screenshots.length !== 2 ||
             screenshots.some((image: ArrayBuffer) => new Uint8Array(image)[0] !== 137)) throw Error("Wrong live follow-up destination or message");
+        if (queued && ++queue.attempts === 1) return "waiting";
+        queue.sent++;
+
       });
     }, liveTerminal);
     await expect(live.locator(".dashboard-briefing dd").filter({ hasText: "Ready for the next instruction." })).toBeVisible();
+    await expect(live.getByRole("columnheader", { name: "Area" })).toBeVisible();
+    await expect(live.getByRole("cell", { name: "Checked" })).toBeVisible();
+    const initialPreviewSize = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    await page.setViewportSize({ width: 1450, height: 950 });
+    const timeline = live.getByRole("navigation", { name: "Recent turns", exact: true });
+    const earlierTurn = timeline.getByRole("button", { name: /Inspect the checkout/ });
+    await expect(earlierTurn).toContainText("Checkout inspected.");
+    await earlierTurn.click();
+    await expect(earlierTurn).toHaveAttribute("aria-current", "true");
+    await expect(earlierTurn).not.toContainText("Checkout inspected.");
+    await expect(live.locator(".dashboard-briefing")).toContainText("Checkout inspected.");
+    await timeline.getByRole("button", { name: /Latest.*Check the mobile layout/ }).click();
+    await expect(live.locator(".dashboard-briefing")).toContainText("Ready for the next instruction.");
+    await page.setViewportSize({ width: 780, height: 850 });
+    await expect(timeline).toBeHidden();
+    const turns = live.getByRole("navigation", { name: "Recent turn controls" });
+    await turns.getByRole("button", { name: "Previous turn" }).click();
+    await expect(turns).toContainText("Turn 1 of 2");
+    await expect(live.locator(".dashboard-briefing").getByText("Inspect the checkout.", { exact: true })).toBeVisible();
+    await expect(live.locator(".dashboard-briefing").getByText("Checkout inspected.", { exact: true })).toBeVisible();
+    await expect(live.getByText("Ready for a follow-up.", { exact: true })).toBeVisible();
+    await expect(turns.getByRole("button", { name: "Previous turn" })).toBeDisabled();
+    await turns.getByRole("button", { name: "Next turn" }).click();
+    await expect(turns).toContainText("Latest");
+    await turns.getByRole("button", { name: "Previous turn" }).click();
+    await turns.getByRole("button", { name: "Back to latest" }).click();
+    await expect(turns).toContainText("Latest");
+    await page.setViewportSize(initialPreviewSize);
     const references = live.getByRole("region", { name: "Referenced files and links" });
     await references.getByRole("button", { name: "View Release notes", exact: true }).click();
     const filePreview = page.getByRole("dialog", { name: "File preview" });
     await expect(filePreview.getByRole("heading", { name: "Release checklist" })).toBeVisible();
     await expect(filePreview.getByRole("listitem").filter({ hasText: "Verify the mobile layout." })).toBeVisible();
+    await expect(filePreview.getByRole("columnheader", { name: "Area" })).toBeVisible();
+    await expect(filePreview.getByRole("cell", { name: "Dashboard" })).toBeVisible();
+    await expect(filePreview.getByRole("checkbox")).toBeChecked();
+    await expect(filePreview.getByRole("checkbox")).toBeDisabled();
+    await expect(filePreview.locator("blockquote")).toHaveText("Review before publishing.");
+    await expect(filePreview.locator("pre code")).toContainText("npm test");
+    await expect(filePreview.getByRole("link", { name: "Release site" })).toBeVisible();
+    await expect(filePreview.locator("img, script")).toHaveCount(0);
+    await filePreview.getByRole("link", { name: "Release site" }).click();
+    await expect.poll(() => app.evaluate(() => (globalThis as any).openedReplyLink)).toBe("https://example.test/markdown");
     await filePreview.getByRole("button", { name: "Close file preview" }).click();
     await references.getByRole("button", { name: "Open release site in RunHuddle Browser" }).click();
     const linkedBrowser = live.getByRole("region", { name: "Browser preview" });
@@ -2617,15 +2684,7 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await page.keyboard.press("Escape");
     await expect(viewport.getByRole("definition").filter({ hasText: "Ready for the next instruction." })).toBeVisible();
     const switchboardHeight = (await switchboard.boundingBox())!.height;
-    const expandDetail = live.getByRole("button", { name: "Expand detail" });
-    await page.mouse.move(0, 0);
-    await expandDetail.hover();
-    await expect.poll(() => expandDetail.evaluate((button) => getComputedStyle(button, "::after").visibility)).toBe("visible");
-    await expandDetail.click();
-    await expect(viewport.getByText("Desktop layout is next", { exact: true })).toBeVisible();
-    expect((await switchboard.boundingBox())!.height).toBe(switchboardHeight);
-    await live.getByRole("button", { name: "Collapse detail" }).click();
-    await expect(viewport.getByText("Desktop layout is next", { exact: true })).toBeVisible();
+    await expect(live.getByRole("button", { name: /Expand detail|Hide session list|Show session list/ })).toHaveCount(0);
     await app.evaluate(({ BrowserWindow }, session) => {
       const wc = BrowserWindow.getAllWindows()[0].webContents;
       for (let i = 1; i <= 6; i++) {
@@ -2635,6 +2694,15 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     const working = live.getByRole("img", { name: "Working", exact: true });
     await expect(working).toBeVisible();
     const draft = live.getByRole("textbox", { name: /Follow up · Codex fixture/ });
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: dir });
+    git("init", "-q");
+    fs.writeFileSync(path.join(dir, ".git", "info", "exclude"), "/*\n!/Review.txt\n!/Pending.txt\n!/unchanged.txt\n");
+    fs.writeFileSync(path.join(dir, "Review.txt"), "Old text\n");
+    fs.writeFileSync(path.join(dir, "unchanged.txt"), "Original\n");
+    fs.writeFileSync(path.join(dir, "Pending.txt"), "Pending baseline\n");
+    git("add", "Review.txt", "Pending.txt", "unchanged.txt");
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "Baseline");
+    fs.writeFileSync(path.join(dir, "unchanged.txt"), "Unrelated pending edit\n");
     await draft.fill("Review the desktop layout next.");
     await draft.evaluate((element) => {
       const clipboardData = new DataTransfer();
@@ -2654,7 +2722,14 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await dashboard().getByRole("button", { name: "Add to follow-up draft" }).click();
     const screenshots = live.getByRole("list", { name: "Draft screenshots" });
     await expect(screenshots.getByRole("listitem")).toHaveCount(2);
-    await expect(live.getByRole("button", { name: "Send follow-up" })).toBeDisabled();
+    if (process.platform !== "win32") {
+      const queueFollowUp = live.getByRole("button", { name: "Queue follow-up", exact: true });
+      await queueFollowUp.click();
+      await expect(live.getByText("Queued · sends when the agent is ready")).toBeVisible();
+      await live.getByRole("button", { name: "Cancel queue" }).click();
+      await expect(screenshots.getByRole("listitem")).toHaveCount(2);
+      await queueFollowUp.click();
+    }
     const activityToolbar = live.locator(".dashboard-live-session:visible .dashboard-live-toolbar");
     await expect.poll(() => activityToolbar.evaluate((element) => getComputedStyle(element, "::after").animationName))
       .toBe("dashboard-horizontal-signal");
@@ -2688,20 +2763,71 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     expect((await switchboard.boundingBox())!.height).toBe(switchboardHeight);
     await expect(activityToolbar).toHaveAttribute("data-working", "false");
     await expect(workTimer).toHaveCount(0);
+    if (process.platform === "win32") await live.getByRole("button", { name: "Send follow-up" }).click();
+    else {
+      await expect(live.getByText("Queued · waiting for an empty terminal prompt")).toBeVisible();
+      expect(await app.evaluate(() => (globalThis as any).followUpQueueFixture.attempts)).toBe(0);
+      await app.evaluate(() => { (globalThis as any).followUpQueueFixture.ready = true; });
+    }
 
-    await live.getByRole("button", { name: "Send follow-up" }).click();
+
     await expect(live.getByText("Follow-up sent to Codex fixture.")).toBeVisible();
+    expect(await app.evaluate(() => (globalThis as any).followUpQueueFixture.sent)).toBe(1);
+    if (process.platform !== "win32")
+      expect(await app.evaluate(() => (globalThis as any).followUpQueueFixture.attempts)).toBe(2);
     await expect(live.locator(".dashboard-briefing dd").filter({ hasText: "Review the desktop layout next." })).toBeVisible();
     await expect(live.getByText("Waiting for the agent’s next recorded update.", { exact: true })).toBeVisible();
     await expect(live.getByText("2 screenshots attached", { exact: true })).toBeVisible();
     await expect(screenshots).toHaveCount(0);
-    await expect(live.getByRole("button", { name: "Open in workspace", exact: true })).toBeVisible();
+    fs.writeFileSync(path.join(dir, "Review.txt"), "Desktop layout verified.\n");
+    git("add", "Review.txt");
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "Verify desktop layout");
+    fs.writeFileSync(path.join(dir, "Pending.txt"), "Still uncommitted.\n");
+    const capturedInstructionAt = Date.now();
+    await app.evaluate((_electron, at) => { (globalThis as any).completedTurnAt = at; }, capturedInstructionAt);
+    const actualSnapshot = await page.evaluate((cwd) => window.runhuddle.gitTurnSnapshot(cwd), dir);
+    expect(actualSnapshot?.entries.map(({ file }) => file.path).sort()).toEqual(["Pending.txt", "unchanged.txt"]);
+    await expect.poll(() => page.evaluate(({ sessionID, id }) =>
+      window.runhuddle.liveSessionPreview("Codex", sessionID, id).then((turn) => turn.instructionAt),
+      liveTerminal)).toBe(capturedInstructionAt);
+    await expect(live.getByRole("region", { name: "Referenced files and links" })
+      .getByRole("button", { name: "View Release notes", exact: true })).toBeVisible();
+    const turnReferences = live.getByRole("region", { name: "Referenced files and links" });
+    await turnReferences.getByRole("button", { name: "View Release notes", exact: true }).click();
+    await expect(filePreview.getByRole("heading", { name: "Release checklist" })).toBeVisible();
+    await filePreview.getByRole("button", { name: "Close file preview" }).click();
+    await turnReferences.getByRole("button", { name: "Open release site in default browser" }).click();
+    await expect.poll(() => app.evaluate(() => (globalThis as any).openedReplyLink)).toBe("https://example.test/release");
+    const turnChangesButton = live.getByRole("button", { name: "Turn changes 2 files" });
+    await expect(turnChangesButton).toHaveCount(0);
+    await expect(live.getByText("Review.txt", { exact: true })).toHaveCount(0);
+    const previewLayout = live.getByRole("button", { name: "Preview layout" });
+    await expect(previewLayout).toHaveText("");
+    await expect(previewLayout).toHaveAttribute("data-tooltip", "Preview layout");
+    await previewLayout.click();
+    const previewSections = live.getByRole("group", { name: "Preview sections" });
+    const showTurnChanges = previewSections.getByRole("checkbox", { name: "Turn changes" });
+    await expect(showTurnChanges).not.toBeChecked();
+    await showTurnChanges.check();
+    await page.keyboard.press("Escape");
+    await turnChangesButton.click();
+    const turnChanges = page.getByRole("dialog", { name: "Changed during this turn" });
+    await expect(turnChanges.getByRole("group", { name: "Committed", exact: true }).getByText("Review.txt", { exact: true })).toBeVisible();
+    await expect(turnChanges.getByRole("group", { name: "Uncommitted", exact: true }).getByText("Pending.txt", { exact: true })).toBeVisible();
+    await expect(turnChanges.getByText("unchanged.txt", { exact: true })).toHaveCount(0);
+    await turnChanges.getByRole("button", { name: "View diff for Review.txt" }).click();
+    const capturedDiff = page.getByRole("dialog", { name: "Captured checkout diff" });
+    await expect(capturedDiff.getByText("Diff between the commits at the start and end of this turn.")).toBeVisible();
+    await expect(capturedDiff.getByLabel("File diff", { exact: true })).toContainText("Desktop layout verified.");
+    await capturedDiff.getByRole("button", { name: "Close diff" }).click();
+    await app.evaluate(() => { delete (globalThis as any).completedTurnAt; });
+    await expect(live.getByRole("button", { name: "Open in workspace", exact: true })).toHaveCount(0);
     await expect(live.getByRole("button", { name: "Rename session…", exact: true })).toBeVisible();
     await live.getByRole("button", { name: "Session actions", exact: true }).click();
     await live.getByRole("button", { name: "Hide tab (keep running)" }).click();
     await expect(live.locator(".dashboard-live-toolbar:visible").getByText("Tab hidden", { exact: true })).toBeVisible();
     await live.getByRole("button", { name: "Changes", exact: true }).click();
-    await expect(live.getByRole("button", { name: "Open in workspace", exact: true })).toBeVisible();
+    await expect(live.getByRole("button", { name: "Open in workspace", exact: true })).toHaveCount(0);
     await live.getByRole("button", { name: "Session actions", exact: true }).click();
     await live.getByRole("button", { name: /End session/ }).click();
     await expect(live.getByRole("button", { name: "End Codex fixture" })).toBeVisible();
@@ -2730,13 +2856,54 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
       }] });
     }, { first: liveTerminal, second: secondTerminal, fixtureRows: rows, extras });
     await app.evaluate(({ ipcMain }, first) => {
+      const fixture = { working: true, published: false, actions: [] as unknown[] };
+      ipcMain.removeHandler("installed-review-agents");
+      ipcMain.handle("installed-review-agents", () => ["codex"]);
+      ipcMain.removeHandler("draft-git-pull-request");
+      ipcMain.handle("draft-git-pull-request", (_event, cwd, target, agent, source) => {
+        if (cwd !== first.cwd || target !== "refs/heads/develop" || agent !== "codex" ||
+            source?.provider !== "Codex" || source?.sessionID !== first.sessionID) throw Error("Wrong drafting context");
+        return { title: "Preserve review position", body: "## Changes\n- Keeps the visible diff line when the file is edited." };
+      });
+      ipcMain.removeHandler("prepare-git-pull-request");
+      ipcMain.handle("prepare-git-pull-request", (_event, cwd, target) => {
+        if (cwd !== first.cwd || target !== "refs/heads/develop") throw Error("Wrong PR target");
+        return { head: "feature", target: "develop", title: "Review dashboard", body: "## Commits\n- Update the dashboard", unpublished: 1 };
+      });
+      ipcMain.removeHandler("open-git-pull-request");
+      ipcMain.handle("open-git-pull-request", (_event, cwd, target, fields) => {
+        if (cwd !== first.cwd || target !== "refs/heads/develop") throw Error("Wrong PR destination");
+        Object.assign(globalThis, { openedGitPullRequest: fields });
+      });
+
+      Object.assign(globalThis, { gitBarFixture: fixture });
+      ipcMain.removeHandler("git-repository-actions");
+      ipcMain.handle("git-repository-actions", () => ({
+        remotes: ["origin"], refs: ["refs/heads/develop", "refs/heads/main"],
+        sessions: [{ title: first.title, working: fixture.working }],
+      }));
+      ipcMain.removeHandler("git-action");
+      ipcMain.handle("git-action", (_event, cwd, action, options) => {
+        if (cwd !== first.cwd || options.expectedBranch !== "feature") throw Error("Wrong checkout");
+        fixture.actions.push([action, options]);
+        if (action === "publish") fixture.published = true;
+        return { root: cwd, branch: "feature", files: [] };
+      });
       ipcMain.removeHandler("git-changes");
-      ipcMain.handle("git-changes", (_event, _cwd, mode) => ({ root: first.cwd, branch: "main",
+      ipcMain.handle("git-changes", (_event, _cwd, mode, _revision, compareRef) => ({
+        root: first.cwd, branch: "feature", uncommittedFiles: 5, base: "1".repeat(40),
+        upstream: fixture.published ? "origin/feature" : undefined,
+        comparison: mode === "compare" ? { refs: ["refs/heads/main", "refs/heads/develop"], targetRef: compareRef || "refs/heads/main" } : undefined,
         files: mode === "compare" ? Array.from({ length: 434 }, (_, i) => ({ path: `file-${i}.txt`, status: "M", area: "committed" }))
-          : [{ path: "fixture.txt", status: "M", area: "unstaged" }] }));
+          : ["fixture.txt", "second.txt", "third.txt", "fourth.txt", "fifth.txt"].map((path) =>
+            ({ path, status: "M", area: "unstaged", additions: 201, deletions: 0 })) }));
       ipcMain.removeHandler("git-diff");
-      ipcMain.handle("git-diff", () => "@@ -1,1 +1,200 @@\n" +
-        Array.from({ length: 200 }, (_, i) => "+ line " + i).join("\n"));
+      ipcMain.handle("git-diff", () => {
+        const prefix = (globalThis as any).diffRefreshPrefix ?? "";
+        return "@@ -1,1 +1,200 @@\n- Before edit\n" + prefix +
+          Array.from({ length: 200 }, (_, i) => "+ line " + i).join("\n") +
+          "\n@@ -250,0 +450 @@\n+ second hunk";
+      });
     }, liveTerminal);
     await updateAttentionFixture();
     await expect(live.getByRole("navigation", { name: "Live session list" }).getByRole("button", { name: /^Inspect / })).toHaveCount(6);
@@ -2744,16 +2911,214 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await originalDraft.fill("Keep this draft while I handle two requests.");
     await live.getByRole("button", { name: "Changes", exact: true }).click();
     const changesPane = live.getByRole("complementary", { name: "Workspace changes" });
-    await changesPane.getByRole("button", { name: "vs main", exact: true }).click();
+    const branchButton = live.getByRole("button", { name: "Git branch: feature" });
+    await branchButton.click();
+    const branchDialog = page.getByRole("dialog", { name: "Git branches" });
+    await expect(branchDialog.getByText("Sessions sharing this checkout")).toBeVisible();
+    await expect(branchDialog.getByRole("button", { name: /^Switch/ })).toHaveCount(1);
+    await branchDialog.getByRole("button", { name: "New branch…" }).click();
+    await branchDialog.getByRole("textbox", { name: "Branch name" }).fill("feature/dashboard");
+    await branchDialog.getByRole("combobox", { name: "Start from" }).selectOption("refs/heads/develop");
+    await expect(branchDialog.getByRole("button", { name: "Create and switch" })).toBeDisabled();
+    await branchDialog.getByRole("button", { name: "Close Git actions" }).click();
+    await app.evaluate(() => { (globalThis as any).gitBarFixture.working = false; });
+    await branchButton.click();
+    await branchDialog.getByRole("button", { name: "New branch…" }).click();
+    await branchDialog.getByRole("textbox", { name: "Branch name" }).fill("feature/dashboard");
+    await branchDialog.getByRole("combobox", { name: "Start from" }).selectOption("refs/heads/develop");
+    await branchDialog.getByRole("button", { name: "Create and switch" }).click();
+    await expect(branchDialog).toHaveCount(0);
+    await live.getByRole("button", { name: "Git remote actions" }).click();
+    const remoteDialog = page.getByRole("dialog", { name: "Git remote actions" });
+    await remoteDialog.getByRole("button", { name: "Publish branch", exact: true }).click();
+    await expect(remoteDialog).toHaveCount(0);
+    await expect(live.getByRole("button", { name: "Prepare PR…" })).toBeVisible();
+    expect(await app.evaluate(() => (globalThis as any).gitBarFixture.actions)).toEqual([
+      ["create-branch", { name: "feature/dashboard", ref: "refs/heads/develop", expectedBranch: "feature", confirmCheckout: true }],
+      ["publish", { remote: "origin", expectedBranch: "feature", confirmCheckout: true }],
+    ]);
+
+    await changesPane.getByRole("combobox", { name: "Review scope" }).selectOption("compare");
     await expect(changesPane.getByText("Committed · 434")).toBeVisible();
+    const branchTarget = changesPane.getByRole("combobox", { name: "Compare against" });
+    await branchTarget.selectOption("refs/heads/develop");
+    await expect(changesPane.getByText(/feature → develop/)).toBeVisible();
+    await expect(changesPane.getByText("5 files have uncommitted changes outside this comparison.")).toBeVisible();
+    await live.getByRole("button", { name: "Preview", exact: true }).click();
+    const checkoutSummary = live.getByRole("button", { name: /Uncommitted.*5 files changed/ });
+    await expect(checkoutSummary).toContainText("+1,005");
+    await expect(checkoutSummary).toContainText("−0");
+    await expect(live.locator(".dashboard-preview-sidebar > :first-child")).toHaveClass("dashboard-change-summary");
+    await checkoutSummary.click();
+    await expect(changesPane.getByRole("combobox", { name: "Review scope" })).toHaveValue("working");
+    await changesPane.getByRole("combobox", { name: "Review scope" }).selectOption("working");
+    await changesPane.getByRole("combobox", { name: "Review scope" }).selectOption("compare");
+    await expect(branchTarget).toHaveValue("refs/heads/develop");
+    await live.getByRole("button", { name: "Prepare PR…" }).click();
+    const pr = page.getByRole("dialog", { name: "Prepare pull request" });
+    await expect(pr.getByRole("textbox", { name: "Title" })).toHaveValue("Review dashboard");
+    await expect(pr.getByText("feature → develop")).toBeVisible();
+    await expect(pr.getByText("1 local commit is outside the published branch.")).toBeVisible();
+    const includeContext = pr.getByRole("checkbox", { name: "Include recent context from this session" });
+    await expect(includeContext).not.toBeChecked();
+    await includeContext.check();
+    await pr.getByRole("button", { name: "Generate PR summary" }).click();
+    await expect(pr.getByRole("textbox", { name: "Title" })).toHaveValue("Preserve review position");
+    await expect(pr.getByRole("textbox", { name: /^Description/ })).toHaveValue(/Keeps the visible diff line/);
+    await pr.getByRole("textbox", { name: "Title" }).fill("Tighten dashboard review");
+    await pr.getByRole("textbox", { name: /^Description/ }).fill("## Testing\n- Reviewed locally.");
+    await pr.getByRole("button", { name: "Open in GitHub" }).click();
+    await expect.poll(() => app.evaluate(() => (globalThis as any).openedGitPullRequest)).toEqual({
+      head: "feature", title: "Tighten dashboard review", body: "## Testing\n- Reviewed locally.",
+    });
+    await pr.getByRole("button", { name: "Close", exact: true }).click();
+
+    await app.evaluate(({ ipcMain, shell }) => {
+      const original = shell.openExternal;
+      shell.openExternal = async (url) => {
+        (globalThis as any).githubTokenSetupURL = url;
+        shell.openExternal = original;
+      };
+      ipcMain.removeHandler("github-mcp-settings");
+      ipcMain.handle("github-mcp-settings", () => ({ configured: false, secureStorage: true }));
+      ipcMain.removeHandler("github-branch-pr");
+      ipcMain.handle("github-branch-pr", () => ({ status: "not-configured" }));
+    });
+    await live.getByRole("button", { name: "Refresh changes" }).click();
+    await live.getByRole("button", { name: "Connect GitHub…" }).click();
+    const mcp = page.getByRole("dialog", { name: "GitHub MCP" });
+    await expect(mcp.getByText("GitHub is not connected")).toBeVisible();
+    await expect(mcp.getByText("Commit statuses", { exact: true })).toBeVisible();
+    await mcp.getByRole("button", { name: /Create fine-grained token/ }).click();
+    await expect.poll(() => app.evaluate(() => (globalThis as any).githubTokenSetupURL))
+      .toBe("https://github.com/settings/personal-access-tokens/new");
+    await mcp.getByRole("button", { name: "Close GitHub MCP" }).click();
+    const menuItem = await app.evaluate(({ Menu }) => {
+      const item = Menu.getApplicationMenu()?.items.find((menu) => menu.label === "Integrations")
+        ?.submenu?.getMenuItemById("dashboard-mcp-settings");
+      item?.click();
+      return item?.label;
+    });
+    expect(menuItem).toBe("GitHub MCP…");
+    await expect(mcp).toBeVisible();
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler("save-github-mcp");
+      ipcMain.handle("save-github-mcp", () => ({ configured: true, secureStorage: true }));
+      ipcMain.removeHandler("verify-github-mcp");
+      ipcMain.handle("verify-github-mcp", () => { throw new Error("GitHub denied access."); });
+    });
+    await mcp.locator('input[type="password"]').fill("github_pat_fixture");
+    await mcp.getByRole("button", { name: "Save GitHub token" }).click();
+    await expect(mcp.getByRole("status")).toContainText("Connection could not be verified");
+    await expect(mcp.getByRole("status")).toContainText("GitHub denied access.");
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler("verify-github-mcp");
+      ipcMain.handle("verify-github-mcp", () => "fixture-user");
+    });
+    await mcp.getByRole("button", { name: "Check connection" }).click();
+    await expect(mcp.getByRole("status")).toContainText("GitHub connected");
+    await expect(mcp.getByRole("status")).toContainText("Signed in as fixture-user");
+    await expect(mcp.getByRole("region", { name: "Token setup" })).toHaveCount(0);
+    await mcp.getByRole("button", { name: "Done" }).click();
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler("github-actions-failure");
+      ipcMain.handle("github-actions-failure", (_event, _cwd, url) => {
+        if (url.endsWith("/job/2")) throw new Error("Actions read access is required.");
+        return { workflow: "Electron CI", job: "Build", step: "Install dependencies",
+          excerpt: ["npm error Missing dependency"], logsUnavailable: false };
+      });
+      ipcMain.removeHandler("github-branch-pr");
+      ipcMain.handle("github-branch-pr", () => ({
+        status: "found",
+        pr: {
+          number: 42, title: "Preserve review position", head: "feature", target: "develop",
+          url: "https://github.com/example/demo/pull/42", review: "Changes requested",
+          checksState: "Checks failed", checks: [
+            { name: "Build", state: "failure", url: "https://github.com/example/demo/actions/runs/123/job/1" },
+            { name: "Build", state: "failure", url: "https://github.com/example/demo/actions/runs/456/job/2" },
+          ],
+          feedback: [{ author: "reviewer", path: "fixture.txt", line: 7, text: "Cover the restored diff position." }],
+        },
+      }));
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    const prCard = live.getByRole("button", { name: /PR #42.*Preserve review position.*Checks failed/ });
+    await expect(prCard.getByText("Preserve review position", { exact: true })).toBeVisible();
+    await expect(prCard.getByText("Checks failed", { exact: true })).toHaveAttribute("data-tone", "error");
+    await prCard.click();
+    const pullRequest = page.getByRole("dialog", { name: "GitHub pull request" });
+    await expect(pullRequest.getByText("feature → develop")).toBeVisible();
+    await expect(pullRequest.getByRole("listitem").filter({ hasText: "Actions run #123" })
+      .getByRole("button", { name: "View job log" })).toBeVisible();
+    await expect(pullRequest.getByRole("listitem").filter({ hasText: "Actions run #456" })
+      .getByRole("button", { name: "View job log" })).toBeVisible();
+    const failedJob = pullRequest.getByRole("listitem").filter({ hasText: "Actions run #123" });
+    await expect(failedJob).toContainText("Electron CI · Failed step: Install dependencies");
+    await expect(failedJob).toContainText("npm error Missing dependency");
+    const secondJob = pullRequest.getByRole("listitem").filter({ hasText: "Actions run #456" });
+    await secondJob.getByRole("button", { name: "Show failure details" }).click();
+    await expect(secondJob).toContainText("Actions read access is required.");
+    await failedJob.getByRole("button", { name: "Draft follow-up" }).click();
+    await expect(originalDraft).toHaveValue(/Install dependencies.*npm error Missing dependency.*actions\/runs\/123\/job\/1/s);
+    await originalDraft.fill("Keep this draft while I handle two requests.");
+    await live.getByRole("button", { name: "Changes", exact: true }).click();
+    await prCard.click();
+    await pullRequest.getByRole("listitem").filter({ hasText: "Cover the restored diff position." })
+      .getByRole("button", { name: "Draft follow-up" }).click();
+    await expect(originalDraft).toHaveValue(/^Keep this draft while I handle two requests\..*Cover the restored diff position\./s);
+    await originalDraft.fill("Keep this draft while I handle two requests.");
+    await live.getByRole("button", { name: "Changes", exact: true }).click();
+
     await changesPane.locator(".changes-repo").hover();
     const dashboardScrollTop = () => dashboard().evaluate((element) => element.scrollTop);
     const listPagePosition = await dashboardScrollTop();
     await page.mouse.wheel(0, 400);
     await expect.poll(() => changesPane.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     expect(await dashboardScrollTop()).toBe(listPagePosition);
-    await changesPane.getByRole("button", { name: "Uncommitted", exact: true }).click();
-    await live.getByRole("button", { name: "M fixture.txt", exact: true }).click();
+    await changesPane.getByRole("combobox", { name: "Review scope" }).selectOption("working");
+    const beforeReviewViewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    await page.setViewportSize({ width: 1470, height: 950 });
+    const changedFiles = changesPane.getByRole("navigation", { name: "Changed files" });
+    await changedFiles.getByRole("button", { name: /^M fixture.txt/ }).click();
+    await expect(changedFiles).toBeVisible();
+    await expect(changedFiles.locator(".change-line-count").first()).toHaveText("+201−0");
+    const review = live.getByRole("region", { name: "Diff review" });
+    const fileNavigation = review.getByRole("group", { name: "Navigate files" });
+    for (const [index, path] of ["second.txt", "third.txt", "fourth.txt", "fifth.txt"].entries()) {
+      await fileNavigation.getByRole("button", { name: "Next file" }).click();
+      await expect(review.locator("header strong")).toHaveText(path);
+      await expect(fileNavigation).toContainText(`${index + 2} / 5`);
+    }
+    await expect(fileNavigation.getByRole("button", { name: "Next file" })).toBeDisabled();
+    await fileNavigation.getByRole("button", { name: "Previous file" }).click();
+    await expect(review.locator("header strong")).toHaveText("fourth.txt");
+    await page.setViewportSize({ width: 700, height: 650 });
+    await expect(changesPane).toBeHidden();
+    await review.getByRole("button", { name: "Back to files" }).click();
+    await expect(changesPane).toBeVisible();
+    await changedFiles.getByRole("button", { name: /^M fixture.txt/ }).click();
+    await page.setViewportSize(beforeReviewViewport);
+    const hunks = review.getByRole("group", { name: "Navigate changes" });
+    await expect(hunks).toContainText("Hunk 1 of 2");
+    await hunks.getByRole("button", { name: "Next change" }).click();
+    await expect(hunks).toContainText("Hunk 2 of 2");
+    await hunks.getByRole("button", { name: "Previous change" }).click();
+    await expect(hunks).toContainText("Hunk 1 of 2");
+    const layout = review.getByRole("group", { name: "Diff layout" });
+    await layout.getByRole("button", { name: "Split" }).click();
+    await expect(review.getByRole("columnheader", { name: "Before" })).toBeVisible();
+    await expect(review.getByRole("columnheader", { name: "After" })).toBeVisible();
+    await expect(review.getByRole("row").filter({ hasText: "Before edit" })).toContainText("line 0");
+    await review.getByLabel("File diff", { exact: true }).press("F7");
+    await expect(hunks).toContainText("Hunk 2 of 2");
+    await review.getByLabel("File diff", { exact: true }).press("F7");
+    await expect(review.locator("header strong")).toHaveText("second.txt");
+    await expect(hunks).toContainText("Hunk 1 of 2");
+    await review.getByLabel("File diff", { exact: true }).press("Shift+F7");
+    await expect(review.locator("header strong")).toHaveText("fixture.txt");
+    await expect(hunks).toContainText("Hunk 2 of 2");
+    await layout.getByRole("button", { name: "Unified" }).click();
+    await live.getByLabel("File diff", { exact: true }).evaluate((element) => { element.scrollTop = 0; });
     const diff = live.getByLabel("File diff", { exact: true });
     await expect(diff.getByText("+ line 199", { exact: true })).toBeVisible();
     await diff.hover();
@@ -2761,6 +3126,18 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await page.mouse.wheel(0, 250);
     await expect.poll(() => diff.evaluate((element) => element.scrollTop)).toBe(250);
     expect(await dashboardScrollTop()).toBe(diffPagePosition);
+    const anchoredLine = diff.getByText("+ line 14", { exact: true });
+    const beforeRefresh = (await anchoredLine.boundingBox())!.y;
+    const refreshDiff = (prefix: string) => app.evaluate(({ BrowserWindow }, { cwd, prefix }) => {
+      (globalThis as any).diffRefreshPrefix = prefix;
+      BrowserWindow.getAllWindows()[0].webContents.send("event", { event: "git", cwd });
+    }, { cwd: liveTerminal.cwd, prefix });
+    await refreshDiff("+ inserted above\n+ another insert\n");
+    await expect(diff.getByText("+ inserted above", { exact: true })).toBeVisible();
+    expect((await anchoredLine.boundingBox())!.y).toBeCloseTo(beforeRefresh, 0);
+    await refreshDiff("");
+    await expect(diff.getByText("+ inserted above", { exact: true })).toHaveCount(0);
+    await expect.poll(() => diff.evaluate((element) => element.scrollTop)).toBe(250);
     await diff.evaluate((element) => { element.scrollTop = 0; });
     await page.mouse.wheel(0, -160);
     expect(await dashboardScrollTop()).toBe(diffPagePosition);
@@ -2823,7 +3200,7 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await live.getByRole("button", { name: "Terminal", exact: true }).click();
     const dashboardTerminal = live.getByLabel("Terminal", { exact: true });
     await expect(dashboardTerminal).toBeVisible();
-    await expect(live.getByRole("button", { name: "Open in workspace", exact: true })).toBeVisible();
+    await expect(live.getByRole("button", { name: "Open in workspace", exact: true })).toHaveCount(0);
     await expect(live.getByRole("button", { name: "Rename session…", exact: true })).toBeVisible();
     const terminalScreen = dashboardTerminal.locator(".xterm-screen");
     const terminalSlider = dashboardTerminal.locator(".scrollbar.vertical .slider");
@@ -2889,12 +3266,17 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await expect(rowMenu).toHaveCount(0);
     await live.getByRole("button", { name: "Inspect Review layout" }).click();
     await live.getByRole("button", { name: "Changes", exact: true }).click();
-    await live.getByRole("button", { name: "M fixture.txt", exact: true }).click();
+    await live.getByRole("button", { name: /^M fixture.txt/ }).click();
     const interruptedDiff = live.locator(".dashboard-live-session:visible").getByLabel("File diff", { exact: true });
     await expect(interruptedDiff.getByText("+ line 199", { exact: true })).toBeVisible();
     await interruptedDiff.evaluate((element) => { element.scrollTop = 180; });
-    await live.getByRole("button", { name: "Hide session list", exact: true }).click();
+    const hideSessions = live.getByRole("button", { name: "Hide session list", exact: true });
+    await expect(live.getByRole("button", { name: "Expand detail", exact: true })).toHaveCount(0);
+    await hideSessions.click();
     await expect(live.getByRole("navigation", { name: "Live session list" })).toHaveCount(0);
+    await live.getByRole("button", { name: "Show session list", exact: true }).click();
+    await expect(live.getByRole("navigation", { name: "Live session list" })).toBeVisible();
+    await hideSessions.click();
     await dashboard().getByRole("button", { name: "Next attention", exact: true }).click();
     await expect(live.getByRole("navigation", { name: "Live session list" })).toBeVisible();
     await expect(live.getByRole("button", { name: "Inspect Codex fixture" })).toHaveAttribute("aria-current", "true");
@@ -2954,36 +3336,35 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await launcher.getByRole("button", { name: /^Start Codex/ }).click();
     await expect(dashboard()).toBeVisible();
     await expect(live.locator(".dashboard-live-toolbar:visible")).toContainText("Security review");
-    await live.getByRole("button", { name: "Open in workspace", exact: true }).click();
-    await expect(page.getByRole("tab", { name: /Security review/ })).toBeVisible();
-    await page.locator(".folder-actions").getByLabel("Session actions", { exact: true }).click();
-    await page.getByRole("button", { name: "Rename session…", exact: true }).click();
+    const namedSession = live.locator(".dashboard-live-toolbar:visible");
+    await namedSession.getByRole("button", { name: "Rename session…", exact: true }).click();
     const rename = page.getByRole("dialog", { name: "Rename session" });
     const sessionName = rename.getByLabel("Session name", { exact: true });
     await expect(sessionName).toHaveValue("Security review");
     await sessionName.fill("Checkout security");
     await rename.getByRole("button", { name: "Save name", exact: true }).click();
-    await expect(page.getByRole("tab", { name: /Checkout security/ })).toBeVisible();
-    await page.locator(".folder-actions").getByLabel("Session actions", { exact: true }).click();
-    await page.getByRole("button", { name: "Rename session…", exact: true }).click();
+    await expect(namedSession).toContainText("Checkout security");
+    await namedSession.getByRole("button", { name: "Rename session…", exact: true }).click();
     await sessionName.fill("");
     await rename.getByRole("button", { name: "Save name", exact: true }).click();
-    await expect(page.getByRole("tab", { name: /Checkout security/ })).toHaveCount(0);
-    await expect(page.getByRole("tab", { selected: true })).toContainText("Codex session");
+    await expect(namedSession).toContainText("Codex session");
 
-    await page.getByRole("button", { name: "Project dashboard", exact: true }).click();
     await live.getByRole("button", { name: "Inspect Codex fixture" }).click();
     await live.getByRole("button", { name: "Changes", exact: true }).click();
     const currentDiff = live.locator(".dashboard-live-session:visible").getByLabel("File diff", { exact: true });
     await expect(currentDiff.getByText("+ line 199", { exact: true })).toBeVisible();
     await currentDiff.evaluate((element) => { element.scrollTop = 310; });
     await expect.poll(() => currentDiff.evaluate((element) => element.scrollTop)).toBe(310);
+    fs.writeFileSync(path.join(dir, "Review.txt"), "Later checkout edit.\n");
     await closeUI(app);
     app = await electron.launch(launch);
     page = await workspacePage(app, true);
     const restoredTerminal = { ...liveTerminal, id: "reattached-codex-terminal" };
-    await app.evaluate(({ BrowserWindow, ipcMain }, { terminal, row }) => {
+    await app.evaluate(({ BrowserWindow, ipcMain }, { terminal, row, captureAt }) => {
       const wc = BrowserWindow.getAllWindows()[0].webContents;
+      ipcMain.removeHandler("live-session-preview");
+      ipcMain.handle("live-session-preview", () => ({ instruction: "Review the desktop layout next.",
+        instructionAt: captureAt, answer: "Desktop layout verified. See [Release notes](<Release notes.md>)." }));
       ipcMain.removeHandler("git-changes");
       ipcMain.handle("git-changes", () => ({ root: terminal.cwd, branch: "main",
         files: [{ path: "fixture.txt", status: "M", area: "unstaged" }] }));
@@ -2998,7 +3379,7 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
       });
       wc.send("event", { event: "terminals", terminals: [terminal] });
       wc.send("event", { event: "store", sessions: [{ ...row, terminalId: terminal.id, state: "idle" }] });
-    }, { terminal: restoredTerminal, row: rows[1] });
+    }, { terminal: restoredTerminal, row: rows[1], captureAt: capturedInstructionAt });
     const restoredLive = dashboard().getByRole("region", { name: "Live sessions" });
     const restoredSession = restoredLive.getByRole("button", { name: "Inspect Codex fixture" });
     const restoredHeader = restoredLive.locator(".dashboard-live-toolbar:visible");
@@ -3009,6 +3390,13 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await expect(restoredDiff.getByText("+ line 199", { exact: true })).toBeVisible();
     await expect.poll(() => restoredDiff.evaluate((element) => element.scrollTop)).toBe(310);
     await restoredLive.getByRole("button", { name: "Preview", exact: true }).click();
+    await restoredLive.getByRole("button", { name: "Turn changes 2 files" }).click();
+    const restoredTurnFiles = page.getByRole("dialog", { name: "Changed during this turn" });
+    await restoredTurnFiles.getByRole("button", { name: "View diff for Review.txt" }).click();
+    const restoredCapturedDiff = page.getByRole("dialog", { name: "Captured checkout diff" });
+    await expect(restoredCapturedDiff.getByLabel("File diff", { exact: true })).toContainText("Desktop layout verified.");
+    await expect(restoredCapturedDiff).not.toContainText("Later checkout edit.");
+    await restoredCapturedDiff.getByRole("button", { name: "Close diff" }).click();
     await expect(restoredLive.getByRole("textbox", { name: /Follow up · Codex fixture/ }))
       .toHaveValue("Keep this draft while I switch.");
     await expect(restoredLive.getByRole("list", { name: "Draft screenshots" }).getByText("Switch.png")).toBeVisible();
@@ -3437,11 +3825,61 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await expect.poll(() => app.evaluate(() => (globalThis as any).endedDrawerShell)).toBe("resumed-release");
     await recentDialog.getByRole("button", { name: "Close recent session details" }).click();
     await expect(restoredLive.locator(".dashboard-live-toolbar:visible")).toContainText("Codex fixture");
+    await app.evaluate(({ ipcMain }, at) => {
+      ipcMain.removeHandler("live-session-follow-up");
+      ipcMain.handle("live-session-follow-up", (_event, _provider, _sessionID, _terminalID, text) => {
+        if (text !== "Edit the pending file across a restart.") throw Error("Wrong restart fixture follow-up");
+      });
+      ipcMain.removeHandler("live-session-preview");
+      ipcMain.handle("live-session-preview", () => ({
+        instruction: "Review the desktop layout next.", instructionAt: at, answer: "Previous reply.",
+      }));
+    }, capturedInstructionAt);
+    await restoredLive.getByRole("button", { name: "Preview", exact: true }).click();
+    await restoredLive.getByRole("textbox", { name: /Follow up · Codex fixture/ }).fill("Edit the pending file across a restart.");
+    await restoredLive.getByRole("button", { name: "Send follow-up" }).click();
+    await expect(restoredLive.getByText("Follow-up sent to Codex fixture.")).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem("dashboardPendingTurnCaptures")))
+      .toContain("Edit the pending file across a restart.");
+    await restoredLive.getByRole("button", { name: "Preview layout" }).click();
+    await restoredLive.getByRole("checkbox", { name: "Recent turns" }).uncheck();
+    await page.keyboard.press("Escape");
     await closeUI(app);
+    fs.writeFileSync(path.join(dir, "Pending.txt"), "Edit completed after restart.\n");
     app = await electron.launch(launch);
     page = await workspacePage(app, true);
     await expect(scope("All projects")).toBeVisible();
     expect(await page.evaluate(() => localStorage.getItem("recapAgent"))).toBe("claude");
+    await app.evaluate(({ BrowserWindow, ipcMain }, { terminal, row }) => {
+      const wc = BrowserWindow.getAllWindows()[0].webContents;
+      const instructionAt = Date.now();
+      ipcMain.removeHandler("live-session-preview");
+      ipcMain.handle("live-session-preview", () => ({
+        instruction: "Edit the pending file across a restart.", instructionAt, answer: "The edit is complete.",
+        recentTurns: [
+          { instruction: "An earlier instruction.", instructionAt: instructionAt - 30000, answer: "The earlier reply." },
+          { instruction: "Edit the pending file across a restart.", instructionAt, answer: "The edit is complete." },
+        ],
+      }));
+      wc.send("event", { event: "terminals", terminals: [terminal] });
+      wc.send("event", { event: "store", sessions: [{ ...row, terminalId: terminal.id, state: "idle" }] });
+    }, { terminal: { ...restoredTerminal, id: "turn-restart-terminal" }, row: rows[1] });
+    const afterRestart = dashboard().getByRole("region", { name: "Live sessions" });
+    await afterRestart.getByRole("button", { name: "Preview", exact: true }).click();
+    await afterRestart.getByRole("button", { name: "Preview layout" }).click();
+    await expect(afterRestart.getByRole("checkbox", { name: "Recent turns" })).not.toBeChecked();
+    await page.keyboard.press("Escape");
+    await expect(afterRestart.getByRole("navigation", { name: "Recent turns", exact: true })).toHaveCount(0);
+    const compactTurns = afterRestart.getByRole("navigation", { name: "Recent turn controls" });
+    await compactTurns.getByRole("button", { name: "Previous turn" }).click();
+    await expect(afterRestart.locator(".dashboard-briefing")).toContainText("The earlier reply.");
+    await compactTurns.getByRole("button", { name: "Next turn" }).click();
+    await afterRestart.getByRole("button", { name: /Turn changes .*file/ }).click();
+    const resumedCapture = page.getByRole("dialog", { name: "Changed during this turn" });
+    await expect(resumedCapture.getByText("Pending.txt", { exact: true })).toBeVisible();
+    await expect(resumedCapture.getByText("unchanged.txt", { exact: true })).toHaveCount(0);
+    await resumedCapture.getByRole("button", { name: "View diff for Pending.txt" }).click();
+    await expect(page.getByRole("dialog", { name: "Captured checkout diff" })).toContainText("Edit completed after restart.");
   } finally {
     await closeUI(app);
     const client = new Service(path.join(data, "service-v2"));
@@ -3739,6 +4177,26 @@ test("Quick Terminal keeps its shell and keyboard shortcuts can be remapped", as
     await page.keyboard.press("ControlOrMeta+t");
     await expect(terminalInput()).toBeFocused();
     expect(await page.evaluate(() => localStorage.getItem("quickTerminalID"))).toBe(shellId);
+    const destination = "https://example.test/quick-terminal";
+    await app.evaluate(({ BrowserWindow, dialog, shell }, { id, url }) => {
+      dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
+      shell.openExternal = async (href) => { Object.assign(globalThis, { quickTerminalLink: href }); };
+      BrowserWindow.getAllWindows()[0].webContents.send("event", {
+        event: "output", id, sequence: 1_000_000,
+        data: "\x1b[2J\x1b[H\x1b]8;;" + url + "\x07Quick Link\x1b]8;;\x07",
+      });
+    }, { id: shellId, url: destination });
+    const screen = quick().locator(".xterm-screen");
+    await expect(screen).toContainText("Quick Link");
+    const position = { x: 12, y: 6 };
+    await screen.hover({ position });
+    await screen.click({ position, modifiers: [process.platform === "darwin" ? "Meta" : "Control"] });
+    await expect.poll(() => app.evaluate(() => (globalThis as any).quickTerminalLink)).toBe(destination);
+    await quick().getByRole("button", { name: "Dismiss Quick Terminal" }).click();
+    await expect(quick()).toHaveCount(0);
+    await expect(dashboard()).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+t");
+    await expect(terminalInput()).toBeFocused();
     await app.evaluate(({ dialog }) => {
       dialog.showMessageBox = async (_window, options) => {
         if (options.message !== "Close this terminal?") throw Error("Expected a shell confirmation");

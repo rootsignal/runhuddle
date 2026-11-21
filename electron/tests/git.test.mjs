@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { gitChanges, gitDiff } from "../main/git.mjs";
+import { gitChanges, gitDiff, gitTurnCommittedDiffs, gitTurnSnapshot } from "../main/git.mjs";
 test("Git review handles staged/unstaged, renames, deletion, binary, and literal filenames without mutation", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-git-"));
   const git = (...args) => execFileSync("git", args, { cwd: dir });
@@ -28,6 +28,12 @@ test("Git review handles staged/unstaged, renames, deletion, binary, and literal
     const before = git("diff", "--cached");
     const data = await gitChanges(dir);
     assert.equal(data.files.filter((f) => f.path === "tracked.txt").length, 2);
+    for (const area of ["staged", "unstaged"]) {
+      const file = data.files.find((file) => file.path === "tracked.txt" && file.area === area);
+      assert.deepEqual([file.additions, file.deletions], [1, 1]);
+    }
+    const renamed = data.files.find((file) => file.path === "renamed name.txt");
+    assert.deepEqual([renamed.additions, renamed.deletions], [0, 0]);
     assert.match(await gitDiff(dir, "tracked.txt", "staged"), /\+staged/);
     assert.match(await gitDiff(dir, "tracked.txt", "unstaged"), /\+unstaged/);
     assert.match(
@@ -44,6 +50,15 @@ test("Git review handles staged/unstaged, renames, deletion, binary, and literal
       gitDiff(dir, "../secret", "untracked"),
       /no longer available/,
     );
+    const turnStart = await gitTurnSnapshot(dir);
+    fs.writeFileSync(path.join(dir, "tracked.txt"), "changed during turn\n");
+    const turnEnd = await gitTurnSnapshot(dir);
+    const entry = (snapshot, file, area) => snapshot.entries.find((item) => item.file.path === file && item.file.area === area);
+    assert.equal(turnStart.head, turnEnd.head);
+    assert.equal(entry(turnStart, "tracked.txt", "staged").fingerprint, entry(turnEnd, "tracked.txt", "staged").fingerprint);
+    assert.notEqual(entry(turnStart, "tracked.txt", "unstaged").fingerprint, entry(turnEnd, "tracked.txt", "unstaged").fingerprint);
+    assert.match(entry(turnEnd, "tracked.txt", "unstaged").diff, /\+changed during turn/);
+    assert.equal(turnEnd.entries.some((item) => item.file.path === "binary.dat"), false);
     assert.deepEqual(git("diff", "--cached"), before);
     git("reset", "--hard", "-q");
     git("clean", "-fdq");
@@ -86,6 +101,7 @@ test("clean repositories expose recent commits and committed branch changes sepa
     const recent = await gitChanges(dir, "recent");
     assert.equal(recent.commits[0].title, "Complete feature");
     assert.equal(recent.files[0].path, "file.txt");
+    assert.deepEqual([recent.files[0].additions, recent.files[0].deletions], [1, 1]);
     assert.match(
       await gitDiff(dir, "file.txt", "committed", "recent", recent.revision),
       /\+completed work/,
@@ -106,8 +122,46 @@ test("clean repositories expose recent commits and committed branch changes sepa
       /not committed/,
     );
     await assert.rejects(gitChanges(dir, "recent", "--all"), /Invalid commit/);
+    git("branch", "develop");
+    const develop = await gitChanges(dir, "compare", "", "refs/heads/develop");
+    assert.equal(develop.comparison.targetRef, "refs/heads/develop");
+    assert.equal(develop.base, develop.revision);
+    assert.deepEqual(develop.files, []);
+    assert.equal(develop.uncommittedFiles, 1);
     git("branch", "-D", "main");
-    await assert.rejects(gitChanges(dir, "compare"), /No main branch/);
+    const deleted = await gitChanges(dir, "compare", "", "refs/heads/main");
+    assert.equal(deleted.comparison.targetRef, "");
+    assert.match(deleted.comparison.problem, /no longer available/);
+    assert.deepEqual(deleted.comparison.refs, ["refs/heads/develop", "refs/heads/feature"]);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("turn commit capture spans multiple commits and works with a clean checkout", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-git-turn-commits-"));
+  const git = (...args) => execFileSync("git", args, { cwd: dir });
+  try {
+    git("init", "-q");
+    git("config", "user.name", "Test");
+    git("config", "user.email", "test@example.invalid");
+    const file = path.join(dir, "review.txt");
+    fs.writeFileSync(file, "baseline\n");
+    git("add", "review.txt");
+    git("commit", "-qm", "baseline");
+    const start = await gitTurnSnapshot(dir);
+    for (const [text, subject] of [["intermediate", "first edit"], ["final review", "second edit"]]) {
+      fs.writeFileSync(file, text + "\n");
+      git("commit", "-qam", subject);
+    }
+    const end = await gitTurnSnapshot(dir);
+    assert.deepEqual(end.entries, []);
+    const result = await gitTurnCommittedDiffs(dir, start.head, end.head);
+    assert.equal(result.omitted, 0);
+    assert.deepEqual(result.entries.map(({ file }) => file), [{ path: "review.txt", status: "M", area: "committed" }]);
+    assert.match(result.entries[0].diff, /-baseline\n\+final review/);
+    assert.doesNotMatch(result.entries[0].diff, /intermediate/);
+    assert.equal(await gitTurnCommittedDiffs(dir, end.head, start.head), undefined);
   } finally {
     removeFixture(dir);
   }

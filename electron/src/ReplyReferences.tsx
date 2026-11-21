@@ -1,7 +1,9 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useLayoutEffect, useRef, useState } from "react";
 import extensions from "../main/preview-file-types.json";
 import { Icon } from "./Icons";
 import type { ProjectFilePreview, Session } from "./types";
+
+const MarkdownFile = lazy(() => import("./MarkdownFile"));
 
 function replyReferences(text: string) {
   const references = new Map<string, { target: string; label: string; web: boolean }>();
@@ -74,11 +76,10 @@ export function ReplyReferences({ answer, onFile, onBrowser }: {
   </section>;
 }
 
-export function ProjectFileDialog({ source, file, onClose, renderMarkdown }: {
+export function ProjectFileDialog({ source, file, onClose }: {
   source: Pick<Session, "provider" | "sessionID">;
   file: string;
   onClose: () => void;
-  renderMarkdown: (text: string) => React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [preview, setPreview] = useState<ProjectFilePreview>();
@@ -100,7 +101,9 @@ export function ProjectFileDialog({ source, file, onClose, renderMarkdown }: {
       <button autoFocus onClick={onClose} aria-label="Close file preview"><Icon name="close" size={18} /></button>
     </header>
     {error ? <p role="alert">{error}</p> : preview ? <article>
-      {preview.markdown ? renderMarkdown(preview.text) : <pre>{preview.text}</pre>}
+      {preview.markdown ? <Suspense fallback={<p role="status">Formatting Markdown…</p>}>
+        <MarkdownFile text={preview.text} />
+      </Suspense> : <pre>{preview.text}</pre>}
       {preview.truncated && <p>Preview limited to the first 256 KB.</p>}
     </article> : <p role="status">Opening file…</p>}
   </dialog>;

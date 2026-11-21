@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Terminal } from "@xterm/xterm";
+import type { AppEvent } from "./types";
 
 export type TerminalPermissionPrompt = { question: string; choices: string[] };
 
@@ -16,8 +17,10 @@ export function TerminalPermissionObserver({ id, onPrompt, onWorking }: {
     let sequence = -1;
     let ready = false;
     let disposed = false;
-    const queued: { sequence: number; data: string }[] = [];
+    type TerminalEvent = Extract<AppEvent, { event: "output" | "terminal-size" }>;
+    const queued: TerminalEvent[] = [];
     const scan = terminal.onWriteParsed(() => {
+      if (!ready) return;
       const buffer = terminal.buffer.active;
       const lines = Array.from({ length: buffer.length }, (_, i) => buffer.getLine(i)?.translateToString(true).trim() ?? "");
       const footer = lines.filter(Boolean).slice(-14).join(" ");
@@ -30,28 +33,42 @@ export function TerminalPermissionObserver({ id, onPrompt, onWorking }: {
         ? { question: lines[start].match(heading)![0], choices }
         : undefined);
     });
-    function write(event: { sequence: number; data: string }) {
+    function write(event: TerminalEvent) {
       if (event.sequence <= sequence) return;
       sequence = event.sequence;
-      terminal.write(event.data);
+      if (event.event === "output") terminal.write(event.data);
+      else terminal.write("", () => {
+        if (!disposed) terminal.resize(event.cols, event.rows);
+      });
     }
     const unsubscribe = window.runhuddle.onEvent((event) => {
-      if (event.event !== "output" || event.id !== id) return;
+      if ((event.event !== "output" && event.event !== "terminal-size") || event.id !== id) return;
       if (ready) write(event);
       else queued.push(event);
     });
+    function finishReplay() {
+      if (disposed) return;
+      ready = true;
+      queued.splice(0).forEach(write);
+      terminal.write("");
+    }
     void window.runhuddle.replay(id).then((replay) => {
       if (disposed) return;
-      write(replay);
-      ready = true;
-      queued.forEach(write);
-      queued.length = 0;
-    }, () => {
-      if (disposed) return;
-      ready = true;
-      queued.forEach(write);
-      queued.length = 0;
-    });
+      sequence = replay.sequence;
+      const sizes = replay.sizes ?? [];
+      const first = sizes[0] ?? replay;
+      if (first.cols && first.rows) terminal.resize(first.cols, first.rows);
+      function writeSegment(index: number, offset: number) {
+        const next = sizes[index];
+        terminal.write(replay.data.slice(offset, next?.offset), () => {
+          if (disposed) return;
+          if (!next) return finishReplay();
+          terminal.resize(next.cols, next.rows);
+          writeSegment(index + 1, next.offset);
+        });
+      }
+      writeSegment(1, 0);
+    }, finishReplay);
     return () => {
       disposed = true;
       unsubscribe();

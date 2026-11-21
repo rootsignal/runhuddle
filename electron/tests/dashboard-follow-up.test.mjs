@@ -92,3 +92,36 @@ test("dashboard follow-up saves screenshot references in the same explicit submi
     if (files.length) await fs.rm(path.dirname(files[0]), { recursive: true, force: true });
   }
 });
+
+test("a cleared Codex lock screen does not block dashboard follow-ups", async () => {
+  const lock = "This conversation is open in another app.\r\nClose it there and press R to continue here.";
+  const prompt = "› Ask Codex to do anything\r\n← for agents · ? for shortcuts";
+  const replay = { cols: 100, rows: 30, data: "\x1b[?2004h" + lock };
+  const blocked = fixture({ replay });
+  await assert.rejects(sendDashboardFollowUp(blocked.service, entry, terminalId, "Continue.", () => true),
+    /terminal is not accepting dashboard messages/);
+  assert.deepEqual(blocked.writes, []);
+
+  const ready = fixture({ replay: { ...replay, data: replay.data + "\x1b[2J\x1b[H" + prompt } });
+  await sendDashboardFollowUp(ready.service, entry, terminalId, "Continue.", () => true);
+  assert.deepEqual(ready.writes, [{ id: terminalId, data: "\x1b[200~Continue.\x1b[201~\r" }]);
+});
+
+test("a terminal reset invalidates a retained bracketed-paste marker", async () => {
+  const { service, writes } = fixture({ replay: {
+    cols: 100, rows: 30, data: "\x1b[?2004h\x1bc",
+  } });
+  await assert.rejects(sendDashboardFollowUp(service, entry, terminalId, "Continue.", () => true),
+    /terminal is not accepting dashboard messages/);
+  assert.deepEqual(writes, []);
+});
+
+test("queued follow-up requires an empty Codex prompt even when the session reports idle", { skip: process.platform === "win32" }, async () => {
+  const replay = { cols: 100, rows: 30, data: "\x1b[?2004h› Ask Codex to do anything\r\n← for agents · ? for shortcuts" };
+  const blocked = fixture({ replay: { ...replay, data: replay.data.replace("Ask Codex to do anything", "unsent input") } });
+  assert.equal(await sendDashboardFollowUp(blocked.service, entry, terminalId, "Continue.", () => true, [], undefined, true), "waiting");
+  assert.deepEqual(blocked.writes, []);
+  const ready = fixture({ replay });
+  await sendDashboardFollowUp(ready.service, entry, terminalId, "Continue.", () => true, [], undefined, true);
+  assert.equal(ready.writes.length, 1);
+});
