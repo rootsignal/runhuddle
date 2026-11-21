@@ -2553,9 +2553,9 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await expect(dashboard().getByRole("button", { name: "Next review", exact: true })).toBeDisabled();
     await expect(live.getByRole("img", { name: "Idle", exact: true })).toBeVisible();
     await expect(live.locator(".dashboard-live-toolbar:visible")).toContainText("Codex fixture");
-    await live.getByRole("textbox", { name: /Follow up · Codex fixture/ }).fill("Check the mobile layout.");
+    await live.getByRole("textbox", { name: "Follow-up", exact: true }).fill("Check the mobile layout.");
     await live.getByRole("button", { name: "Send follow-up" }).click();
-    await expect(live.getByText("Follow-up sent to Codex fixture.")).toBeVisible();
+    await expect(live.getByText("Follow-up sent.")).toBeVisible();
     await expect(dashboard().getByRole("button", { name: "Next attention", exact: true })).toBeDisabled();
     await expect(resume.locator(".dashboard-resume-card").filter({ hasText: "Codex fixture" })).toHaveCount(0);
     await app.evaluate(({ ipcMain, BrowserWindow, dialog, shell }, terminal) => {
@@ -2693,7 +2693,7 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     }, { ...rows[1], terminalId: liveTerminal.id });
     const working = live.getByRole("img", { name: "Working", exact: true });
     await expect(working).toBeVisible();
-    const draft = live.getByRole("textbox", { name: /Follow up · Codex fixture/ });
+    const draft = live.getByRole("textbox", { name: "Follow-up", exact: true });
     const git = (...args: string[]) => execFileSync("git", args, { cwd: dir });
     git("init", "-q");
     fs.writeFileSync(path.join(dir, ".git", "info", "exclude"), "/*\n!/Review.txt\n!/Pending.txt\n!/unchanged.txt\n");
@@ -2765,13 +2765,14 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await expect(workTimer).toHaveCount(0);
     if (process.platform === "win32") await live.getByRole("button", { name: "Send follow-up" }).click();
     else {
-      await expect(live.getByText("Queued · waiting for an empty terminal prompt")).toBeVisible();
+      await expect(live.getByText("Queued. Waiting for an empty terminal prompt.")).toBeVisible();
+      await expect(live.getByRole("button", { name: "Check terminal prompt" })).toBeVisible();
       expect(await app.evaluate(() => (globalThis as any).followUpQueueFixture.attempts)).toBe(0);
       await app.evaluate(() => { (globalThis as any).followUpQueueFixture.ready = true; });
     }
 
 
-    await expect(live.getByText("Follow-up sent to Codex fixture.")).toBeVisible();
+    await expect(live.getByText("Follow-up sent.")).toBeVisible();
     expect(await app.evaluate(() => (globalThis as any).followUpQueueFixture.sent)).toBe(1);
     if (process.platform !== "win32")
       expect(await app.evaluate(() => (globalThis as any).followUpQueueFixture.attempts)).toBe(2);
@@ -2907,7 +2908,7 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     }, liveTerminal);
     await updateAttentionFixture();
     await expect(live.getByRole("navigation", { name: "Live session list" }).getByRole("button", { name: /^Inspect / })).toHaveCount(6);
-    const originalDraft = live.getByRole("textbox", { name: /Follow up · Codex fixture/ });
+    const originalDraft = live.getByRole("textbox", { name: "Follow-up", exact: true });
     await originalDraft.fill("Keep this draft while I handle two requests.");
     await live.getByRole("button", { name: "Changes", exact: true }).click();
     const changesPane = live.getByRole("complementary", { name: "Workspace changes" });
@@ -3307,7 +3308,7 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await expect.poll(() => interruptedDiff.evaluate((element) => element.scrollTop)).toBe(180);
     await live.getByRole("button", { name: "Inspect Codex fixture" }).click();
     await live.getByRole("button", { name: "Preview", exact: true }).click();
-    const unsent = live.getByRole("textbox", { name: /Follow up · Codex fixture/ });
+    const unsent = live.getByRole("textbox", { name: "Follow-up", exact: true });
     await unsent.fill("Keep this draft while I switch.");
     await unsent.evaluate((element) => {
       const clipboardData = new DataTransfer();
@@ -3397,11 +3398,11 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await expect(restoredCapturedDiff.getByLabel("File diff", { exact: true })).toContainText("Desktop layout verified.");
     await expect(restoredCapturedDiff).not.toContainText("Later checkout edit.");
     await restoredCapturedDiff.getByRole("button", { name: "Close diff" }).click();
-    await expect(restoredLive.getByRole("textbox", { name: /Follow up · Codex fixture/ }))
+    await expect(restoredLive.getByRole("textbox", { name: "Follow-up", exact: true }))
       .toHaveValue("Keep this draft while I switch.");
     await expect(restoredLive.getByRole("list", { name: "Draft screenshots" }).getByText("Switch.png")).toBeVisible();
     await restoredLive.getByRole("button", { name: "Send follow-up" }).click();
-    await expect(restoredLive.getByText("Follow-up sent to Codex fixture.")).toBeVisible();
+    await expect(restoredLive.getByText("Follow-up sent.")).toBeVisible();
     await expect(restoredHeader.getByText("Draft", { exact: true })).toHaveCount(0);
     const queueReview = (id: string) => app.evaluate(({ BrowserWindow, ipcMain }, { id, row }) => {
       const wc = BrowserWindow.getAllWindows()[0].webContents;
@@ -3515,7 +3516,7 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
         return [id];
       });
     }, scopedRows[3].provider + ":" + scopedRows[3].sessionID);
-    const recentOriginDraft = restoredLive.getByRole("textbox", { name: /Follow up · Codex fixture/ });
+    const recentOriginDraft = restoredLive.getByRole("textbox", { name: "Follow-up", exact: true });
     await recentOriginDraft.fill("Keep my place while browsing Recent.");
     await restoredLive.getByRole("button", { name: "Changes", exact: true }).click();
     await expect(restoredDiff).toBeVisible();
@@ -3657,7 +3658,7 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     const sessionHeader = restoredLive.locator(".dashboard-live-toolbar:visible");
     await expect(rail).toHaveCount(0);
     await expect(sessionHeader.getByRole("img", { name: "Idle", exact: true })).toBeVisible();
-    const soloDraft = restoredLive.getByRole("textbox", { name: /Follow up · Codex fixture/ });
+    const soloDraft = restoredLive.getByRole("textbox", { name: "Follow-up", exact: true });
     await soloDraft.fill("Resume this after checking history.");
     await expect(sessionHeader.getByText("Draft", { exact: true })).toBeVisible();
     await restoredLive.getByRole("button", { name: "Changes", exact: true }).click();
@@ -3836,9 +3837,9 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
       }));
     }, capturedInstructionAt);
     await restoredLive.getByRole("button", { name: "Preview", exact: true }).click();
-    await restoredLive.getByRole("textbox", { name: /Follow up · Codex fixture/ }).fill("Edit the pending file across a restart.");
+    await restoredLive.getByRole("textbox", { name: "Follow-up", exact: true }).fill("Edit the pending file across a restart.");
     await restoredLive.getByRole("button", { name: "Send follow-up" }).click();
-    await expect(restoredLive.getByText("Follow-up sent to Codex fixture.")).toBeVisible();
+    await expect(restoredLive.getByText("Follow-up sent.")).toBeVisible();
     expect(await page.evaluate(() => localStorage.getItem("dashboardPendingTurnCaptures")))
       .toContain("Edit the pending file across a restart.");
     await restoredLive.getByRole("button", { name: "Preview layout" }).click();

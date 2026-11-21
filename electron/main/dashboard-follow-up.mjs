@@ -4,13 +4,19 @@ import path from "node:path";
 import xterm from "@xterm/xterm";
 
 const conversationLocked = /Close it there and press R to continue here/i;
+const replayLimit = 512 * 1024;
 
-async function readTerminalScreen(replay) {
+async function readTerminalScreen(replay, codex = false) {
   const sizes = replay.sizes ?? [];
   const initial = sizes[0] ?? replay;
   if (!initial.cols || !initial.rows) return;
   const term = new xterm.Terminal({ cols: initial.cols, rows: initial.rows, scrollback: 0, allowProposedApi: true });
   try {
+    // Unix Codex enables bracketed paste on startup. When the startup output
+    // has rolled out of the buffer, let retained mode changes and resets
+    // override that initial mode as the replay is parsed.
+    if (codex && process.platform !== "win32" && replay.data.length === replayLimit)
+      await new Promise((done) => term.write("\x1b[?2004h", done));
     let offset = 0;
     for (const size of sizes.slice(1)) {
       await new Promise((done) => term.write(replay.data.slice(offset, size.offset), done));
@@ -29,7 +35,7 @@ async function readTerminalScreen(replay) {
 
 export async function codexPromptReady(replay) {
   if (!replay?.data || process.platform === "win32") return false;
-  const screen = await readTerminalScreen(replay);
+  const screen = await readTerminalScreen(replay, true);
   if (!screen?.bracketedPaste) return false;
   const footer = screen.lines.slice(-8);
   return footer.some((line) => /^›\s+Ask Codex to do anything$/.test(line)) &&
@@ -58,15 +64,11 @@ export async function sendDashboardFollowUp(service, entry, terminalId, message,
 
   const replay = await service.call("replay", { id: terminalId });
   const pasteMode = [...replay.data.matchAll(/\x1b\[\?[\d;]*\b2004(?:;\d+)*([hl])/g)].at(-1)?.[1];
-  // A long Codex session can push its startup mode switch out of the helper's replay buffer.
-  // Codex enables bracketed paste on Unix. Respect an explicit disable in the retained output.
-  const codexReplayTruncated = pasteMode === undefined && entry.provider === "Codex" &&
-    process.platform !== "win32" && replay.data.length === 512 * 1024;
   const recentOutput = replay.data.slice(-12000);
-  const screen = await readTerminalScreen(replay);
+  const screen = await readTerminalScreen(replay, entry.provider === "Codex");
   const locked = conversationLocked.test(screen ? screen.lines.join(" ") : recentOutput);
   const acceptsPaste = screen?.bracketedPaste ?? (pasteMode === "h");
-  if ((!acceptsPaste && !codexReplayTruncated) || locked) {
+  if (!acceptsPaste || locked) {
     if (queued) return "waiting";
     throw Error("Open the session to continue. Its terminal is not accepting dashboard messages.");
   }

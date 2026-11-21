@@ -158,7 +158,7 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
     : pending || (liveState === "idle" ? "Ready for a follow-up."
       : liveState === "working" ? "The agent is working."
       : liveState ? "Open the terminal to check the agent’s status."
-      : "Review the agent’s update.");
+      : update ? "Review the agent’s update." : "Ready for a follow-up. No reply is available to review yet.");
   const latestTurn = waitingForTranscript
     ? { instruction: submitted?.text, instructionAt: submitted?.at, screenshots: submitted?.screenshots }
     : preview;

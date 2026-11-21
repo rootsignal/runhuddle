@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseHistory, pendingQuestions } from "../main/history.mjs";
+import { DatabaseSync } from "node:sqlite";
+import { parseHistory, pendingQuestions, readAttentionPreview } from "../main/history.mjs";
 import { HistoryIndex } from "../main/history-index.mjs";
 import { historyIndexClient } from "../main/history-index-client.mjs";
 
@@ -9,6 +10,41 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 const lines = (rows) => rows.map(JSON.stringify).join("\n");
+
+test("Codex preview recovers recent turns behind large tool output", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "runhuddle-preview-"));
+  const previousHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = home;
+  try {
+    const transcript = path.join(home, "session.jsonl");
+    const database = new DatabaseSync(path.join(home, "state_5.sqlite"));
+    try {
+      database.exec("CREATE TABLE threads (id TEXT, rollout_path TEXT)");
+      database.prepare("INSERT INTO threads VALUES (?, ?)").run("11111111-1111-4111-8111-111111111111", transcript);
+    } finally {
+      database.close();
+    }
+    const message = (role, text) => ({
+      type: "response_item",
+      payload: { type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] },
+    });
+    fs.writeFileSync(transcript, lines([
+      message("user", "Earlier instruction"),
+      message("assistant", "Earlier reply"),
+      message("user", "Release the dashboard"),
+      { type: "response_item", payload: { type: "function_call_output", output: "x".repeat(5 * 1024 * 1024) } },
+      message("assistant", "The release is live."),
+    ]));
+    const preview = await readAttentionPreview({ provider: "Codex", sessionID: "11111111-1111-4111-8111-111111111111", cwd: home }, "completion", true);
+    assert.equal(preview.instruction, "Release the dashboard");
+    assert.equal(preview.answer, "The release is live.");
+    assert.deepEqual(preview.recentTurns.map((turn) => turn.instruction), ["Earlier instruction", "Release the dashboard"]);
+  } finally {
+    if (previousHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
 test("history uses Codex conversation events without duplicate response items", () => {
   const result = parseHistory(
     "codex",
