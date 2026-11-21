@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import recapModels from "../main/recap-models.json";
 import type { Session, SessionRecap as Recap } from "./types";
 
@@ -14,11 +14,13 @@ export function SessionRecap({
   messages,
   recap,
   loading,
+  showExcerpts = true,
 }: {
   session: Session;
   messages: { role: string; text: string }[];
   recap?: Recap;
   loading: boolean;
+  showExcerpts?: boolean;
 }) {
   const [agent, setAgent] = useState<Agent>(() => {
     const last = localStorage.getItem("recapAgent");
@@ -30,6 +32,8 @@ export function SessionRecap({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const action = useRef<HTMLButtonElement>(null);
+  const headingId = useId();
+  const generationId = useId();
   const { provider, sessionID } = session;
   const latest = [...messages].reverse();
   const prompt = latest.find((message) => message.role === "user");
@@ -71,14 +75,14 @@ export function SessionRecap({
     }
   }
   return (
-    <section className="session-recap" aria-labelledby="session-recap-heading">
+    <section className="session-recap" aria-labelledby={headingId}>
       <header className="recap-heading">
-        <h2 id="session-recap-heading">Where we left off</h2>
+        <h2 id={headingId}>Where we left off</h2>
         {(messages.length > 0 || configuring) && (
           <button
             ref={action}
             aria-expanded={configuring}
-            aria-controls={configuring ? "recap-generation" : undefined}
+            aria-controls={configuring ? generationId : undefined}
             disabled={loading}
             aria-disabled={busy || undefined}
             onClick={() => {
@@ -106,14 +110,14 @@ export function SessionRecap({
           {session.updated > recap.sourceUpdated && " · Session activity since this recap"}
         </small>
       </>}
-      {excerpts.length > 0 && (recap ? (
+      {showExcerpts && excerpts.length > 0 && (recap ? (
         <details>
           <summary>Latest recorded messages</summary>
           {excerptList}
         </details>
       ) : excerptList)}
       {configuring && (
-        <form id="recap-generation" className="recap-generation"
+        <form id={generationId} className="recap-generation"
           onSubmit={(event) => { event.preventDefault(); if (!busy && !loading) void generate(); }}
           onKeyDown={(event) => {
             if (event.key === "Escape" && !busy && !event.defaultPrevented) closeOptions();

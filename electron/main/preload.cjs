@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld("runhuddle", {
   snapshot: () => invoke("snapshot"),
   reopenBrowserSession: (id) => invoke("reopen-browser-session", id),
   previewProjectFile: (provider, id, file) => invoke("preview-project-file", provider, id, file),
+  revealReferencedFile: (provider, id, file) => invoke("reveal-referenced-file", provider, id, file),
   openTerminalLink: (url) => invoke("open-terminal-link", url),
   locateCodexSession: (id) => invoke("locate-codex-session", id),
   viewedTerminal: (id) => invoke("viewed-terminal", id),

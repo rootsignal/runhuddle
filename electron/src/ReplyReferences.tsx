@@ -4,6 +4,8 @@ import { Icon } from "./Icons";
 import type { ProjectFilePreview, Session } from "./types";
 
 const MarkdownFile = lazy(() => import("./MarkdownFile"));
+const plainError = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason))
+  .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 
 function replyReferences(text: string) {
   const references = new Map<string, { target: string; label: string; web: boolean }>();
@@ -55,8 +57,7 @@ export function ReplyReferences({ answer, onFile, onBrowser }: {
     try {
       await action();
     } catch (reason) {
-      setError((reason instanceof Error ? reason.message : String(reason))
-        .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ""));
+      setError(plainError(reason));
     }
   }
   if (!references.length) return null;
@@ -69,7 +70,7 @@ export function ReplyReferences({ answer, onFile, onBrowser }: {
         <button className="dashboard-tool-icon" aria-label={`Open ${label} in RunHuddle Browser`} data-tooltip="Open in RunHuddle Browser"
           onClick={() => void open(() => onBrowser(target))}><Icon name="browser" size={17} /></button>
         <button className="dashboard-tool-icon" aria-label={`Open ${label} in default browser`} data-tooltip="Open in default browser"
-          onClick={() => void open(() => window.runhuddle.openTerminalLink(target))}><Icon name="open-workspace" size={17} /></button>
+          onClick={() => void open(() => window.runhuddle.openTerminalLink(target))}><Icon name="external-link" size={17} /></button>
       </> : <button className="secondary" aria-label={`View ${label}`} onClick={() => onFile(target)}>View file</button>}
     </li>)}</ul>
     {error && <p role="alert">{error}</p>}
@@ -84,6 +85,8 @@ export function ProjectFileDialog({ source, file, onClose }: {
   const ref = useRef<HTMLDialogElement>(null);
   const [preview, setPreview] = useState<ProjectFilePreview>();
   const [error, setError] = useState("");
+  const [revealError, setRevealError] = useState("");
+  const filename = file.split(/[\\/]/).at(-1) || file;
   useLayoutEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
@@ -91,16 +94,25 @@ export function ProjectFileDialog({ source, file, onClose }: {
     void window.runhuddle.previewProjectFile(source.provider, source.sessionID, file).then((value) => {
       if (active) setPreview(value);
     }, (reason) => {
-      if (active) setError(String(reason).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ""));
+      if (active) setError(plainError(reason));
     });
     return () => { active = false; dialog.close(); };
   }, [source.provider, source.sessionID, file]);
   return <dialog ref={ref} aria-label="File preview" className="appearance-dialog dashboard-file-preview"
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
-    <header><div><small>File preview</small><h2>{preview?.path ?? file}</h2></div>
+    <header><div><small>File preview</small><h2 title={file}>{preview?.path ?? filename}</h2></div>
       <button autoFocus onClick={onClose} aria-label="Close file preview"><Icon name="close" size={18} /></button>
     </header>
-    {error ? <p role="alert">{error}</p> : preview ? <article>
+    {error ? <div className="dashboard-file-preview-error">
+      <p role="alert">{error === "This file is outside the session’s project."
+        ? "Preview is available for files inside this session’s project." : error}</p>
+      <button type="button" onClick={() => {
+        setRevealError("");
+        void window.runhuddle.revealReferencedFile(source.provider, source.sessionID, file)
+          .catch((reason) => setRevealError(plainError(reason)));
+      }}>{navigator.platform.startsWith("Mac") ? "Show in Finder" : "Show in folder"}</button>
+      {revealError && <p role="alert">{revealError}</p>}
+    </div> : preview ? <article>
       {preview.markdown ? <Suspense fallback={<p role="status">Formatting Markdown…</p>}>
         <MarkdownFile text={preview.text} />
       </Suspense> : <pre>{preview.text}</pre>}

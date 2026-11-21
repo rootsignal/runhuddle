@@ -114,10 +114,10 @@ export type AttachmentTarget = { id: string; title: string; busy: boolean; locke
 export interface EditorChoice { id: string; name: string; application: string }
 export interface Editors { editors: EditorChoice[]; preferred: string }
 export type KeyboardBindings = { palette: string; terminal: string };
-export type DashboardCommand = "dashboard" | "workspace" | "new-session" | "projects" | "recent" |
+export type DashboardCommand = "dashboard" | "new-session" | "projects" | "recent" |
   "next-review" | "next-attention" | "return-session" | "open-browser";
-export type DashboardRequest = { command: DashboardCommand } | { command: "open-project"; folder: string } | { command: "open-session"; session: string };
-export type AppCommand = DashboardCommand | "command-palette" | "quick-terminal" | "keyboard-shortcuts" | "mcp-settings";
+export type DashboardRequest = { command: DashboardCommand } | { command: "open-project"; folder: string } | { command: "open-session"; session: string; notification?: boolean };
+export type AppCommand = DashboardCommand | "command-palette" | "quick-terminal" | "keyboard-shortcuts" | "mcp-settings" | "project-notes" | "terminal-appearance";
 
 export type AppEvent =
   | { event: "github-mcp-settings" }
@@ -212,6 +212,7 @@ export interface API {
   inboxAction(id: string, action: "open" | "dismiss"): Promise<boolean>;
   reopenBrowserSession(id: string): Promise<TerminalInfo | null>;
   previewProjectFile(provider: string, id: string, file: string): Promise<ProjectFilePreview>;
+  revealReferencedFile(provider: string, id: string, file: string): Promise<void>;
   openTerminalLink(url: string): Promise<void>;
   setAppAccent(accent: string): Promise<void>;
   locateCodexSession(id: string): Promise<void>;

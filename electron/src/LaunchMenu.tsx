@@ -5,18 +5,12 @@ export function LaunchMenu({
   cwd,
   projects,
   lastUsed,
-  kind = "all",
-  chooseDestination = false,
-  pane = "Pane 1",
   onLaunch,
   onDismiss,
 }: {
   cwd: string;
   projects: string[];
   lastUsed: string;
-  kind?: "all" | "ai";
-  chooseDestination?: boolean;
-  pane?: string;
   onLaunch: (agent: string, cwd: string, name: string) => Promise<unknown>;
   onDismiss: () => void;
 }) {
@@ -28,14 +22,9 @@ export function LaunchMenu({
   useEffect(() => {
     const node = dialog.current!;
     node.showModal();
-    if (chooseDestination) node.querySelector("select")?.focus();
-    else node
-      .querySelector<HTMLButtonElement>(
-        `[data-agent="${kind === "ai" && lastUsed === "shell" ? "codex" : lastUsed || "codex"}"]`,
-      )
-      ?.focus();
+    node.querySelector("select")?.focus();
     return () => node.close();
-  }, [lastUsed, kind, chooseDestination]);
+  }, []);
   async function chooseFolder() {
     try {
       const result = await window.runhuddle.chooseFolder();
@@ -76,12 +65,11 @@ export function LaunchMenu({
       <div className="launch-heading">
         <div>
           <h2>
-            {kind === "ai" ? "New AI session" : "New session"}
+            New session
           </h2>
           <p>
             {!folder ? "Choose an existing project or browse to another folder."
-              : folder === cwd ? `Opens a tab in ${pane.toLowerCase()}.`
-              : "Opens a new tab in this folder."}
+              : "Starts in the selected project folder."}
           </p>
         </div>
         <button aria-label="Close launcher" disabled={busy} onClick={onDismiss}>
@@ -118,14 +106,12 @@ export function LaunchMenu({
       </label>
       <div className="launch-choices">
         {launchOptions
-          .filter((o) => kind === "all" || o.id !== "shell")
           .map((option) => (
             <button
               key={option.id}
-              data-agent={option.id}
               className="launch-choice"
               aria-label={`Start ${option.label}`}
-              disabled={busy || (chooseDestination && !folder)}
+              disabled={busy || !folder}
               onClick={() => launch(option.id)}
             >
               <AgentIcon agent={option.id} />

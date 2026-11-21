@@ -6,6 +6,18 @@ const limit = 256 * 1024;
 const supported = new Set(extensions);
 const extension = (file) => path.extname(file).slice(1).toLowerCase();
 
+export async function resolveFileToReveal(cwd, reference) {
+  if (!path.isAbsolute(cwd) || typeof reference !== "string" || !reference.trim() || reference.length > 4096 ||
+      /[\x00-\x1f\x7f]/.test(reference) || /^[a-z][a-z0-9+.-]*:\/\//i.test(reference))
+    throw Error("This reference isn’t a local file.");
+  const requested = path.resolve(cwd, reference);
+  if (requested.startsWith("\\\\")) throw Error("This reference isn’t a local file.");
+  const file = await fs.realpath(requested).catch(() => { throw Error("This file is no longer available."); });
+  if (file.startsWith("\\\\") || !(await fs.stat(file)).isFile())
+    throw Error("This reference isn’t a local file.");
+  return file;
+}
+
 export async function readProjectPreview(cwd, reference) {
   if (!path.isAbsolute(cwd) || typeof reference !== "string" || !reference.trim() || reference.length > 4096 ||
       /[\x00-\x1f\x7f]/.test(reference) || !supported.has(extension(reference)))

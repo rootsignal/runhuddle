@@ -1,6 +1,6 @@
 # RunHuddle feature checklist
 
-This checklist covers the macOS release through 0.39.1. Update this checklist when a feature ships or a proposal changes.
+This checklist covers the macOS release through 0.40.0. Update this checklist when a feature ships or a proposal changes.
 
 ## Shipped in 0.38.0 or earlier
 
@@ -12,6 +12,11 @@ This checklist covers the macOS release through 0.39.1. Update this checklist wh
 | Projects and history | Browse projects from the dashboard, focus on one or filter to several, inspect recent sessions, and search conversation content. Review old sessions one at a time, keep or hide them, or request an AI-assisted project review. |
 | Working tools | Use Quick Terminal or the dashboard shell, open RunHuddle Browser, and remap Command Palette and Quick Terminal shortcuts. Use the workspace for split terminal layouts. |
 | Power | Opt in to keeping the Mac awake while an agent is working. |
+
+## Added in 0.40.0
+
+- The Project Dashboard is the app’s only view. Existing notes, follow-up drafts, hidden sessions, and handoff links are available from the dashboard.
+- Quick Terminal and the dashboard shell keep independent terminals. Conversation details can generate or refresh a saved recap.
 
 ## Fixed in 0.39.1
 

@@ -146,5 +146,5 @@ export function SessionContinuation({ request, onCreate, onClose }: {
       </div>
       {error && <p role="alert">{error}</p>}
     </aside>
-  ), document.body);
+  ), (!review && document.getElementById("dashboard-handoff")) || document.body);
 }
