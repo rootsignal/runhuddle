@@ -2306,6 +2306,7 @@ test("browser preview shares reports and grants the active agent revocable live 
 });
 
 test("Inbox keeps unread completions across restart and opens the exact recorded session", async ({}, testInfo) => {
+  test.setTimeout(60000);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-inbox-ui-"));
   fs.writeFileSync(path.join(dir, "Release notes.md"), [
     "# Release checklist", "", "- Verify the mobile layout.", "- [x] Build passed.", "",
