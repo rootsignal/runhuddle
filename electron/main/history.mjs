@@ -75,14 +75,16 @@ export function parseHistory(agent, source) {
   const rows = messages.length ? messages : fallback;
   return rows.slice(-250).map((m) => ({ ...m, text: m.text.slice(0, 60000) }));
 }
-async function transcriptTail(session) {
+const transcriptTailBytes = 4 * 1024 * 1024;
+
+async function transcriptTail(session, maxBytes = transcriptTailBytes) {
   const file = transcriptPath(session.provider.toLowerCase(), session.sessionID, session.cwd);
   if (!file) return { source: "", truncated: false, unavailable: true };
   let handle;
   try {
     handle = await fs.open(file, "r");
     const stat = await handle.stat();
-    const length = Math.min(stat.size, 4 * 1024 * 1024);
+    const length = Math.min(stat.size, maxBytes);
     const buffer = Buffer.alloc(length);
     await handle.read(buffer, 0, length, stat.size - length);
     const truncated = stat.size > length;
@@ -180,15 +182,27 @@ function previewTurn(messages, turnStart, end) {
 }
 
 export async function readAttentionPreview(session, kind, includeTurns = false) {
-  const { source } = await transcriptTail(session);
   const agent = session.provider.toLowerCase();
-  const messages = parseHistory(agent, source);
-  const starts = messages.flatMap((message, index) => message.role === "user" ? [index] : []).slice(-5);
+  let tail = await transcriptTail(session);
+  let messages = parseHistory(agent, tail.source);
+  const turnStarts = () => messages.flatMap((message, index) => message.role === "user" ? [index] : []).slice(-5);
+  let starts = turnStarts();
+  // Large Codex tool results can push the active instruction and recent turns
+  // out of the normal tail. Keep permission questions scoped to recent events.
+  const questions = kind === "input" ? pendingQuestions(agent, tail.source) : undefined;
+  if (agent === "codex") {
+    for (const multiplier of [4, 8]) {
+      if (!tail.truncated || starts.length >= (includeTurns ? 5 : 1)) break;
+      tail = await transcriptTail(session, multiplier * transcriptTailBytes);
+      messages = parseHistory(agent, tail.source);
+      starts = turnStarts();
+    }
+  }
   const start = starts.at(-1) ?? -1;
   const turn = previewTurn(messages, start, messages.length);
   return {
     ...turn,
-    questions: kind === "input" ? pendingQuestions(agent, source) : undefined,
+    questions,
     ...(includeTurns ? {
       recentTurns: starts.map((index, position) => position === starts.length - 1 ? turn : previewTurn(messages, index, starts[position + 1])),
     } : {}),

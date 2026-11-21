@@ -1,6 +1,6 @@
 # RunHuddle feature checklist
 
-This checklist covers the macOS release through 0.39.0. Update this checklist when a feature ships or a proposal changes.
+This checklist covers the macOS release through 0.39.1. Update this checklist when a feature ships or a proposal changes.
 
 ## Shipped in 0.38.0 or earlier
 
@@ -12,6 +12,11 @@ This checklist covers the macOS release through 0.39.0. Update this checklist wh
 | Projects and history | Browse projects from the dashboard, focus on one or filter to several, inspect recent sessions, and search conversation content. Review old sessions one at a time, keep or hide them, or request an AI-assisted project review. |
 | Working tools | Use Quick Terminal or the dashboard shell, open RunHuddle Browser, and remap Command Palette and Quick Terminal shortcuts. Use the workspace for split terminal layouts. |
 | Power | Opt in to keeping the Mac awake while an agent is working. |
+
+## Fixed in 0.39.1
+
+- Preview looks farther back when large Codex tool output pushes recent turns out of the transcript tail.
+- Queued follow-ups can verify the empty Codex prompt in long macOS and Linux sessions after startup output rolls out of the replay buffer. The composer shows a short label and a way to check the terminal when a queue is waiting.
 
 ## Added in 0.39.0
 

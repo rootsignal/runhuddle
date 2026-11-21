@@ -294,7 +294,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
       }
       setFeedback({ composeId: id, message: !followUpID
         ? `Reply to ${title} copied. Open the session to submit it.`
-        : `Follow-up sent to ${title}.` });
+        : "Follow-up sent." });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1605,7 +1605,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                           setQueuedFollowUps((previous) => ({ ...previous, [followUpID]: { terminalId, draft } }));
                         } else if (state === "idle") void submitLiveFollowUp(row);
                       }}>
-                        <label><span>{question ? "Draft a reply" : "Follow up"} · {title} · {name(row.cwd)} · {row.provider}</span>
+                        <label><span>{question ? "Draft a reply" : "Follow-up"}</span>
                           {question ? <textarea {...input} rows={2} placeholder="Write a reply to copy" />
                             : <input {...input} placeholder="Write a follow-up" onPaste={(event) => {
                                 const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
@@ -1624,7 +1624,11 @@ export function ProjectsDashboard({ keepAwakeActive, open, menuCommand, onProjec
                             title={question || state === "idle" || canQueue ? undefined : "Send when the agent is idle"}>{question ? "Copy reply" : queued ? "Queued" : canQueue ? "Queue follow-up" : "Send follow-up"}</button>
                       </form>
                       {queued && <div className="dashboard-draft-wait">
-                        <span role="status">{state === "working" ? "Queued · sends when the agent is ready" : state === "needsInput" ? "Queued · waiting for your input" : "Queued · waiting for an empty terminal prompt"}</span>
+                        <span role="status">{state === "working" ? "Queued · sends when the agent is ready" : state === "needsInput" ? "Queued · waiting for your input" : "Queued. Waiting for an empty terminal prompt."}</span>
+                        {state === "idle" && <button type="button" onClick={() => {
+                          setTerminalHistory(undefined);
+                          selectView(followUpID, "Terminal");
+                        }}>Check terminal prompt</button>}
                         <button type="button" disabled={sending === id} onClick={() => cancelQueuedFollowUp(followUpID)} title="Keep this as an editable draft">Cancel queue</button>
                       </div>}
                       {!canQueue && state === "working" && (draft.text.trim() || files.length > 0) &&

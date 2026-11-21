@@ -48,11 +48,11 @@ test("resumed Codex accepts dashboard follow-up only at a verified empty prompt"
 
 test("long Unix Codex sessions can outlive the retained startup paste marker", { skip: process.platform === "win32" }, async () => {
   const history = "x".repeat(512 * 1024);
-  const { service, writes } = fixture({ replay: { data: history } });
+  const { service, writes } = fixture({ replay: { cols: 100, rows: 30, data: history } });
   await sendDashboardFollowUp(service, entry, terminalId, "Continue the review.", () => true);
   assert.deepEqual(writes, [{ id: terminalId, data: "\x1b[200~Continue the review.\x1b[201~\r" }]);
 
-  const disabled = fixture({ replay: { data: history.slice(8) + "\x1b[?2004l" } });
+  const disabled = fixture({ replay: { cols: 100, rows: 30, data: (history + "\x1b[?2004l").slice(-history.length) } });
   await assert.rejects(sendDashboardFollowUp(disabled.service, entry, terminalId, "Continue.", () => true));
   assert.deepEqual(disabled.writes, []);
 });
@@ -117,11 +117,32 @@ test("a terminal reset invalidates a retained bracketed-paste marker", async () 
 });
 
 test("queued follow-up requires an empty Codex prompt even when the session reports idle", { skip: process.platform === "win32" }, async () => {
-  const replay = { cols: 100, rows: 30, data: "\x1b[?2004h› Ask Codex to do anything\r\n← for agents · ? for shortcuts" };
-  const blocked = fixture({ replay: { ...replay, data: replay.data.replace("Ask Codex to do anything", "unsent input") } });
-  assert.equal(await sendDashboardFollowUp(blocked.service, entry, terminalId, "Continue.", () => true, [], undefined, true), "waiting");
-  assert.deepEqual(blocked.writes, []);
-  const ready = fixture({ replay });
-  await sendDashboardFollowUp(ready.service, entry, terminalId, "Continue.", () => true, [], undefined, true);
-  assert.equal(ready.writes.length, 1);
+  const prompt = "› Ask Codex to do anything\r\n← for agents · ? for shortcuts";
+  const limit = 512 * 1024;
+  const replay = { cols: 100, rows: 30, data: "" };
+  const { service, writes } = fixture({ replay });
+  const show = (screen) => { replay.data = ("x".repeat(limit) + "\x1b[2J\x1b[H" + screen).slice(-limit); };
+  const send = () => sendDashboardFollowUp(service, entry, terminalId, "Continue.", () => true,
+    [Uint8Array.of(1).buffer], (image) => Buffer.from(image), true);
+  for (const screen of [
+    "• Working (3s • esc to interrupt)\r\n" + prompt,
+    prompt.replace("Ask Codex to do anything", "unsent input"),
+    "\x1b[?2004l" + prompt,
+    "\x1bc" + prompt,
+  ]) {
+    show(screen);
+    assert.equal(await send(), "waiting");
+    assert.deepEqual(writes, []);
+  }
+  show(prompt);
+  await send();
+  assert.equal(writes.length, 1);
+  const screenshot = writes[0].data.match(/^- "([^"]+)"\x1b\[201~\r$/m)?.[1];
+  assert.ok(screenshot);
+  try {
+    assert.equal(writes[0].id, terminalId);
+    assert.deepEqual(await fs.readFile(screenshot), Buffer.from([1]));
+  } finally {
+    await fs.rm(path.dirname(screenshot), { recursive: true, force: true });
+  }
 });
