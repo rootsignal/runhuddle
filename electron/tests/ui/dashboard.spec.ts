@@ -2272,6 +2272,9 @@ test("Inbox keeps unread completions across restart and opens the exact recorded
     await expect(recentDialog.getByRole("button", { name: "Resume session", exact: true })).toBeVisible();
     await expect.poll(() => app.evaluate(() => (globalThis as any).endedDrawerShell)).toBe("resumed-release");
     await recentDialog.getByRole("button", { name: "Close recent session details" }).click();
+    await expect(recentPanel).toBeVisible();
+    await dashboard().getByRole("button", { name: "Recent", exact: true }).press("Escape");
+    await expect(recentPanel).toBeHidden();
     await expect(restoredLive.locator(".dashboard-live-toolbar:visible")).toContainText("Codex fixture");
     await app.evaluate(({ ipcMain }, at) => {
       ipcMain.removeHandler("live-session-follow-up");
