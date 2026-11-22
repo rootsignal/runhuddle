@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("runhuddle", {
   reviewProjectHistory: (folder, agent) => invoke("review-project-history", folder, agent),
   generateRecap: (provider, id, agent) => invoke("generate-recap", provider, id, agent),
   cancelRecap: (provider, id) => invoke("cancel-recap", provider, id),
+  handoffHistory: (provider, id) => invoke("handoff-history", provider, id),
   history: (provider, id, anchor) => invoke("history", provider, id, anchor),
   searchHistory: (query, folder, scope, refresh) => invoke("history-search", query, folder, scope, refresh),
   cancelHistorySearch: () => invoke("history-search-cancel"),
@@ -59,9 +60,11 @@ contextBridge.exposeInMainWorld("runhuddle", {
   locateCodexSession: (id) => invoke("locate-codex-session", id),
   viewedTerminal: (id) => invoke("viewed-terminal", id),
   codexPromptReady: (id, terminalId, queued) => invoke("codex-prompt-ready", id, terminalId, queued),
+  suggestQuickReplies: (provider, id, terminalId, instruction, answer) =>
+    invoke("suggest-quick-replies", provider, id, terminalId, instruction, answer),
   liveSessionPreview: (provider, id, terminalId) => invoke("live-session-preview", provider, id, terminalId),
-  liveSessionFollowUp: (provider, id, terminalId, message, screenshots, queued) =>
-    invoke("live-session-follow-up", provider, id, terminalId, message, screenshots, queued),
+  liveSessionFollowUp: (provider, id, terminalId, message, screenshots, queued, suggestNextSteps) =>
+    invoke("live-session-follow-up", provider, id, terminalId, message, screenshots, queued, suggestNextSteps),
   screenshotDraft: (id) => invoke("screenshot-draft", id),
   copyInboxReply: (id, text) => invoke("copy-inbox-reply", id, text),
   inboxPreview: (id) => invoke("inbox-preview", id),

@@ -61,7 +61,41 @@ export const previewSections = {
 };
 export type PreviewSection = keyof typeof previewSections;
 
-export function AttentionPreview({ enabled = true, id, kind, recap, updated, liveSession, permission, liveState, submitted, compactTurns, followUpQueued, checkoutSummary, turnChanges, hiddenSections, reviewID, onReview, onFileReference, onBrowserReference, onReadHistory }: {
+type QuickReply = { label: string; draft: string };
+export type QuickReplies = { id: string; replies: QuickReply[] };
+
+function quickReplyLabel(text: string) {
+  return text.length <= 64 ? text : text.slice(0, 63).replace(/\s+\S*$/, "") + "…";
+}
+
+function quickRepliesFor(reply: string): QuickReply[] {
+  const statements = reply.split(/\n+|(?<=[.!?])\s+/).reverse();
+  for (const statement of statements) {
+    const text = statement.trim().replace(/\*\*|__/g, "").replace(/^(?:#{1,6}|[-*])\s+/, "");
+    const step = (text.match(/^(?:next(?: steps?| up)?|up next)(?:\s*[:–—]\s*|\s+(?:is|are)\s+)(.+)$/i)?.[1] ??
+      text.match(/^(.+?)\s+(?:is|are) next[.!]?$/i)?.[1])?.replace(/[.!]$/, "").trim();
+    if (step && step.length >= 5 && step.length <= 185)
+      return [{
+        label: /^next step\s*:/i.test(text) ? "Use next step" : quickReplyLabel(step),
+        draft: `Please proceed with the next step you proposed: ${step}.`,
+      }];
+    const remaining = text.match(/^(.+?)\s+(?:is|are) still (?:open|pending|outstanding)[.!]?$/i)?.[1]?.trim();
+    if (remaining && remaining.length >= 5 && remaining.length <= 72)
+      return [{ label: remaining, draft: `Please continue with the remaining work: ${remaining}.` }];
+  }
+  return statements.reverse().flatMap((statement) => {
+    const text = statement.trim().replace(/\*\*|__/g, "").replace(/^(?:#{1,6}|[-*])\s+/, "");
+    const proposed = text.match(/^(?:(For .+?),\s+)?I(?:['’]d| would)\s+(?:(?:recommend|suggest)\s+)?((?:add|build|change|check|fix|keep|make|move|put|remove|show|test|update|verify)\b.+)[.!]$/i);
+    if (!proposed) return [];
+    const [, condition, action] = proposed;
+    const draft = condition ? `${condition}, please ${action}.` : `Please ${action}.`;
+    if (draft.length > 240) return [];
+    const label = action[0].toUpperCase() + action.slice(1);
+    return [{ label: quickReplyLabel(label), draft }];
+  }).slice(0, 2);
+}
+
+export function AttentionPreview({ enabled = true, id, kind, recap, updated, liveSession, permission, liveState, submitted, compactTurns, followUpQueued, checkoutSummary, turnChanges, hiddenSections, reviewID, onReview, onFileReference, onBrowserReference, onReadHistory, onOpenTerminal, onStartHandoff, onQuickReplies, aiQuickReplies = false }: {
   enabled?: boolean;
   id: string;
   kind: InboxEntry["kind"];
@@ -78,6 +112,10 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
   onReview?: (id: string) => void;
   submitted?: { text: string; at: number; screenshots?: number };
   onReadHistory?: () => void;
+  onOpenTerminal?: () => void;
+  onStartHandoff?: () => void;
+  aiQuickReplies?: boolean;
+  onQuickReplies?: (value: QuickReplies | undefined) => void;
   onFileReference?: (file: string) => void;
   onBrowserReference?: (url: string) => Promise<void>;
   liveSession?: Pick<Session, "provider" | "sessionID" | "terminalId">;
@@ -122,6 +160,12 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
     ? recap : undefined;
   const waitingForTranscript = !!submitted && preview?.instruction !== submitted.text &&
     (preview?.instructionAt ?? 0) < submitted.at;
+  const context = liveSession && preview?.context;
+  const started = context && context.startedAt !== undefined ? new Date(context.startedAt) : undefined;
+  const minutesOld = started ? Math.max(0, Math.floor((Date.now() - +started) / 60000)) : 0;
+  const ageUnit = minutesOld >= 1440 ? "day" : minutesOld >= 60 ? "hour" : "minute";
+  const age = minutesOld < 1 ? "just now" : new Intl.RelativeTimeFormat().format(
+    -Math.floor(minutesOld / (ageUnit === "day" ? 1440 : ageUnit === "hour" ? 60 : 1)), ageUnit);
   const recent = preview?.recentTurns ?? [];
   const olderTurns = (waitingForTranscript ? recent : recent.slice(0, -1)).slice(-4).reverse().map((turn, index, turns) => {
     const same = (other: typeof turn) => other.instructionAt === turn.instructionAt && other.instruction === turn.instruction;
@@ -135,6 +179,28 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
   const screenshotCount = waiting ? submitted?.screenshots : shown?.screenshots;
   const changed = !waiting && turnChanges?.find((item) => item.instructionAt === shown?.instructionAt);
   const answer = waiting ? undefined : shown?.answer;
+  const replyForSuggestions = enabled && !failed && !historical && !waiting && kind === "completion"
+    ? (preview?.answer || preview?.update)?.trim() : undefined;
+  const suggestionInstruction = preview?.instruction ?? "";
+  useEffect(() => {
+    if (!onQuickReplies) return;
+    if (!replyForSuggestions) {
+      onQuickReplies(undefined);
+      return;
+    }
+    const fallback = quickRepliesFor(replyForSuggestions);
+    onQuickReplies(fallback.length ? { id, replies: fallback } : undefined);
+    if (!aiQuickReplies || !provider || !sessionID || !terminalId) return;
+    let active = true;
+    void window.runhuddle.suggestQuickReplies(provider, sessionID, terminalId, suggestionInstruction, replyForSuggestions)
+      .then((suggestions) => {
+        if (!active || !suggestions.length) return;
+        const seen = new Set(fallback.map(({ label }) => label.toLowerCase()));
+        const replies = [...fallback, ...suggestions.filter(({ label }) => !seen.has(label.toLowerCase()))].slice(0, 3);
+        onQuickReplies({ id, replies });
+      }).catch(() => {});
+    return () => { active = false; };
+  }, [aiQuickReplies, id, onQuickReplies, provider, replyForSuggestions, sessionID, suggestionInstruction, terminalId]);
   const update = waiting ? undefined : (historical ? undefined : currentRecap?.done) || shown?.update || shown?.answer?.slice(0, 280);
   useEffect(() => {
     if (historical || !enabled || !reviewID || loadedReview !== reviewID || !update || failed) return;
@@ -155,12 +221,10 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
   const pending = waitingForTranscript ? undefined : currentRecap?.pending || currentRecap?.next;
   const questions = kind === "input" ? preview?.questions : undefined;
   const choices = permission ? [{ text: permission.question, choices: permission.choices }] : questions;
-  const action = permission ? "Choose an option in the terminal."
-    : kind === "input" ? "Open the terminal to respond."
-    : pending || (liveState === "idle" ? "Ready for a follow-up."
-      : liveState === "working" ? "The agent is working."
-      : liveState ? "Open the terminal to check the agent’s status."
-      : update ? "Review the agent’s update." : "Ready for a follow-up. No reply is available to review yet.");
+  const action = historical ? undefined : permission ? "The agent is waiting for you to choose an option."
+    : kind === "input" ? "The agent is waiting for your reply."
+    : liveState === "working" ? undefined
+    : pending || ((!liveSession || reviewID) && update ? "Review the agent’s update." : undefined);
   const latestTurn = waitingForTranscript
     ? { instruction: submitted?.text, instructionAt: submitted?.at, screenshots: submitted?.screenshots }
     : preview;
@@ -181,8 +245,8 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
             disabled={!historical} onClick={() => setSelectedTurn(olderTurns[olderIndex - 1]?.key)}><Icon name="chevron" size={18} /></button>
         </nav>}
         <dl>
-          <div>
-            <dt>Your instruction</dt>
+          <div className="dashboard-briefing-instruction">
+            <dt>{liveSession && <Icon name="notes" size={14} />}Your instruction</dt>
             <dd><span>{waiting ? submitted?.text : shown?.instruction ? previewInline(shown.instruction)
               : shown?.screenshots ? null : !preview && !failed ? "Loading instruction…" : "No instruction available in the transcript."}</span>
               {!!screenshotCount && <span className="dashboard-briefing-attachment">
@@ -190,8 +254,8 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
               </span>}
             </dd>
           </div>
-          <div>
-            <dt>Agent update</dt>
+          <div className="dashboard-briefing-update">
+            <dt>{liveSession && <Icon name="activity" size={15} />}Agent update</dt>
             <dd>{liveSession && answer ? <>
               <ReplyExcerpt text={answer + (shown?.truncated ? "…" : "")} onFileReference={onFileReference}
                 linksAsLabels={!hiddenSections?.references && !!onFileReference && !!onBrowserReference} />
@@ -201,7 +265,7 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
             </> : update ? previewInline(update) : waiting ? "Waiting for the agent’s next recorded update." : failed ? "Couldn’t load the update."
               : preview ? "No reply recorded for this turn yet." : permission ? "Waiting for permission." : "Loading preview…"}</dd>
           </div>
-          <div>
+          {action && <div className="dashboard-briefing-action" data-input={kind === "input"}>
             <dt>{permission ? "Permission required" : "What needs you"}</dt>
             <dd>
               {!!choices?.length && <ul>{choices.map(({ text, choices: options }) => (
@@ -210,8 +274,10 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
                 </ul>}</li>
               ))}</ul>}
               {action}
+              {(permission || kind === "input") && onOpenTerminal && <button type="button" className="secondary"
+                onClick={onOpenTerminal}>{permission ? "Review permission in terminal" : "Answer in terminal"}</button>}
             </dd>
-          </div>
+          </div>}
         </dl>
         {!liveSession && answer && (answer !== update || preview?.truncated) && <details>
           <summary>Read full reply</summary>
@@ -219,6 +285,12 @@ export function AttentionPreview({ enabled = true, id, kind, recap, updated, liv
           {preview?.truncated && <p>Open the session to read the rest.</p>}
         </details>}
       </div>
+      {context && <div className="dashboard-session-context" aria-label="Session context">
+        <span>{started && <>Started <time dateTime={started.toISOString()} title={started.toLocaleString()}>{age}</time> · </>}
+          {context.compactions} context {context.compactions === 1 ? "compaction" : "compactions"}</span>
+        {context.compactions >= 2 && onStartHandoff &&
+          <button type="button" onClick={onStartHandoff}>Start fresh with a handoff…</button>}
+      </div>}
       {!hiddenSections?.changes && changed && <TurnChangedFiles key={changed.instructionAt} changes={changed} />}
       {!hiddenSections?.references && answer && onFileReference && onBrowserReference && <ReplyReferences key={answer}
         answer={answer} onFile={onFileReference} onBrowser={onBrowserReference} />}

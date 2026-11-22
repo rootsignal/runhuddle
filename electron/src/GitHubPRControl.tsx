@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PullRequestRoute } from "./PreparePullRequest";
 import { Icon } from "./Icons";
 import type { GitHubActionsFailure, GitHubBranchPR, GitHubPullRequest } from "./types";
 
@@ -65,14 +66,16 @@ export function McpSettings({ onClose, cwd, target }: { onClose: () => void; cwd
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
     <header><h2>GitHub MCP</h2><button type="button" autoFocus aria-label="Close GitHub MCP" onClick={onClose}><Icon name="close" size={18} /></button></header>
     <p>Connect GitHub to see open pull requests, checks, and review feedback in Changes. Access is read-only.</p>
-    {settings && <div className="github-mcp-result" data-verified={!busy && verification?.ok === true} role="status">
+    {settings && <div className="github-mcp-result" data-verified={!busy && verification?.ok === true}
+      data-failed={!busy && verification?.ok === false} role="status">
       <strong>{busy ? "Checking GitHub…" : verification?.ok ? "GitHub connected"
         : settings.configured ? "Token saved · Connection could not be verified" : "GitHub is not connected"}</strong>
       {!busy && verification && <p>{verification.detail}</p>}
     </div>}
     {settings?.secureStorage === false && <p role="alert">Secure credential storage is unavailable on this device.</p>}
     {error && <p role="alert">{error}</p>}
-    {!verification?.ok && !busy && <section className="github-mcp-setup" aria-label="Token setup">
+    {!verification?.ok && !busy && <details className="github-mcp-setup" aria-label="Token setup">
+      <summary>Token setup</summary>
       <button type="button" onClick={() => {
         setError("");
         void window.runhuddle.createGithubMcpToken().catch((reason) => setError(errorText(reason)));
@@ -82,7 +85,7 @@ export function McpSettings({ onClose, cwd, target }: { onClose: () => void; cwd
         <li>Under repository permissions, set <strong>Pull requests</strong>, <strong>Checks</strong>, and <strong>Commit statuses</strong> to <strong>Read-only</strong>. Add <strong>Actions</strong> read access for failure details.</li>
         <li>Generate the token, then paste it below. Your organization may require approval before the token can access private repositories.</li>
       </ol>
-    </section>}
+    </details>}
     <form onSubmit={(event) => { event.preventDefault(); if (token.trim() && !busy) void save(token); }}>
       <label>GitHub personal access token
         <input type="password" value={token} onChange={(event) => setToken(event.target.value)} autoComplete="off" maxLength={300}
@@ -195,28 +198,36 @@ function PullRequestDialog({ cwd, pr, lookupError, onClose, onRefresh, onDraft }
   }
   return <dialog ref={modal} className="appearance-dialog github-mcp-dialog github-pr-dialog" aria-label="GitHub pull request"
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
-    <header><div><h2>{pr ? `PR #${pr.number} · ${pr.title}` : "GitHub pull request"}</h2>{pr && <small>{pr.head} → {pr.target}</small>}</div>
+    <header><div>{pr && <small className="github-pr-number">Pull request #{pr.number}</small>}<h2>{pr?.title || "GitHub pull request"}</h2></div>
       <button type="button" autoFocus aria-label="Close pull request details" onClick={onClose}><Icon name="close" size={18} /></button></header>
+    {pr && <PullRequestRoute head={pr.head} target={pr.target} />}
     {(error || lookupError) && <p role="alert">{error || lookupError}</p>}
-    <div className="github-pr-actions">
-      <button type="button" onClick={onRefresh}>Refresh PR status</button>
-      {pr && <button type="button" onClick={() => void open(pr.url)}>Open in GitHub</button>}
+    <div className="github-pr-actions github-pr-toolbar">
+      <button className="secondary" type="button" onClick={onRefresh}><Icon name="refresh" size={14} /> Refresh PR status</button>
+      {pr && <button className="primary" type="button" onClick={() => void open(pr.url)}>Open in GitHub <Icon name="external-link" size={14} /></button>}
     </div>
     {pr && <>
       {pr.partial && <p>Some checks or review details are unavailable.</p>}
-      <div className="github-pr-check-heading"><h3>Checks</h3><CheckStatus label={pr.checksState} /></div>
-      {pr.checks.length > 0 && <ul className="github-check-list">{pr.checks.map((check, index) =>
-        <CheckRow key={`${check.url || check.name}:${index}`} cwd={cwd} check={check} onOpen={open}
-          autoExpand={index === pr.checks.findIndex((entry) => !!failedActionsJob(entry))}
-          onDraft={onDraft ? draft : undefined} />)}</ul>}
-      <h3>Review</h3>
-      <p>{pr.review === "Open" ? "No approval or changes requested." : pr.review}</p>
-      {pr.feedback.length > 0 && <ul>{pr.feedback.map((item, index) => <li key={index}>
-        <strong>{item.author || "Reviewer"}{item.path ? ` · ${item.path}${item.line ? ":" + item.line : ""}` : ""}</strong>
-        <p>{item.text}</p>
-        {item.url && <button type="button" onClick={() => void open(item.url!)}>Open comment</button>}
-        {onDraft && <button type="button" onClick={() => draft(`${item.author || "Reviewer"}${item.path ? " on " + item.path + (item.line ? ":" + item.line : "") : ""}: ${item.text}`)}>Draft follow-up</button>}
-      </li>)}</ul>}
+      <section className="github-pr-section" aria-label="Checks">
+        <div className="github-pr-check-heading"><h3>Checks</h3><CheckStatus label={pr.checksState} /></div>
+        {pr.checks.length > 0 && <ul className="github-check-list">{pr.checks.map((check, index) =>
+          <CheckRow key={`${check.url || check.name}:${index}`} cwd={cwd} check={check} onOpen={open}
+            autoExpand={index === pr.checks.findIndex((entry) => !!failedActionsJob(entry))}
+            onDraft={onDraft ? draft : undefined} />)}</ul>}
+      </section>
+      <section className="github-pr-section" aria-label="Review feedback">
+        <div className="github-pr-check-heading"><h3>Review</h3><span className="github-pr-review-state">
+          {pr.review === "Open" ? "Awaiting review" : pr.review}
+        </span></div>
+        {pr.feedback.length > 0 && <ul className="github-feedback-list">{pr.feedback.map((item, index) => <li key={index}>
+          <strong>{item.author || "Reviewer"}{item.path ? ` · ${item.path}${item.line ? ":" + item.line : ""}` : ""}</strong>
+          <p>{item.text}</p>
+          <div className="github-pr-actions">
+            {item.url && <button className="secondary" type="button" onClick={() => void open(item.url!)}>Open comment</button>}
+            {onDraft && <button className="secondary" type="button" onClick={() => draft(`${item.author || "Reviewer"}${item.path ? " on " + item.path + (item.line ? ":" + item.line : "") : ""}: ${item.text}`)}>Draft follow-up</button>}
+          </div>
+        </li>)}</ul>}
+      </section>
     </>}
   </dialog>;
 }

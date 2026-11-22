@@ -12,12 +12,12 @@ import { SessionHistory } from "./SessionHistory";
 import { SessionStatus } from "./SessionStatus";
 import { ProjectFileDialog } from "./ReplyReferences";
 import { CheckoutSummary } from "./CheckoutSummary";
-import { AttentionPreview, previewSections, type PreviewSection } from "./AttentionPreview";
+import { AttentionPreview, previewSections, type PreviewSection, type QuickReplies } from "./AttentionPreview";
 import { ProjectSessionReview } from "./ProjectSessionReview";
 import { ProjectConversationPreview, RecentConversationDialog } from "./ProjectConversationPreview";
 import { ProjectHistoryReview } from "./ProjectHistoryReview";
 import { DashboardCleanup, type CleanupSuggestion } from "./DashboardCleanup";
-import { emptyDraft, type FollowUpDraft, type useDashboardDrafts } from "./dashboard-drafts";
+import { emptyDraft, maxFollowUpLength, type FollowUpDraft, type useDashboardDrafts } from "./dashboard-drafts";
 import logo from "../assets/icon.png";
 import { AgentIcon, Icon } from "./Icons";
 import type { ContinuationLink, DashboardRequest, HistorySearchResult, GitTurnSnapshot, InboxEntry, Session, SessionRecap, TerminalInfo, TurnChanges } from "./types";
@@ -37,6 +37,9 @@ const key = ({ provider, sessionID }: Pick<Session, "provider" | "sessionID">) =
 const name = (folder: string) => folder.split(/[\\/]/).filter(Boolean).at(-1) || folder;
 const isTestFolder = (folder: string) =>
   /^(?:\/private)?\/(?:tmp|var\/folders\/[^/]+\/[^/]+\/T)\/rh-(?:live|alert-smoke)-[^/]+\/scratch\/?$/.test(folder);
+const sessionExcerpt = (text?: string) => (text ?? "")
+  .replace(/<environment_context\b[^>]*>[\s\S]*?(?:<\/environment_context>|$)/gi, "")
+  .trim().split(/\r?\n/, 1)[0].replace(/^#{1,6}\s+/, "").replace(/\*\*|__|`/g, "").trim().slice(0, 120);
 const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 function elapsed(time: number, now: number) {
   const minutes = Math.max(0, Math.floor((now - time) / 60000));
@@ -92,7 +95,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
   onSubmitted: (id: string, instruction: { text: string; at: number; screenshots?: number }) => void;
   followUps: ReturnType<typeof useDashboardDrafts>;
   onViewTerminal: (id: string | null) => void;
-  onDraftTerminal: (id: string | null) => void;
+  onDraftTerminal: (target: { id: string; queued: boolean } | null) => void;
   lockedTerminals: ReadonlySet<string>;
   connected: boolean;
   onTerminalLock: (id: string, locked: boolean) => void;
@@ -144,9 +147,24 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     return () => { active = false; };
   }, [open, aiReviewFolder, reviewAgentCheck]);
   const [terminalHistory, setTerminalHistory] = useState<string>();
+  const [updatingService, setUpdatingService] = useState(false);
+  const [serviceUpdateError, setServiceUpdateError] = useState("");
+  async function updateService() {
+    setUpdatingService(true);
+    setServiceUpdateError("");
+    try {
+      await window.runhuddle.updateTerminalService();
+    } catch (reason) {
+      setServiceUpdateError((reason instanceof Error ? reason.message : String(reason))
+        .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ""));
+    } finally {
+      setUpdatingService(false);
+    }
+  }
   const [projectScope, setProjectScope] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerMode, setPickerMode] = useState<"Projects" | "Conversations" | "Recent">("Projects");
+  const [filteringProjects, setFilteringProjects] = useState(false);
   const [pendingScope, setPendingScope] = useState<string[]>([]);
   const [pickerQuery, setPickerQuery] = useState("");
   const [expandedPickerProjects, setExpandedPickerProjects] = useState<ReadonlySet<string>>(() => new Set());
@@ -156,6 +174,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
   const [query, setQuery] = useState("");
   const [showSavedReviews, setShowSavedReviews] = useState(false);
   const [previewID, setPreviewID] = useState<string>();
+  const [expandedPaste, setExpandedPaste] = useState<string>();
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<string>();
   const sendingRef = useRef(false);
@@ -163,6 +182,11 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
   function cancelQueuedFollowUp(id: string) {
     setQueuedFollowUps(({ [id]: _removed, ...remaining }) => remaining);
   }
+  const [quickReplies, setQuickReplies] = useState<QuickReplies>();
+  const [suggestNextSteps, setSuggestNextSteps] = useState(() => readPosition("dashboardSuggestNextSteps", false));
+  useEffect(() => { savePosition("dashboardSuggestNextSteps", suggestNextSteps); }, [suggestNextSteps]);
+  const [aiQuickReplies, setAiQuickReplies] = useState(() => readPosition("dashboardAiQuickReplies", false));
+  useEffect(() => { savePosition("dashboardAiQuickReplies", aiQuickReplies); }, [aiQuickReplies]);
   const [feedback, setFeedback] = useState<{ message: string; error?: boolean; composeId?: string }>();
   type LiveView = "Preview" | "Terminal" | "Changes";
   const [allProjectsPreview, setAllProjectsPreview] = useState(() => readPosition<string | undefined>("dashboardSelectedSession", undefined));
@@ -194,6 +218,9 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
   const [recentHidden, setRecentHidden] = useState<{ id: string; title: string }>();
   const [recentAction, setRecentAction] = useState(false);
   const [recentActionError, setRecentActionError] = useState("");
+  const [recentHistoryFeedback, setRecentHistoryFeedback] = useState<{
+    message: string; origin: "recent" | "picker" | "search" | "dashboard";
+  }>();
   const [recentOrigin, setRecentOrigin] = useState<{
     scope: string[]; view: typeof projectView; query: string; scroll: number; history?: string; focused?: string; all?: string;
     interruption: InterruptedSession | null;
@@ -232,6 +259,10 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     setUncommittedFor(scope === "working" ? id : undefined);
     setViews((old) => ({ ...old, [id]: view }));
     setMountedViews((old) => ({ ...old, [id]: { ...old[id], [view]: true } }));
+  }
+  function openAgentTerminal(id: string) {
+    setTerminalHistory(undefined);
+    selectView(id, "Terminal");
   }
   const [confirmEnd, setConfirmEnd] = useState<string>();
   const rowMenu = useRef<HTMLDivElement>(null);
@@ -288,6 +319,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
         onSubmitted(id, { text: text || "Review the attached screenshots.", at, screenshots: files.length });
         followUps.updateDraft(followUpID, (current) => ({
           text: current.text === draft.text ? "" : current.text,
+          pastedWords: current.text === draft.text ? undefined : current.pastedWords,
           files: current.files.filter((file) => !files.includes(file)),
         }));
       }
@@ -421,7 +453,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
         new Promise<undefined>((resolve) => { timeout = setTimeout(resolve, 1200); }),
       ]).finally(() => clearTimeout(timeout));
       const at = Date.now();
-      const result = await window.runhuddle.liveSessionFollowUp(row.provider, row.sessionID, row.terminalId!, text, images, queued);
+      const result = await window.runhuddle.liveSessionFollowUp(row.provider, row.sessionID, row.terminalId!, text, images, queued, suggestNextSteps);
       if (result !== "waiting") {
         pendingTurnChanges.current.delete(id);
         if (before) {
@@ -668,7 +700,11 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     terminal={drawerTerminal} project={name(shellFolder)} visible={drawerVisible} connected={connected}
     opening={drawerOpening} error={drawerError} compactPrompt={compactPrompt} compactShell={compactShell}
     terminalServiceUpdate={terminalServiceUpdate} onCompactPrompt={setCompactPrompt}
-    onHide={() => setDrawerOpen(false)} onStart={() => void startDrawerShell(shellFolder)}
+    onHide={() => {
+      setDrawerOpen(false);
+      const sessionToggle = dialog.current?.querySelector<HTMLElement>(".dashboard-live-session:not([hidden]) [data-dashboard-shell-toggle]");
+      (sessionToggle ?? dialog.current?.querySelector<HTMLElement>("[data-project-shell-toggle]"))?.focus();
+    }} onStart={() => void startDrawerShell(shellFolder)}
     onEnd={async (id) => {
       if (await window.runhuddle.close(id)) setDrawerId((current) => current === id ? "" : current);
     }} />;
@@ -698,11 +734,15 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
   const draftTerminal = open && connected && showingLive ? activeLive?.terminalId ?? null : null;
   const viewedTerminal = draftTerminal && activeLive && views[key(activeLive)] === "Terminal" &&
     draftTerminal !== terminalHistory ? draftTerminal : null;
+  const draftQueued = !!activeLive && queuedFollowUps[key(activeLive)]?.terminalId === draftTerminal;
   useLayoutEffect(() => {
-    onDraftTerminal(draftTerminal);
+    onDraftTerminal(draftTerminal ? { id: draftTerminal, queued: draftQueued } : null);
+    return () => onDraftTerminal(null);
+  }, [draftTerminal, draftQueued, onDraftTerminal]);
+  useLayoutEffect(() => {
     onViewTerminal(viewedTerminal);
-    return () => { onDraftTerminal(null); onViewTerminal(null); };
-  }, [draftTerminal, viewedTerminal, onDraftTerminal, onViewTerminal]);
+    return () => onViewTerminal(null);
+  }, [viewedTerminal, onViewTerminal]);
   const browserVisible = open && showingLive && browserOpen;
   const browserTerminal = terminals.find((terminal) => terminal.id === draftTerminal && !terminal.exited);
   const browserTarget = activeLive && browserTerminal ? {
@@ -749,7 +789,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
       if (activeDialog && activeDialog !== dialog.current) return;
       event.preventDefault();
       if (liveFirst) {
-        if (!pickerOpen) setPendingScope(scopedFolders);
+        setFilteringProjects(false);
         setPickerMode("Conversations");
         setPickerOpen(true);
         searchInput.current?.focus();
@@ -766,7 +806,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     return () => {
       document.removeEventListener("keydown", focusSearch);
     };
-  }, [isMac, open, liveFirst, pickerOpen, scopedFolders]);
+  }, [isMac, open, liveFirst]);
   function nextInQueue(queue: Session[]) {
     const index = queue.findIndex((row) => row === activeLive);
     return queue.length ? queue[(index + 1) % queue.length] : undefined;
@@ -794,7 +834,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
       setRecentQuery("");
       recentPosition.current = { scroll: 0 };
     }
-    setPendingScope(scopedFolders);
+    setFilteringProjects(false);
     setPickerQuery("");
     setPickerMode(mode);
     setPickerOpen(true);
@@ -898,8 +938,11 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     : [];
   const guardianConversations = focusedFolder ? workSessions.filter((row) => row.guardianReview && !row.terminalId) : [];
   const selectedConversation = savedConversations.find((row) => key(row) === historySelection);
-  const checkpoints = savedConversations.filter((row) => details[key(row)]?.next?.trim());
-  const recentConversations = [...savedConversations].sort((a, b) => b.updated - a.updated).slice(0, 4);
+  const landingCheckpoint = savedConversations.find((row) => details[key(row)]?.next?.trim());
+  const landingLive = liveAttention[0] ?? liveSessions.find((row) => liveState(row) === "working")
+    ?? liveSessions.find((row) => key(row) === livePreview) ?? liveSessions[0];
+  const landingSession = landingLive ?? landingCheckpoint;
+  const landingAction = landingLive ? "Open live session" : landingCheckpoint ? "Pick up" : "Start a session";
   function openConversationPreview(row: Session) {
     setHistorySelection(key(row));
     setProjectView("History");
@@ -998,6 +1041,9 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
       <button autoFocus onClick={() => setConfirmEnd(undefined)}>Cancel</button>
     </>;
     if (fromRecent) return <>
+      <button onClick={(event) => act(event, () => onContinue(row))}>
+        <Icon name="arrow" size={15} /> Start new session with context…
+      </button>
       <button onClick={(event) => act(event, () => onContinue(row, true))}>
         <Icon name="arrow" size={15} /> Continue with another agent…
       </button>
@@ -1007,6 +1053,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     </>;
     return <>
       <button onClick={(event) => act(event, () => onRename(row))}>Rename session…</button>
+      <button onClick={(event) => act(event, () => onContinue(row))}>Start new session with context…</button>
       <button onClick={(event) => act(event, () => onContinue(row, true))}>Continue with another agent…</button>
       {review && liveState(row) !== "working" && <button onClick={(event) => act(event, () => onReview(review.id))}>Mark reviewed</button>}
       {canEnd && <button onClick={() => setConfirmEnd(id)}>End session…</button>}
@@ -1023,8 +1070,21 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
       setHistorySelection(id);
     }
   }
-  const [historyEntry, setHistoryEntry] = useState<{ result?: HistorySearchResult; picker: boolean; search: boolean }>();
-  function onOpen(target: Session | InboxEntry) {
+  const [historyEntry, setHistoryEntry] = useState<{
+    result?: HistorySearchResult; picker: boolean; search: boolean; scroll: number; pickerScroll: number;
+    origin?: HTMLElement;
+  }>();
+  const pickerMounted = pickerOpen || (!!recentSelection && !!historyEntry?.picker);
+  function rememberDetailsOrigin(search: boolean, result?: HistorySearchResult) {
+    const focus = document.activeElement;
+    setHistoryEntry({
+      result, search, picker: pickerOpen,
+      scroll: dialog.current?.scrollTop ?? 0,
+      pickerScroll: picker.current?.querySelector(".dashboard-project-picker-options, .dashboard-picker-search")?.scrollTop ?? 0,
+      origin: focus instanceof HTMLElement && focus.closest("dialog") === dialog.current ? focus : undefined,
+    });
+  }
+  function onOpen(target: Session | InboxEntry, search = false) {
     const row = byKey.get(key(target));
     if (!row) return;
     onRecordOpened(key(row));
@@ -1034,7 +1094,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
       return;
     }
     setRecentActionError("");
-    setHistoryEntry({ picker: pickerOpen, search: false });
+    rememberDetailsOrigin(search);
     setPickerOpen(false);
     setRecentSelection(key(row));
   }
@@ -1042,7 +1102,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     if (!byKey.has(key(result))) return;
     onRecordOpened(key(result));
     setRecentActionError("");
-    setHistoryEntry({ result, picker: pickerOpen, search });
+    rememberDetailsOrigin(search, result);
     setPickerOpen(false);
     setRecentSelection(key(result));
   }
@@ -1056,10 +1116,17 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
   function closeRecentPreview(back: boolean) {
     setRecentSelection(undefined);
     setHistoryEntry(undefined);
-    if (historyEntry) {
-      if (back && historyEntry.picker) setPickerOpen(true);
-      else if (historyEntry.search) requestAnimationFrame(() => searchInput.current?.focus({ preventScroll: true }));
-    } else if (back) {
+    if (historyEntry && back) {
+      const { picker: reopenPicker, search, scroll, pickerScroll, origin } = historyEntry;
+      if (reopenPicker) setPickerOpen(true);
+      requestAnimationFrame(() => {
+        if (origin?.isConnected) origin.focus({ preventScroll: true });
+        else if (search) searchInput.current?.focus({ preventScroll: true });
+        if (dialog.current) dialog.current.scrollTop = scroll;
+        const popupList = reopenPicker && picker.current?.querySelector(".dashboard-project-picker-options, .dashboard-picker-search");
+        if (popupList) popupList.scrollTop = pickerScroll;
+      });
+    } else if (!historyEntry && back) {
       setPickerMode("Recent");
       setPickerOpen(true);
     } else {
@@ -1104,11 +1171,14 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     }
     closeRecentPreview(false);
   }
-  function pickerSession(row: Session, recentGroup?: "Live" | "Today" | "Yesterday" | "Earlier") {
+  function pickerSession(row: Session, recentGroup?: "Live" | "Today" | "Yesterday" | "Earlier", duplicate = false) {
     const title = details[key(row)]?.name || row.title;
+    const savedNext = duplicate ? details[key(row)]?.next?.trim() : undefined;
+    const excerpt = duplicate && !savedNext ? sessionExcerpt(row.preview) : undefined;
+    const context = savedNext || (excerpt && excerpt.toLowerCase() !== title.trim().toLowerCase() ? excerpt : undefined);
     const timestamp = recentGroup && !row.terminalId && row.updated > 0 ? new Date(row.updated * 1000) : undefined;
     const activity = timestamp?.toLocaleString([], recentGroup === "Earlier"
-      ? { month: "short", day: "numeric" }
+      ? { month: "short", day: "numeric", ...(duplicate ? { hour: "numeric", minute: "2-digit" } : {}) }
       : { hour: "numeric", minute: "2-digit" });
     return <button key={key(row)} className="dashboard-open dashboard-picker-session"
       aria-current={recentGroup === "Live" && activeLive && showingLive && key(activeLive) === key(row) ? "true" : undefined}
@@ -1116,11 +1186,43 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
       onClick={() => recentGroup ? previewRecentSession(row) : openPickerSession(row)}>
       <AgentIcon agent={row.provider.toLowerCase()} />
       <span className="dashboard-picker-session-label">
-        <strong>{title}</strong>{recentGroup && <small>{name(row.cwd)}</small>}
+        <strong>{title}</strong>{recentGroup && <small>{name(row.cwd)}{duplicate && ` · ${row.provider}`}</small>}
+        {context && <small className="dashboard-recent-context" title={context}>{savedNext && <span>Next step · </span>}{context}</small>}
       </span>
       {timestamp && <time dateTime={timestamp.toISOString()}>{activity}</time>}
       {row.terminalId && <SessionStatus state={railStatus(row)} showLabel />}
     </button>;
+  }
+  function savedReviewRow(entry: InboxEntry, checkpoint?: Session) {
+    const id = key(entry);
+    const row = byKey.get(id);
+    const title = details[id]?.name || row?.title || entry.body;
+    const recap = recaps?.[id];
+    const currentRecap = row && recap && recap.sourceUpdated >= row.updated ? recap : undefined;
+    const savedNext = details[id]?.next?.trim();
+    const next = savedNext || currentRecap?.next || "Review the agent’s reply";
+    const expanded = previewID === entry.id;
+    return <article key={entry.id} className="dashboard-saved-review">
+      <div className="dashboard-session-line">
+        <button className="dashboard-open" aria-label={`Open ${title} (${entry.provider})`} disabled={!row}
+          onClick={() => row && onOpen(row)}>
+          <AgentIcon agent={entry.provider.toLowerCase()} />
+          <span><strong>{title}</strong><small>{row ? name(row.cwd) : entry.provider} · {elapsed(entry.createdAt, +today)}</small></span>
+        </button>
+        <button aria-label={`Preview ${title}`} aria-expanded={expanded}
+          onClick={() => setPreviewID(expanded ? undefined : entry.id)}>
+          {expanded ? "Hide preview" : "Preview"}
+        </button>
+        <button aria-label={`Mark ${title} reviewed`} onClick={() => onReview(entry.id)}>Mark reviewed</button>
+      </div>
+      <dl className="dashboard-saved-review-summary">
+        <div><dt>Why it’s here</dt><dd>Agent finished a turn</dd></div>
+        {currentRecap?.done && <div><dt>Recap</dt><dd>{currentRecap.done}</dd></div>}
+        {!(savedNext && checkpoint && key(checkpoint) === id) &&
+          <div><dt>{savedNext ? "Saved next step" : currentRecap?.next ? "Suggested next step" : "Next action"}</dt><dd>{next}</dd></div>}
+      </dl>
+      {expanded && <AttentionPreview enabled={open} id={entry.id} kind="completion" recap={recap} updated={row?.updated} />}
+    </article>;
   }
   function conversationPreview(row: Session, fromRecent = false) {
     const id = key(row);
@@ -1141,7 +1243,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
           })}</ul>
         </div>)}
     </section>;
-    return <ProjectConversationPreview key={id} row={row} title={details[id]?.name || row.title}
+    return <ProjectConversationPreview key={id} connected={connected} row={row} title={details[id]?.name || row.title}
       metadata={fromRecent ? `${name(row.cwd)} · ${row.provider}${row.updated > 0 ? ` · ${date(row.updated * 1000)}` : ""}` : undefined}
       linkedSessions={linked} recap={recaps?.[id]} onSaveExcerpt={(text) => onSaveExcerpt(row, text)}
       next={details[id]?.next} inlineHistory anchor={fromRecent ? historyEntry?.result?.anchor : undefined}
@@ -1161,8 +1263,14 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     setRecentAction(true);
     setRecentActionError("");
     try {
-      await onCleanup([target.id], hide);
-      setRecentHidden(hide ? target : undefined);
+      const changed = await onCleanup([target.id], hide);
+      setRecentHidden(hide && changed.length ? target : undefined);
+      setRecentHistoryFeedback({
+        message: changed.length ? `${hide ? "Hidden from history" : "Restored"} · ${target.title}` : "History is already up to date.",
+        origin: hide ? !historyEntry ? "recent" : historyEntry.search
+          ? historyEntry.picker ? "picker" : "search" : "dashboard"
+          : recentHistoryFeedback?.origin ?? "recent",
+      });
       if (hide) closeRecentPreview(true);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
@@ -1184,7 +1292,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
       title={canHide ? "Hide from Recent and history. You can undo this."
         : "This conversation has a pin, a link, a next step, or an unread alert."}
       onClick={() => { if (canHide && !recentAction) void changeRecentVisibility({ id, title }, true); }}>
-      <Icon name="archive" size={16} /> Hide from history
+      <Icon name="archive" size={16} /> Hide
       </button>
     </>;
     return <>
@@ -1196,6 +1304,15 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
         {sessionActions(row, true)}
       </div>
     </>;
+  }
+  function renderHistoryFeedback(origin: NonNullable<typeof recentHistoryFeedback>["origin"]) {
+    if (recentHistoryFeedback?.origin !== origin) return null;
+    return <div className="dashboard-recent-hidden">
+      <span role="status">{recentHistoryFeedback.message}</span>
+      {recentHidden && <button disabled={recentAction}
+        onClick={() => void changeRecentVisibility(recentHidden, false)}>Undo</button>}
+      {recentActionError && !recentSelection && <span role="alert">{recentActionError}</span>}
+    </div>;
   }
   function renderRecent() {
     const todayStart = new Date();
@@ -1212,27 +1329,30 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
     const groups = Map.groupBy(saved, (row) => row.updated * 1000 >= +todayStart ? "Today"
       : row.updated * 1000 >= +yesterdayStart ? "Yesterday" : "Earlier");
     const recentLive = allLiveSessions.filter(matchesRecent).sort((a, b) => b.updated - a.updated);
+    const recentTitle = (row: Session) => (details[key(row)]?.name || row.title).trim().toLowerCase();
+    const titleCounts = new Map<string, number>();
+    for (const row of [...recentLive, ...saved]) {
+      const title = recentTitle(row);
+      titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
+    }
+    const duplicate = (row: Session) => (titleCounts.get(recentTitle(row)) ?? 0) > 1;
     return <>
       <input type="search" ref={recentSearch} aria-label="Filter recent sessions" placeholder="Filter by session, project, or agent"
         value={recentQuery} onChange={(event) => {
           setRecentQuery(event.currentTarget.value);
           if (recentList.current) recentList.current.scrollTop = 0;
         }} />
-      {recentHidden && <div className="dashboard-recent-hidden">
-        <span role="status">Hidden from history · {recentHidden.title}</span>
-        <button disabled={recentAction} onClick={() => void changeRecentVisibility(recentHidden, false)}>Undo hide</button>
-      </div>}
-      {recentActionError && <p role="alert" className="dashboard-attention-feedback">{recentActionError}</p>}
+      {renderHistoryFeedback("recent")}
       <div ref={recentList} className="dashboard-project-picker-options dashboard-recent-list">
       {recentLive.length > 0 && <section aria-label="Live">
         <div className="recency-label">Live</div>
-        {recentLive.map((row) => pickerSession(row, "Live"))}
+        {recentLive.map((row) => pickerSession(row, "Live", duplicate(row)))}
       </section>}
       {(["Today", "Yesterday", "Earlier"] as const).map((group) => {
         const rows = groups.get(group);
         return rows?.length ? <section key={group} aria-label={group}>
           <div className="recency-label">{group}</div>
-          {rows.map((row) => pickerSession(row, group))}
+          {rows.map((row) => pickerSession(row, group, duplicate(row)))}
         </section> : null;
       })}
       {!recentLive.length && !saved.length && <p>{filter.length ? "No matching sessions." : "No recent sessions."}</p>}
@@ -1249,12 +1369,13 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
         <section hidden={!inPicker && !!focusedFolder && projectView !== "History"} className="dashboard-find" aria-label={inPicker ? searchLabel : undefined}
           aria-labelledby={inPicker ? undefined : "dashboard-find-title"}>
           {!inPicker && <h3 id="dashboard-find-title" tabIndex={-1}>{focusedFolder ? "Find a saved conversation" : "Find a project or conversation"}</h3>}
+          {renderHistoryFeedback(inPicker ? "picker" : "search")}
           <div className="dashboard-find-controls">
             <form role="search" onSubmit={(event) => {
               event.preventDefault();
               if (matchedSessions.length) {
                 if (focusedFolder) { setPickerOpen(false); openConversationPreview(matchedSessions[0]); }
-                else onOpen(matchedSessions[0]);
+                else onOpen(matchedSessions[0], true);
               }
               else if (matchedProjects.length) showProjects([matchedProjects[0].folder]);
             }}>
@@ -1272,7 +1393,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
             {resultRows.map((row) => (
               <button key={key(row)} className="dashboard-open" onClick={() => {
                 if (focusedFolder) { setPickerOpen(false); openConversationPreview(row); }
-                else onOpen(row);
+                else onOpen(row, true);
               }}>
                 <AgentIcon agent={row.provider.toLowerCase()} />
                 <span><strong>{details[key(row)]?.name || row.title}</strong><small>{name(row.cwd)} · {row.provider}</small></span>
@@ -1305,10 +1426,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
             }
           }}
       onCancel={(event) => event.preventDefault()}>
-      <header className="dashboard-masthead" data-working={workingCount > 0}>
-        <div className="dashboard-masthead-art" aria-hidden="true">
-          <i /><i /><i />
-        </div>
+      <header className="dashboard-masthead">
         <div className="dashboard-brand">
           <span className="dashboard-brand-mark" aria-hidden="true" style={{ maskImage: `url("${logo}")` }}>
             <img src={logo} alt="" />
@@ -1339,13 +1457,14 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                 if (pickerOpen && pickerMode === "Recent") setPickerOpen(false);
                 else openPicker("Recent");
               }}><Icon name="history" size={15} /> Recent</button>
-            {pickerOpen && <div id="dashboard-project-picker-panel" className="dashboard-project-picker-panel"
+            {pickerMounted && <div hidden={!pickerOpen} id="dashboard-project-picker-panel" className="dashboard-project-picker-panel"
               data-recent={pickerMode === "Recent"} role="group" aria-label={pickerMode === "Recent" ? "Recent sessions" : "Choose projects"}>
               {pickerMode === "Recent" ? renderRecent() : <>
+              {filteringProjects && pickerMode === "Projects" ? <strong className="dashboard-filter-heading">Filter live sessions</strong> :
               <div className="dashboard-picker-tabs" role="group" aria-label="Browse">
                 {(["Projects", "Conversations"] as const).map((mode) => <button key={mode}
                   aria-pressed={pickerMode === mode} onClick={() => setPickerMode(mode)}>{mode}</button>)}
-              </div>
+              </div>}
               {pickerMode === "Projects" ? <>
                 <input type="search" ref={pickerSearch} aria-label="Search projects" placeholder="Search projects"
                   value={pickerQuery} onChange={(event) => setPickerQuery(event.currentTarget.value)} />
@@ -1357,27 +1476,33 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                     const saved = rows.filter((row) => !row.terminalId && !row.guardianReview)
                       .sort((a, b) => Number(pins.has(key(b))) - Number(pins.has(key(a))) || b.updated - a.updated);
                     const label = name(folder);
+                    const count = working.length > 0 ? `${working.length} working`
+                      : live.length > 0 ? `${live.length} live` : saved.length > 0 ? `${saved.length} saved` : "";
+                    const toggleExpanded = () => setExpandedPickerProjects((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(folder)) next.delete(folder);
+                      else next.add(folder);
+                      return next;
+                    });
+                    if (filteringProjects) return <label className="dashboard-picker-row dashboard-picker-filter-row" key={folder}>
+                      <input type="checkbox" aria-label={label} checked={pendingScope.includes(folder)} onChange={(event) => {
+                        const checked = event.currentTarget.checked;
+                        setPendingScope((previous) => checked ? [...previous, folder] : previous.filter((item) => item !== folder));
+                      }} />
+                      <Icon name="folder" size={16} /><strong title={folder}>{label}</strong>
+                      {count && <small>{count}</small>}
+                    </label>;
                     return <div className="dashboard-picker-project" key={folder}>
                       <div className="dashboard-picker-row">
-                        <button className="dashboard-picker-expand" aria-label={`${expanded ? "Collapse" : "Expand"} ${label} sessions`}
-                          aria-expanded={expanded} aria-controls={group} onClick={() => setExpandedPickerProjects((previous) => {
-                            const next = new Set(previous);
-                            if (expanded) next.delete(folder);
-                            else next.add(folder);
-                            return next;
-                          })}><Icon name="chevron" size={14} /></button>
-                        <button className="dashboard-open" title={folder} aria-label={`Focus project ${label}`}
-                          onClick={() => showProjects([folder], "Pick up")}>
-                          <Icon name="folder" size={16} /><span><strong>{label}</strong></span>
+                        <button className="dashboard-open dashboard-picker-browse" title={folder}
+                          aria-label={`${expanded ? "Collapse" : "Expand"} ${label} sessions`}
+                          aria-expanded={expanded} aria-controls={group} onClick={toggleExpanded}>
+                          <Icon name="chevron" size={14} /><Icon name="folder" size={16} />
+                          <span><strong>{label}</strong></span>
+                          {count && <small>{count}</small>}
                         </button>
-                        {working.length > 0 ? <small>{working.length} working</small>
-                          : live.length > 0 ? <small>{live.length} live</small>
-                          : saved.length > 0 && <small>{saved.length} saved</small>}
-                        <input type="checkbox" aria-label={label} title={`Include ${label} in live filter`}
-                          checked={pendingScope.includes(folder)} onChange={(event) => {
-                            const checked = event.currentTarget.checked;
-                            setPendingScope((previous) => checked ? [...previous, folder] : previous.filter((item) => item !== folder));
-                          }} />
+                        <button type="button" className="dashboard-picker-focus" aria-label={`Focus project ${label}`}
+                          onClick={() => showProjects([folder], "Pick up")}>Focus</button>
                       </div>
                       <div id={group} className="dashboard-picker-sessions" role="group" aria-label={`${label} sessions`} hidden={!expanded}>
                         {expanded && <>
@@ -1391,9 +1516,18 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                   {!pickerProjects.length && <p>No matching projects.</p>}
                 </div>
                 <div className="dashboard-project-picker-footer">
-                  <button type="button" onClick={onManageHidden}>Manage hidden…</button>
-                  <span>{pendingScope.length ? `${pendingScope.length} selected` : "All projects"}</span>
-                  <button className="primary" onClick={() => showProjects(pendingScope, "Live")}>Apply</button>
+                  {filteringProjects ? <>
+                    <button type="button" onClick={() => { pickerSearch.current?.focus(); setFilteringProjects(false); }}>Cancel</button>
+                    <span>{pendingScope.length ? `${pendingScope.length} selected` : "All projects"}</span>
+                    <button className="primary" onClick={() => showProjects(pendingScope, "Live")}>Apply filter</button>
+                  </> : <>
+                    <button type="button" onClick={onManageHidden}>Manage hidden…</button>
+                    <button type="button" className="dashboard-picker-filter" onClick={() => {
+                      setPendingScope(scopedFolders);
+                      pickerSearch.current?.focus();
+                      setFilteringProjects(true);
+                    }}><Icon name="filter" size={15} /> Filter live sessions</button>
+                  </>}
                 </div>
               </> : <div className="dashboard-picker-search">{renderSearch(true)}</div>}
               </>}
@@ -1420,17 +1554,17 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
               {savedReviews.length > 0 && <button aria-expanded={showSavedReviews} aria-controls="dashboard-saved-reviews"
                 onClick={() => setShowSavedReviews(!showSavedReviews)}>Saved reviews ({savedReviews.length})</button>}
               {liveSessions.length > 0 && <>
-                <button className="dashboard-tool-icon dashboard-next-review" aria-label="Next review" data-tooltip="Next review"
+                <button data-tour-anchor="dashboard-review" className="dashboard-tool-icon dashboard-next-review" aria-label="Next review" data-tooltip="Next review" data-active={!!nextReview}
                   aria-description={liveReviews.length ? `${liveReviews.length} ${liveReviews.length === 1 ? "session is" : "sessions are"} ready to review` : undefined}
                   aria-disabled={!nextReview} onClick={advanceReview}>
                   <Icon name="inbox" size={17} />
-                  {liveReviews.length > 0 && <span aria-hidden="true">{liveReviews.length}</span>}
+                  {liveReviews.length > 0 && <><span className="dashboard-queue-label" aria-hidden="true">Review</span><span className="dashboard-queue-count" aria-hidden="true">{liveReviews.length}</span></>}
                 </button>
-                <button className="dashboard-tool-icon dashboard-next-attention" aria-label="Next attention" data-tooltip="Next attention"
+                <button className="dashboard-tool-icon dashboard-next-attention" aria-label="Next attention" data-tooltip="Next attention" data-active={!!nextAttention}
                   aria-description={liveAttention.length ? `${liveAttention.length} ${liveAttention.length === 1 ? "session needs" : "sessions need"} attention` : undefined}
                   aria-disabled={!nextAttention} onClick={advanceAttention}>
                   <Icon name="attention" size={17} />
-                  {liveAttention.length > 0 && <span aria-hidden="true">{liveAttention.length}</span>}
+                  {liveAttention.length > 0 && <><span className="dashboard-queue-label" aria-hidden="true">Needs input</span><span className="dashboard-queue-count" aria-hidden="true">{liveAttention.length}</span></>}
                 </button>
               </>}
             </div>}
@@ -1438,7 +1572,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
         <div className="dashboard-masthead-actions">
           <button className="dashboard-tool-icon dashboard-palette-button" aria-label="Command Palette" data-tour-anchor="dashboard-palette"
             data-tooltip={`Command Palette (${paletteShortcut})`} onClick={onCommandPalette}><Icon name="search" size={17} /></button>
-          {focusedFolder && <button disabled={!connected || drawerOpening} onClick={() => void openProjectShell(focusedFolder)}>
+          {focusedFolder && <button data-project-shell-toggle disabled={!connected || drawerOpening} onClick={() => void openProjectShell(focusedFolder)}>
             <Icon name="terminal" size={16} /> Open project shell
           </button>}
           <button className="primary dashboard-new-session" data-tour-anchor="dashboard-launch" onClick={() => onLaunch(scopedFolders)}>
@@ -1449,10 +1583,24 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
       {connected && allLiveSessions.filter((row) => row.provider === "Codex" && (open || queuedFollowUps[key(row)])).map((row) =>
         <TerminalPermissionObserver key={row.terminalId} id={row.terminalId!} onPrompt={onPermission} onWorking={onTerminalWorking} />)}
       <div className="dashboard-body">
-        {!connected && <p className="dashboard-attention-feedback" role="status">
-          {connectionStatus === "reconnecting" ? "Reconnecting to terminals…" : "Terminal connection unavailable."}
-          {connectionStatus === "disconnected" && <button onClick={onReconnect}>Retry connection</button>}
-        </p>}
+        {renderHistoryFeedback("dashboard")}
+        {!connected && <section className="dashboard-live-unavailable dashboard-service-status" aria-label="Terminal service connection">
+          <div role="status">
+            <strong>{connectionStatus === "reconnecting" ? "Reconnecting to terminals…" : "Terminal service disconnected"}</strong>
+            <p>You can read saved conversations and edit drafts while the connection is unavailable.</p>
+          </div>
+          {connectionStatus === "disconnected" && <button onClick={onReconnect}>Reconnect terminals</button>}
+        </section>}
+        {connected && terminalServiceUpdate && !drawerVisible &&
+          <section className="dashboard-live-unavailable dashboard-service-status" aria-label="Terminal service update">
+            <div><strong>Terminal service update available</strong>
+              <p>Updating stops running agents and shells. Saved conversations stay in history.</p>
+              {serviceUpdateError && <p role="alert">{serviceUpdateError}</p>}
+            </div>
+            <button disabled={updatingService} onClick={() => void updateService()}>
+              {updatingService ? "Preparing update…" : "Review terminal service update…"}
+            </button>
+          </section>}
         {appError && <div className="dashboard-attention-feedback" role="alert">
           {appError} <button onClick={onDismissError} aria-label="Dismiss error">×</button>
         </div>}
@@ -1473,24 +1621,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
               </button>
           </div>}
           {showSavedReviews && savedReviews.length > 0 && <section id="dashboard-saved-reviews" aria-label="Saved reviews" className="dashboard-saved-reviews">
-            {savedReviews.map((entry) => {
-              const row = byKey.get(key(entry));
-              const title = details[key(entry)]?.name || row?.title || entry.body;
-              return <div key={entry.id} className="dashboard-attention-item">
-                <div className="dashboard-session-line">
-                  <button className="dashboard-open" aria-label={`Open ${title} (${entry.provider})`} onClick={() => onOpen(row ?? entry)}>
-                    <AgentIcon agent={entry.provider.toLowerCase()} />
-                    <span><strong>{title}</strong><small>{row ? name(row.cwd) : entry.provider} · {elapsed(entry.createdAt, +today)}</small></span>
-                  </button>
-                  <button aria-label={`Preview ${title}`} aria-expanded={previewID === entry.id}
-                    onClick={() => setPreviewID(previewID === entry.id ? undefined : entry.id)}>
-                    {previewID === entry.id ? "Hide preview" : "Preview"}
-                  </button>
-                  <button aria-label={`Mark ${title} reviewed`} onClick={() => onReview(entry.id)}>Mark reviewed</button>
-                </div>
-                {previewID === entry.id && <AttentionPreview enabled={open && showingLive} id={entry.id} kind="completion" recap={recaps?.[key(entry)]} updated={row?.updated} />}
-              </div>;
-            })}
+            {savedReviews.map((entry) => savedReviewRow(entry))}
           </section>}
           {followUps.error && <p className="dashboard-attention-feedback" role="alert">{followUps.error}</p>}
           {feedback?.error && <p className="dashboard-attention-feedback" role="alert">{feedback.message}</p>}
@@ -1511,6 +1642,9 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                   const state = liveState(row);
                   const draft = followUps.drafts[key(row)];
                   const hasDraft = !!(draft?.text.trim() || draft?.files.length);
+                  const excerpt = !details[key(row)]?.name && /^(Codex|Claude|Copilot) session$/i.test(title)
+                    ? sessionExcerpt(row.preview)
+                    : "";
                   return <button key={terminalId} className="dashboard-open dashboard-rail-row" data-working={state === "working"}
                     aria-label={`Inspect ${title}`} aria-description={queuedFollowUps[key(row)] ? "Queued follow-up" : hasDraft ? "Unsent follow-up draft" : undefined}
                     aria-current={key(row) === livePreview ? "true" : undefined}
@@ -1534,6 +1668,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                         <strong title={title}>{title}</strong>
                         {hasDraft && <span className="dashboard-draft-badge">{queuedFollowUps[key(row)] ? "Queued" : "Draft"}</span>}
                       </span>
+                      {excerpt && <span className="dashboard-rail-excerpt" title={excerpt}>{excerpt}</span>}
                       <small className="dashboard-rail-meta">
                         <span>
                           <SessionStatus state={railStatus(row)} showLabel />
@@ -1580,37 +1715,46 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                 const replyDraftId = question ? "reply:" + question.id : id;
                 const input = {
                   value: question ? replyDrafts[replyDraftId] ?? "" : draft.text,
-                  maxLength: 2000,
+                  maxLength: question ? 2000 : maxFollowUpLength,
                   disabled: sending === replyDraftId || (!question && (!followUps.ready || queued)),
                   onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
                     const text = event.currentTarget.value;
                     if (question) setReplyDrafts((previous) => ({ ...previous, [replyDraftId]: text }));
-                    else followUps.updateDraft(followUpID, (previous) => ({ ...previous, text }));
+                    else followUps.updateDraft(followUpID, (previous) => ({ ...previous, text, pastedWords: text ? previous.pastedWords : undefined }));
                   },
                 };
                 return <div className="dashboard-live-session" key={terminalId} hidden={!current}>
-                  <div className="dashboard-live-toolbar" data-working={state === "working"}>
-                    <div>
-                      <div className="dashboard-session-title">
-                        <strong title={title}>{title}</strong>
-                        <button aria-label="Rename session…" title="Rename session" onClick={() => onRename(row)}>
-                          <Icon name="pencil" size={14} />
-                        </button>
+                  <div className="dashboard-live-toolbar" data-working={state === "working"} data-review={!!visibleReview}>
+                    <div className="dashboard-active-session-identity">
+                      <AgentIcon agent={row.provider} />
+                      <div className="dashboard-active-session-copy">
+                        <div className="dashboard-session-title">
+                          <strong title={title}>{title}</strong>
+                          <button aria-label="Rename session…" title="Rename session" onClick={() => onRename(row)}>
+                            <Icon name="pencil" size={14} />
+                          </button>
+                        </div>
+                        <small className="dashboard-single-status">
+                          <span className="dashboard-active-session-project" title={row.cwd}>{name(row.cwd)} · {row.provider}</span>
+                          {!visibleReview && <span className="dashboard-active-session-status" aria-hidden={!hideRail}>
+                            <SessionStatus state={railStatus(row)} showLabel />
+                          </span>}
+                          {visibleReview && (view === "Preview"
+                            ? <span className="dashboard-header-review"><Icon name="inbox" size={13} /> Ready to review</span>
+                            : <button type="button" className="dashboard-header-review" onClick={() => selectView(followUpID, "Preview")}>
+                                <Icon name="inbox" size={13} /> Review update
+                              </button>)}
+                          {open && visible && state === "working" && workingSince.has(terminalId) &&
+                            <WorkingDuration since={workingSince.get(terminalId)!} />}
+                          {hideRail && current && (draft.text.trim() || files.length > 0) &&
+                            <span className="dashboard-draft-badge">{queued ? "Queued" : "Draft"}</span>}
+                        </small>
                       </div>
-                      <small className="dashboard-single-status">
-                        {hideRail && current ? <>{row.provider} <SessionStatus state={railStatus(row)} showLabel /></>
-                          : `${name(row.cwd)} · ${row.provider}`}
-                        {open && visible && state === "working" && workingSince.has(terminalId) &&
-                          <WorkingDuration since={workingSince.get(terminalId)!} />}
-                        {hideRail && current && <>
-                          {!!(draft.text.trim() || files.length) && <span className="dashboard-draft-badge">{queued ? "Queued" : "Draft"}</span>}
-                        </>}
-                      </small>
                     </div>
                     <div className="dashboard-session-controls">
                       <div role="group" aria-label="Session detail view">
                         {(["Preview", "Terminal", "Changes"] as const).map((mode) =>
-                          <button key={mode} aria-pressed={view === mode} onClick={() => selectView(followUpID, mode)}>{mode}</button>)}
+                          <button key={mode} aria-pressed={view === mode} onClick={() => selectView(followUpID, mode)}>{mode === "Terminal" ? "Agent terminal" : mode}</button>)}
                       </div>
                       {view === "Preview" && <>
                         <button type="button" className="dashboard-tool-icon" aria-label="Preview layout" data-tooltip="Preview layout"
@@ -1624,13 +1768,24 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                                 const hidden = !event.currentTarget.checked;
                                 setHiddenPreviewSections((previous) => ({ ...previous, [section]: hidden }));
                               }} />{previewSections[section]}</label>)}
+                          <div className="dashboard-ai-replies-setting">
+                            <label><input type="checkbox" checked={suggestNextSteps}
+                              onChange={(event) => setSuggestNextSteps(event.currentTarget.checked)} />Suggest next steps</label>
+                            <small>Asks for a next step or decision on follow-ups sent from Preview.</small>
+                          </div>
+                          <div className="dashboard-ai-replies-setting">
+                            <label><input type="checkbox" checked={aiQuickReplies}
+                              onChange={(event) => setAiQuickReplies(event.currentTarget.checked)} />AI quick replies</label>
+                            <small>Sends excerpts from the latest turn through the session’s agent account.</small>
+                          </div>
                         </div>
                       </>}
                       <button className="dashboard-tool-icon" aria-label="Browser" aria-expanded={browserVisible}
                         data-tooltip={browserVisible ? "Close browser pane" : "Open browser pane"}
                         onClick={() => setBrowserOpen((visible) => !visible)}><Icon name="browser" size={17} /></button>
-                      <button className="dashboard-tool-icon" aria-label="Shell" aria-expanded={drawerOpen}
-                        data-tooltip={drawerOpen ? "Hide shell" : "Open shell"}
+                      <button className="dashboard-tool-icon" aria-label="Dashboard shell" aria-expanded={drawerOpen}
+                        data-dashboard-shell-toggle
+                        data-tooltip={drawerOpen ? "Hide dashboard shell" : "Open dashboard shell"}
                         disabled={!connected && !drawerOpen}
                         onClick={() => {
                           setDrawerOpen(!drawerOpen);
@@ -1647,19 +1802,40 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                     <div className="dashboard-live-preview-scroll">
                       {current && view === "Preview" && <AttentionPreview enabled={open && showingLive} id={id} kind={state === "needsInput" ? "input" : "completion"}
                         onFileReference={(file) => setFilePreview({ source: row, file })} onBrowserReference={openBrowserReference}
+                        onQuickReplies={setQuickReplies}
+                        aiQuickReplies={aiQuickReplies && connected && state === "idle" && !question &&
+                          !permissions[terminalId] && !queued}
+                        onStartHandoff={state === "idle" && !queued && !continuations.get(key(row))?.outgoing.length
+                          ? () => onContinue(row) : undefined}
+                        onOpenTerminal={connected ? () => openAgentTerminal(followUpID) : undefined}
                         onReadHistory={() => { selectView(followUpID, "Terminal"); setTerminalHistory(terminalId); }}
                         checkoutSummary={<CheckoutSummary key={row.cwd} cwd={row.cwd} enabled={open && showingLive}
                           working={state === "working"} onOpen={() => selectView(followUpID, "Changes", "working")} />}
                         liveSession={row} hiddenSections={hiddenPreviewSections} turnChanges={turnChanges[followUpID]} compactTurns={drawerOpen} followUpQueued={!!queued} reviewID={visibleReview} onReview={onReview} submitted={submitted[id]} liveState={review && state === "idle" ? undefined : state} updated={row.updated} permission={permissions[terminalId]} />}
                     </div>
-                    {state === "disconnected" && <div className="dashboard-live-unavailable">
+                    {connected && state === "disconnected" && <div className="dashboard-live-unavailable">
                       <div><strong>Terminal still open</strong>
-                        <p>RunHuddle can’t tell whether the agent is ready. You can keep drafting a follow-up here.</p>
+                        <p>RunHuddle can’t tell whether the agent is ready. Check the prompt before sending. Your follow-up stays in this draft.</p>
                       </div>
-                      <button onClick={() => selectView(followUpID, "Terminal")}>Check terminal</button>
+                      <button onClick={() => openAgentTerminal(followUpID)}>Check terminal</button>
                     </div>}
-                    <div className="dashboard-attention-compose dashboard-live-compose">
+                    <div className="dashboard-attention-compose dashboard-live-compose" role="group"
+                      aria-label={question ? "Draft reply" : `Follow-up for ${title}`}>
+                      {!question && !queued && (draft.text.trim() || files.length > 0) &&
+                        <small className="dashboard-compose-draft"><span>Draft</span><span title={title}>{title}</span></small>}
                       {current && feedback?.composeId === (question ? replyDraftId : id) && !feedback.error && <p className="dashboard-compose-feedback" role="status">{feedback.message}</p>}
+                      {current && quickReplies?.id === id && state === "idle" && connected && !question &&
+                        !permissions[terminalId] && !queued && !sending && followUps.ready && !draft.text && (
+                        <div className="dashboard-quick-replies" role="group" aria-label="Suggested follow-ups">
+                          {quickReplies.replies.map(({ label, draft: text }) => (
+                            <button key={text} type="button" title={text} onClick={(event) => {
+                              followUps.updateDraft(followUpID, (previous) => previous.text ? previous : { ...previous, text });
+                              setFeedback(undefined);
+                              event.currentTarget.closest(".dashboard-live-compose")?.querySelector("textarea")?.focus();
+                            }}>{label}</button>
+                          ))}
+                        </div>
+                      )}
                       <form onSubmit={(event) => {
                         event.preventDefault();
                         if (question) {
@@ -1669,31 +1845,77 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                         if (queued || sendingRef.current || !followUps.ready || (!draft.text.trim() && !files.length)) return;
                         if (canQueue) {
                           const text = draft.text.trim();
-                          if (/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(text) || /^[!/]/.test(text)) {
-                            setFeedback({ composeId: id, message: "Enter a single-line message of up to 2,000 characters.", error: true });
+                          if (text.length > maxFollowUpLength || /[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(text) || /^[!/]/.test(text)) {
+                            setFeedback({ composeId: id, message: "Enter a message of up to 16,000 characters without control characters or terminal commands.", error: true });
                             return;
                           }
                           setFeedback(undefined);
                           setQueuedFollowUps((previous) => ({ ...previous, [followUpID]: { terminalId, draft } }));
                         } else if (state === "idle") void submitLiveFollowUp(row);
                       }}>
-                        <label>
+                        <label hidden={!question && !!draft.pastedWords && expandedPaste !== followUpID}>
                           {question ? <><span>Draft a reply</span><textarea {...input} rows={2} placeholder="Write a reply to copy" /></>
-                            : <input {...input} aria-label="Follow-up" placeholder="Write a follow-up" onPaste={(event) => {
-                                const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
-                                if (!images.length) return;
-                                event.preventDefault();
-                                if (images.some((file) => file.size > 10 * 1024 * 1024) || files.length + images.length > 8) {
-                                  setFeedback({ message: "Attach up to 8 screenshots of 10 MB each.", error: true });
-                                  return;
-                                }
-                                followUps.updateDraft(followUpID, (previous) => ({
-                                  ...previous, files: [...previous.files, ...images],
-                                }));
-                              }} />}
+                            : (!draft.pastedWords || expandedPaste === followUpID) &&
+                              <textarea {...input} rows={1} data-tour-anchor="dashboard-follow-up" aria-label="Follow-up" placeholder="Write a follow-up"
+                                onKeyDown={(event) => {
+                                  if (event.key !== "Enter" || event.nativeEvent.isComposing || event.altKey) return;
+                                  if (event.metaKey || event.ctrlKey) {
+                                    event.preventDefault();
+                                    const field = event.currentTarget;
+                                    const { value, selectionStart, selectionEnd } = field;
+                                    const text = value.slice(0, selectionStart) + "\n" + value.slice(selectionEnd);
+                                    if (text.length > maxFollowUpLength) return;
+                                    followUps.updateDraft(followUpID, (previous) => ({ ...previous, text }));
+                                    requestAnimationFrame(() => field.setSelectionRange(selectionStart + 1, selectionStart + 1));
+                                  } else if (!event.shiftKey) {
+                                    event.preventDefault();
+                                    if (!event.repeat) event.currentTarget.form?.requestSubmit();
+                                  }
+                                }}
+                                onPaste={(event) => {
+                                  const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+                                  if (images.length) {
+                                    event.preventDefault();
+                                    if (images.some((file) => file.size > 10 * 1024 * 1024) || files.length + images.length > 8) {
+                                      setFeedback({ message: "Attach up to 8 screenshots of 10 MB each.", error: true });
+                                      return;
+                                    }
+                                    followUps.updateDraft(followUpID, (previous) => ({ ...previous, files: [...previous.files, ...images] }));
+                                    return;
+                                  }
+                                  const pasted = event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n");
+                                  if (!pasted) return;
+                                  const { selectionStart, selectionEnd, value } = event.currentTarget;
+                                  const next = value.slice(0, selectionStart) + pasted + value.slice(selectionEnd);
+                                  if (next.length > maxFollowUpLength) {
+                                    event.preventDefault();
+                                    setFeedback({ composeId: id, message: "The paste would exceed 16,000 characters. Your draft is unchanged.", error: true });
+                                    return;
+                                  }
+                                  if (pasted.length < 300 && pasted.split("\n", 4).length < 4) return;
+                                  const pastedWords = pasted.trim().split(/\s+/).filter(Boolean).length;
+                                  if (!pastedWords) return;
+                                  event.preventDefault();
+                                  const form = event.currentTarget.form;
+                                  followUps.updateDraft(followUpID, (previous) => ({ ...previous, text: next, pastedWords }));
+                                  setExpandedPaste(undefined);
+                                  setFeedback(undefined);
+                                  requestAnimationFrame(() => form?.querySelector<HTMLElement>(".dashboard-paste-toggle")?.focus());
+                                }} />}
                         </label>
+                        {!question && !!draft.pastedWords && <button type="button" className="dashboard-paste-toggle"
+                          aria-expanded={expandedPaste === followUpID} onClick={(event) => {
+                            const form = event.currentTarget.form;
+                            if (expandedPaste === followUpID) setExpandedPaste(undefined);
+                            else {
+                              setExpandedPaste(followUpID);
+                              requestAnimationFrame(() => form?.querySelector("textarea")?.focus());
+                            }
+                          }}>Pasted {draft.pastedWords.toLocaleString()} {draft.pastedWords === 1 ? "word" : "words"}
+                          <span>{expandedPaste === followUpID ? "Collapse" : "Show draft"}</span>
+                        </button>}
                         <button className="primary" disabled={(!question && (!followUps.ready || queued || (state !== "idle" && !canQueue))) || !!sending || (!input.value.trim() && (!!question || !files.length))}
-                            title={question || state === "idle" || canQueue ? undefined : "Send when the agent is idle"}>{question ? "Copy reply" : queued ? "Queued" : canQueue ? "Queue follow-up" : "Send follow-up"}</button>
+                            title={question || queued ? undefined : state === "idle" ? "Press Enter to send" : canQueue ? "Press Enter to queue" : "Send when the agent is idle"}>{question ? "Copy reply" : queued ? "Queued" : canQueue ? "Queue follow-up" : "Send follow-up"}</button>
                       </form>
                       {queued && <div className="dashboard-draft-wait">
                         <span role="status">{state === "working" ? "Queued · sends when the agent is ready" : state === "needsInput" ? "Queued · waiting for your input" : "Queued. Waiting for an empty terminal prompt."}</span>
@@ -1705,40 +1927,47 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                       </div>}
                       {!canQueue && state === "working" && (draft.text.trim() || files.length > 0) &&
                         <small className="dashboard-draft-wait">Send this draft when the agent is ready.</small>}
-                      {!!files.length && <ul className="dashboard-draft-attachments" aria-label="Draft screenshots">
-                        {files.map((file, index) => <li key={index}>
-                          <span title={file.name}>{file.name === "image.png" ? `Screenshot ${index + 1}` : file.name}</span>
-                          <button type="button" aria-label={`Remove screenshot ${index + 1}`} disabled={sending === id || queued}
-                            onClick={() => followUps.updateDraft(followUpID, (previous) => ({
-                              ...previous, files: previous.files.filter((item) => item !== file),
-                            }))}>×</button>
-                        </li>)}
-                      </ul>}
-                      {state === "needsInput" && <button onClick={() => { setTerminalHistory(undefined); selectView(followUpID, "Terminal"); }}>Answer in terminal</button>}
+                      {!!files.length && <div className="dashboard-draft-screenshots">
+                        <small><Icon name={queued ? "history" : "check"} size={14} />{files.length} {files.length === 1 ? "screenshot" : "screenshots"} {queued ? "queued with follow-up" : "attached to draft"}</small>
+                        <ul className="dashboard-draft-attachments" aria-label="Draft screenshots">
+                          {files.map((file, index) => <li key={index}>
+                            <span title={file.name}>{file.name === "image.png" ? `Screenshot ${index + 1}` : file.name}</span>
+                            <button type="button" aria-label={`Remove screenshot ${index + 1}`} disabled={sending === id || queued}
+                              onClick={() => followUps.updateDraft(followUpID, (previous) => ({
+                                ...previous, files: previous.files.filter((item) => item !== file),
+                              }))}>×</button>
+                          </li>)}
+                        </ul>
+                      </div>}
                       {review && state !== "working" && <button onClick={() => onReview(review.id)}>Mark reviewed</button>}
                     </div>
                   </div>
                   {(view === "Terminal" || mountedViews[followUpID]?.Terminal) && <div className="dashboard-inline-terminal" hidden={view !== "Terminal"}>
                     <div className="dashboard-terminal-history-controls">
+                      <span className="dashboard-terminal-mode">
+                        <Icon name={readingHistory ? "notes" : "terminal"} size={15} />
+                        {readingHistory ? "Read-only transcript" : connected ? `Live input to ${row.provider}` : "Disconnected"}
+                      </span>
                       <button onClick={() => setTerminalHistory(readingHistory ? undefined : terminalId)}>
-                        {readingHistory ? "Back to terminal" : "Conversation history"}
+                        <Icon name={readingHistory ? "arrow" : "history"} size={15} />
+                        {readingHistory ? "Back to agent terminal" : "Conversation history"}
                       </button>
                     </div>
-                    <div className="dashboard-terminal-surface" hidden={readingHistory}>
+                    <div className="dashboard-terminal-surface" role="region" aria-label="Agent terminal" hidden={readingHistory}>
                     {connected ? <TerminalPane id={terminalId} visible={showingTerminal}
                       active={showingTerminal} focused={showingTerminal && !drawerVisible} redrawOnTruncatedReplay={row.provider === "Codex"} onTitle={() => {}}
                       onConversationLock={row.provider === "Codex" ? (locked) => onTerminalLock(terminalId, locked) : undefined}
                       onError={(message) => setFeedback({ message, error: true })} />
                       : <p>Terminal connection interrupted.</p>}
                     </div>
-                    {readingHistory && visible && view === "Terminal" && <SessionHistory session={row} inline onSaveExcerpt={(text) => onSaveExcerpt(row, text)} />}
+                    {readingHistory && visible && view === "Terminal" && <SessionHistory session={row} inline focusOnOpen onSaveExcerpt={(text) => onSaveExcerpt(row, text)} />}
                   </div>}
                   {(view === "Changes" || mountedViews[followUpID]?.Changes) && <div className="dashboard-inline-changes" hidden={view !== "Changes"}>
                     <ChangesPanel key={row.cwd} cwd={row.cwd} session={row} inline preferUncommitted={uncommittedFor === followUpID} active={open && visible && view === "Changes"}
                       onDraftFollowUp={(text) => {
                         if (!followUps.ready || queued || sending === id) return false;
                         const next = [draft.text.trim(), text].filter(Boolean).join(" ");
-                        if (next.length > 2000) return false;
+                        if (next.length > maxFollowUpLength) return false;
                         followUps.updateDraft(followUpID, (previous) => ({ ...previous, text: next }));
                         selectView(followUpID, "Preview");
                         return true;
@@ -1770,8 +1999,13 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
               }} />
             <BrowserPreview target={browserTarget} canGrantControl={!!viewedTerminal && viewedTerminal === browserTarget?.id}
               onReopenSession={onReopenBrowserSession} onClose={() => setBrowserOpen(false)}
-              onShareReport={(_target, file) => {
-                if (!activeLive) return;
+              onOpenAgentTerminal={activeLive ? () => openAgentTerminal(key(activeLive)) : undefined}
+              agentTitle={(id) => {
+                const row = allLiveSessions.find((session) => session.terminalId === id);
+                return row ? details[key(row)]?.name || row.title : undefined;
+              }}
+              onAttachReport={(target, file) => {
+                if (!activeLive || activeLive.terminalId !== target.id) throw Error("Select a session and try again.");
                 followUps.updateDraft(key(activeLive), (draft) => ({
                   ...draft,
                   text: [draft.text, `Inspect the page screenshot, visible text, and console diagnostics in ${JSON.stringify(file)}`].filter(Boolean).join(" "),
@@ -1807,11 +2041,33 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
             })}
           </div>
         </section>
-        {!liveFirst && !(pickerOpen && pickerMode === "Conversations") && renderSearch(false)}
         {focusedFolder && projectView === "Pick up" && <section className="dashboard-project-landing" aria-label="Pick up">
-          {liveSessions.length > 0 && <div className="dashboard-project-live-link">
-            <button onClick={() => setProjectView("Live")}>View live sessions ({liveSessions.length})</button>
-          </div>}
+          <div className="dashboard-project-start">
+            <span className="dashboard-project-icon"><Icon name="folder" size={22} /></span>
+            <div className="dashboard-project-start-content">
+              <h3>{name(focusedFolder)}</h3>
+              {landingSession ? <>
+                <div className="dashboard-project-start-session">
+                  {landingLive && <SessionStatus state={railStatus(landingLive)} showLabel />}
+                  <strong>{details[key(landingSession)]?.name || landingSession.title}</strong>
+                </div>
+                {!landingLive && <p>{details[key(landingSession)]?.next}</p>}
+              </> : <p>{savedConversations.length ? "Start fresh or browse previous conversations." : "Start your first session in this project."}</p>}
+              <div className="dashboard-project-start-actions">
+                <button className="primary" type="button" onClick={() => {
+                  if (landingLive) {
+                    setProjectView("Live");
+                    selectLive(key(landingLive));
+                    if (permissions[landingLive.terminalId!]) selectView(key(landingLive), "Terminal");
+                  } else if (landingCheckpoint) openConversationPreview(landingCheckpoint);
+                  else onLaunch([focusedFolder]);
+                }}><Icon name={landingSession ? "arrow" : "plus"} size={15} />{landingAction}</button>
+                <button className="secondary" type="button" onClick={() => setProjectView("History")}>
+                  <Icon name="history" size={15} /> Browse history
+                </button>
+              </div>
+            </div>
+          </div>
           {(liveReviews.length > 0 || savedReviews.length > 0) && <div className="dashboard-project-history-panel">
             <h3>Ready to review</h3>
             {liveReviews.map((row) => <button key={key(row)} className="dashboard-open" onClick={() => {
@@ -1819,24 +2075,10 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
               selectLive(key(row));
               selectView(key(row), "Preview");
             }}>{details[key(row)]?.name || row.title}</button>)}
-            {savedReviews.map((entry) => {
-              const row = byKey.get(key(entry));
-              return <div key={entry.id} className="dashboard-session-line">
-                <button className="dashboard-open" onClick={() => row ? openConversationPreview(row) : onOpen(entry)}>
-                  {details[key(entry)]?.name || row?.title || entry.body}
-                </button>
-                <button onClick={() => onReview(entry.id)}>Mark reviewed</button>
-              </div>;
-            })}
+            {savedReviews.map((entry) => savedReviewRow(entry, landingCheckpoint))}
           </div>}
-          {(checkpoints.length > 0 || (liveReviews.length === 0 && savedReviews.length === 0 && recentConversations.length > 0)) &&
-            <div className="dashboard-project-history-panel">
-              <h3>{checkpoints.length ? "Saved next steps" : "Recent conversations"}</h3>
-              {(checkpoints.length ? checkpoints : recentConversations).map((row) => sessionRow(row, true))}
-            </div>}
-          {!savedConversations.length && !liveSessions.length && !savedReviews.length && <p>No conversations yet. Start a session in this project to get going.</p>}
-          {savedConversations.length > 0 && <button onClick={() => setProjectView("History")}>Browse history ({savedConversations.length})</button>}
         </section>}
+        {!liveFirst && !(pickerMounted && pickerMode === "Conversations") && renderSearch(false)}
         {focusedFolder && <section hidden={projectView !== "History"} className="dashboard-saved-conversations" aria-label="Saved conversations">
           <header className="dashboard-project-history-heading">
             <h3>Saved conversations <span className="dashboard-project-count">{savedConversations.length}</span></h3>
@@ -1875,7 +2117,10 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
               </select>
             </label>}
           </div>
-          {!projects.length && <p>Your projects will appear here as you open sessions.</p>}
+          {!projects.length && <div className="dashboard-empty-projects">
+            <p>Your projects will appear here as you open sessions.</p>
+            <button className="primary" type="button" onClick={() => onLaunch([])}><Icon name="plus" size={15} /> Start a session</button>
+          </div>}
           <div className="dashboard-grid" data-density={projectDensity}>
             {allProjects.map(({ folder, rows, attention, working }, index) => {
               const candidates = rows.filter((row) => !row.guardianReview);
@@ -1893,6 +2138,9 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
               const reviewTarget = waitingReview && byKey.get(key(waitingReview));
               const target = pending ?? draft ?? checkpoint ?? reviewTarget ?? unknown;
               const isCheckpoint = !!checkpoint && target === checkpoint && !pending && !draft;
+              const checkpointText = checkpoint && details[key(checkpoint)]?.next.trim().replace(/\s+/g, " ");
+              const showHistory = saved.length > 0 && !checkpoint;
+              const browseHistory = () => showProjects([folder], "History");
               const action = pending ? "Answer session" : draft ? "Continue draft" : isCheckpoint ? "Continue"
                 : reviewTarget ? "Review session" : "Check terminal";
               const targetTitle = target && (details[key(target)]?.name || target.title);
@@ -1924,7 +2172,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                       <button className="dashboard-session-more" aria-label={`Actions for project ${name(folder)}`}
                         title="Project actions" popoverTarget={menuId}><Icon name="more" size={16} /></button>
                       <div className="dashboard-session-popover" id={menuId} popover="auto">
-                        <button onClick={(event) => menuAction(event, () => showProjects([folder], "History"))}>Browse history</button>
+                        {!showHistory && <button onClick={(event) => menuAction(event, browseHistory)}>Browse history</button>}
                         <button onClick={(event) => menuAction(event, () => onNotes(folder))}>Project notes</button>
                         {saved.length > 0 && <button onClick={(event) => menuAction(event, () => {
                           showProjects([folder], "History");
@@ -1932,7 +2180,7 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                         })}>AI history review</button>}
                         <button disabled={!connected || drawerOpening} onClick={(event) => menuAction(event,
                           () => void openProjectShell(folder))}>Open project shell</button>
-                        {target && <button onClick={(event) => menuAction(event, () => onLaunch([folder]))}>New session</button>}
+                        {(target || showHistory) && <button onClick={(event) => menuAction(event, () => onLaunch([folder]))}>New session</button>}
                       </div>
                     </div>
                     {working.length > 0 && <div className="dashboard-project-working">
@@ -1953,11 +2201,20 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
                     </div>}
                   </div>
                   <footer className="dashboard-project-actions">
-                    <small>{targetTitle || (saved.length
-                      ? `${saved.length} saved ${saved.length === 1 ? "conversation" : "conversations"}`
-                      : "No saved conversations")}</small>
-                    <button className="dashboard-project-next-action" onClick={openNext}
-                      aria-label={target ? undefined : `New session in ${name(folder)}`}>{target ? action : "New session"}</button>
+                    <div className="dashboard-project-card-context">
+                      <small title={targetTitle}>{targetTitle || (saved.length
+                        ? `${saved.length} saved ${saved.length === 1 ? "conversation" : "conversations"}`
+                        : "No saved conversations")}</small>
+                      {checkpointText && <small className="dashboard-project-card-next" title={checkpointText}>
+                        <strong>Next step</strong> {checkpointText}
+                      </small>}
+                    </div>
+                    <div className="dashboard-project-card-buttons">
+                      {showHistory && <button type="button" className={target ? "secondary" : "dashboard-project-next-action"}
+                        onClick={browseHistory}>Browse history</button>}
+                      {(target || !showHistory) && <button type="button" className="dashboard-project-next-action" onClick={openNext}
+                        aria-label={target ? undefined : `New session in ${name(folder)}`}>{target ? action : "New session"}</button>}
+                    </div>
                   </footer>
                 </article>
               );
@@ -1974,8 +2231,10 @@ export function ProjectsDashboard({ keepAwakeActive, open, connectionStatus, app
         onClose={() => setFilePreview(undefined)} />}
       {open && recentSelection && <RecentConversationDialog actions={recentRow ? recentSessionActions(recentRow) : undefined}
         backLabel={historyEntry ? historyEntry.search ? "Back to search" : "Back" : undefined}
-        onBack={() => closeRecentPreview(true)} onClose={() => closeRecentPreview(false)}>
-        {recentRow ? conversationPreview(recentRow, true) : <p>This session is no longer available.</p>}
+        onBack={() => closeRecentPreview(true)}>
+        {recentRow ? conversationPreview(recentRow, true) : <div className="dashboard-live-unavailable">
+          <div><strong>Session unavailable</strong><p>It may have been hidden or removed. Go back to choose another conversation.</p></div>
+        </div>}
         {recentActionError && <p role="alert" className="dashboard-attention-feedback">{recentActionError}</p>}
       </RecentConversationDialog>}
       {open && reviewFolder && <ProjectSessionReview key={reviewFolder} project={name(reviewFolder)}

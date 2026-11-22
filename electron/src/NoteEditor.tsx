@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { Icon } from "./Icons";
 import type { Note, NoteDraft } from "./types";
 
 export function NoteEditor({
   initial,
   projects,
+  sourceTitle,
   onSaved,
   onCancel,
 }: {
   initial: NoteDraft;
   projects: string[];
+  sourceTitle?: string;
   onSaved: (note: Note) => void;
   onCancel: () => void;
 }) {
@@ -17,8 +20,16 @@ export function NoteEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const fixedProject = !!(draft.id || draft.source);
-  useEffect(() => {
-    dialog.current?.showModal();
+  useLayoutEffect(() => {
+    const element = dialog.current!;
+    const previousFocus = document.activeElement;
+    element.showModal();
+    element.querySelector<HTMLElement>("input")?.focus();
+    return () => {
+      element.close();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
+        previousFocus.focus({ preventScroll: true });
+    };
   }, []);
 
   return (
@@ -28,6 +39,7 @@ export function NoteEditor({
       aria-labelledby="note-editor-title"
       onCancel={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         if (!busy) onCancel();
       }}
     >
@@ -45,11 +57,17 @@ export function NoteEditor({
           }
         }}
       >
-        <h2 id="note-editor-title">{draft.id ? "Edit note" : "New note"}</h2>
+        <header>
+          <h2 id="note-editor-title">{draft.id ? "Edit note" : "New note"}</h2>
+          <button type="button" aria-label="Close note editor" disabled={busy} onClick={onCancel}><Icon name="close" size={17} /></button>
+        </header>
+        {sourceTitle && <div className="note-source-card">
+          <Icon name="history" size={17} />
+          <div><small>Source conversation</small><strong>{sourceTitle}</strong></div>
+        </div>}
         <label>
           Title
           <input
-            autoFocus
             value={draft.title}
             maxLength={120}
             required
@@ -97,7 +115,7 @@ export function NoteEditor({
             {error}
           </p>
         )}
-        <div className="note-actions">
+        <footer className="note-actions">
           <button type="button" disabled={busy} onClick={onCancel}>
             Cancel
           </button>
@@ -108,7 +126,7 @@ export function NoteEditor({
           >
             {busy ? "Saving…" : "Save note"}
           </button>
-        </div>
+        </footer>
       </form>
     </dialog>
   );

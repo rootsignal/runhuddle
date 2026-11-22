@@ -76,6 +76,18 @@ export function GitBar({ cwd, data, busy, active, prRefresh, compareTarget, onAc
   const attached = data.branch !== "HEAD" && data.branch !== "New repository";
   const localRefs = repository?.refs.filter((item) => item.startsWith("refs/heads/") && branchLabel(item) !== data.branch);
   const remoteRefs = repository?.refs.filter((item) => item.startsWith("refs/remotes/"));
+  const remotePrimary = !data.upstream ? "publish"
+    : data.behind && !working ? "pull"
+    : data.ahead && !data.behind ? "push" : "fetch";
+  const sharedCheckout = repository && repository.sessions.length > 0 && <details
+    className="git-checkout-sessions" data-working={working} open={working || undefined}>
+    <summary>Sessions sharing this checkout <span>{repository.sessions.length}</span></summary>
+    <p>{working
+      ? panel === "branch" ? "Wait for working sessions before switching branches." : "Wait for working sessions before pulling."
+      : panel === "branch" ? "Switching branches changes the files these sessions see." : "Pulling changes the files these sessions see."}</p>
+    <ul>{repository.sessions.map((session, index) => <li key={index}>{session.title}
+      {session.working && <span>Working</span>}</li>)}</ul>
+  </details>;
   return <footer className="changes-git-bar" aria-label="Git actions">
     <button className="git-branch-button" type="button" aria-label={`Git branch: ${data.branch}`}
       title="Switch or create a branch" onClick={() => void open("branch")} disabled={busy}>
@@ -89,23 +101,23 @@ export function GitBar({ cwd, data, busy, active, prRefresh, compareTarget, onAc
       busy={busy} refreshKey={prRefresh} onPrepare={onOpenPullRequest} onDraft={onDraft} />}
     {panel && <dialog ref={dialog} className="appearance-dialog git-actions-dialog" aria-label={panel === "branch" ? "Git branches" : "Git remote actions"}
       onCancel={(event) => { event.preventDefault(); event.stopPropagation(); close(); }}>
-      <header><div><h2>{panel === "branch" ? "Git branches" : "Git remote actions"}</h2><small>{data.branch}</small></div>
+      <header><h2>{panel === "branch" ? "Git branches" : "Git remote actions"}</h2>
         <button type="button" aria-label="Close Git actions" onClick={close}><Icon name="close" size={18} /></button></header>
+      <div className="git-action-checkout" aria-label="Current checkout">
+        <div><span>Current checkout</span><strong title={data.branch}><Icon name="branch" size={15} />{data.branch}</strong></div>
+        <div><span>Upstream</span><strong title={data.upstream}>{data.upstream || "Unpublished"}</strong></div>
+        {data.upstream && <small>{data.ahead || data.behind
+          ? `${data.ahead ?? 0} ahead · ${data.behind ?? 0} behind at last fetch`
+          : "Up to date at last fetch"}</small>}
+      </div>
       {error && <p role="alert">{error}</p>}
       {!repository ? !error && <p role="status">Reading repository…</p> : <>
         {changed && <p role="alert">The branch changed. Reopen these actions for the current branch.</p>}
-        {!!repository.sessions.length && <div className="git-checkout-sessions">
-          <strong>Sessions sharing this checkout</strong>
-          <ul>{repository.sessions.map((session, index) => <li key={index}>{session.title}{session.working ? " · Working" : ""}</li>)}</ul>
-          <small>{working ? "Wait for working sessions to finish before switching branches or pulling."
-            : "Switching branches or pulling changes the files these sessions see."}</small>
-        </div>}
         {panel === "branch" ? <form onSubmit={(event) => {
           event.preventDefault();
           if (disabled || working || (creating ? !name.trim() : !ref)) return;
           void run(creating ? "create-branch" : "switch-branch", creating ? { name, ref: base } : { ref });
         }}>
-          {!!data.uncommittedFiles && <small>{data.uncommittedFiles} files with uncommitted changes. Git will stop if switching would overwrite them.</small>}
           {creating ? <>
             <label>Branch name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="feature/my-change" maxLength={240} /></label>
             <label>Start from<select value={base} onChange={(event) => setBase(event.target.value)}>
@@ -117,6 +129,8 @@ export function GitBar({ cwd, data, busy, active, prRefresh, compareTarget, onAc
             <optgroup label="Local branches">{localRefs?.map((item) => <option key={item} value={item}>{branchLabel(item)}</option>)}</optgroup>
             <optgroup label="Remote branches">{remoteRefs?.map((item) => <option key={item} value={item}>{branchLabel(item)}</option>)}</optgroup>
           </select></label>}
+          {!!data.uncommittedFiles && <small>{data.uncommittedFiles} {data.uncommittedFiles === 1 ? "file has" : "files have"} uncommitted changes. Git will stop if switching would overwrite them.</small>}
+          {sharedCheckout}
           <div className="git-branch-actions">
             <button type="button" onClick={() => setCreating(!creating)}>{creating ? "Back to branches" : "New branch…"}</button>
             <button className="primary" disabled={disabled || working || (creating ? !name.trim() : !ref)}>
@@ -124,19 +138,22 @@ export function GitBar({ cwd, data, busy, active, prRefresh, compareTarget, onAc
             </button>
           </div>
         </form> : <div className="git-remote-controls">
-          <label>Fetch or publish remote<select value={remote} onChange={(event) => setRemote(event.target.value)}>
+          <label>{data.upstream ? "Remote to fetch" : "Remote to fetch or publish to"}<select value={remote} onChange={(event) => setRemote(event.target.value)}>
             {!repository.remotes.length && <option value="">No remotes configured</option>}
             {repository.remotes.map((item) => <option key={item}>{item}</option>)}
           </select></label>
-          {data.upstream && <small>Upstream · {data.upstream} · {data.ahead ?? 0} ahead · {data.behind ?? 0} behind at last fetch</small>}
-          <div>
-            <button type="button" disabled={disabled || !remote} onClick={() => void run("fetch", { remote })}>Fetch</button>
-            <button type="button" disabled={disabled || working || !data.upstream} title="Fetch and fast-forward the checked-out branch"
-              onClick={() => void run("pull")}>Pull</button>
-            {data.upstream
-              ? <button type="button" disabled={disabled || !data.ahead || !!data.behind} onClick={() => void run("push")}>Push</button>
-              : <button type="button" className="primary" disabled={disabled || !remote || !attached}
-                onClick={() => void run("publish", { remote })}>Publish branch</button>}
+          {data.upstream && sharedCheckout}
+          <div className="git-remote-actions">
+            <button type="button" className={remotePrimary === "fetch" ? "primary" : undefined}
+              disabled={disabled || !remote} onClick={() => void run("fetch", { remote })}>Fetch</button>
+            {data.upstream ? <>
+              <button type="button" className={remotePrimary === "pull" ? "primary" : undefined}
+                disabled={disabled || working} title="Fetch and fast-forward the checked-out branch"
+                onClick={() => void run("pull")}>Pull</button>
+              <button type="button" className={remotePrimary === "push" ? "primary" : undefined}
+                disabled={disabled || !data.ahead || !!data.behind} onClick={() => void run("push")}>Push</button>
+            </> : <button type="button" className="primary" disabled={disabled || !remote || !attached}
+              onClick={() => void run("publish", { remote })}>Publish branch</button>}
           </div>
         </div>}
       </>}

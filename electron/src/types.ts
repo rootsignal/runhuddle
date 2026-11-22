@@ -88,7 +88,7 @@ export interface SessionAlert {
 }
 export type InboxQuestion = { text: string; choices: string[] };
 export type PreviewTurn = { instruction?: string; screenshots?: number; instructionAt?: number; update?: string; answer?: string; truncated?: boolean };
-export type InboxPreview = PreviewTurn & { questions?: InboxQuestion[]; recentTurns?: PreviewTurn[] };
+export type InboxPreview = PreviewTurn & { questions?: InboxQuestion[]; recentTurns?: PreviewTurn[]; context?: { startedAt?: number; compactions: number } };
 export interface InboxEntry extends SessionAlertTarget {
   id: string;
   kind: "input" | "completion";
@@ -204,8 +204,10 @@ export interface API {
   searchHistory(query: string, folder: string | string[], scope: string, refresh?: boolean): Promise<{ results: HistorySearchResult[]; incomplete: boolean; indexing?: boolean }>;
   cancelHistorySearch(): Promise<void>;
   codexPromptReady(id: string, terminalId: string, queued?: boolean): Promise<boolean>;
+  suggestQuickReplies(provider: string, sessionID: string, terminalId: string, instruction: string, answer: string):
+    Promise<{ label: string; draft: string }[]>;
   liveSessionPreview(provider: string, id: string, terminalId: string): Promise<InboxPreview>;
-  liveSessionFollowUp(provider: string, id: string, terminalId: string, message: string, screenshots?: ArrayBuffer[], queued?: boolean): Promise<void | "waiting">;
+  liveSessionFollowUp(provider: string, id: string, terminalId: string, message: string, screenshots?: ArrayBuffer[], queued?: boolean, suggestNextSteps?: boolean): Promise<void | "waiting">;
   screenshotDraft(id: string): Promise<Uint8Array<ArrayBuffer>>;
   copyInboxReply(id: string, text: string): Promise<void>;
   inboxPreview(id: string): Promise<InboxPreview>;
@@ -246,6 +248,11 @@ export interface API {
     input?: string | GitCheckoutOptions): Promise<GitChanges>;
   noteAction(id: string, action: "copy" | "export"): Promise<void>;
   saveNote(draft: NoteDraft): Promise<Note>;
+  handoffHistory(provider: string, id: string): Promise<{
+    messages: { role: string; text: string; time: string }[];
+    truncated: boolean;
+    compactionSummary?: string;
+  }>;
   history(
     provider: string,
     id: string,
@@ -284,7 +291,7 @@ export interface API {
   create(cwd: string, agent: string, compactShell?: boolean): Promise<TerminalInfo>;
   pinSession(provider: string, id: string, pinned: boolean): Promise<void>;
   setSessionsHidden(ids: string[], hidden: boolean): Promise<string[]>;
-  setHistoryHidden(kind: keyof HiddenHistory, id: string, hidden: boolean): Promise<void>;
+  setHistoryHidden(kind: keyof HiddenHistory, id: string, hidden: boolean): Promise<string[]>;
   recordSessionContinuation(from: SessionAlertTarget, to: SessionAlertTarget, title: string): Promise<boolean>;
   title(id: string, title: string): Promise<void>;
   resume(provider: string, id: string): Promise<TerminalInfo | null>;

@@ -2,17 +2,11 @@ import { useLayoutEffect, useRef, useState } from "react";
 
 const steps = [
   { id: "dashboard-launch", title: "Start a session",
-    text: "Choose New session, pick a project folder, and start an agent. Give it a name if you want it to stay fixed." },
-  { id: "dashboard-projects", title: "Browse projects",
-    text: "Open Projects to focus on one project or filter to a few. Use Show all projects to clear the filter. Manage hidden… restores hidden sessions and projects." },
-  { id: "dashboard-palette", title: "Find work and tools",
-    text: "Open the Command Palette to find sessions, projects, and commands. Use Recent to read or resume a conversation, or search its messages from Projects → Conversations." },
-  { id: "dashboard-launch", title: "Review live work",
-    text: "Select a live session to switch between Preview, Terminal, and Changes. Use Next review for completed turns and Next attention for agents waiting on you." },
-  { id: "dashboard-palette", title: "Open a shell",
-    text: "Use Quick Terminal for a command from anywhere. Open the dashboard shell to keep a server or other command beside an agent, and hide it when you want the space back." },
-  { id: "dashboard-projects", title: "Keep useful context",
-    text: "Save excerpts as project notes, generate a recap from conversation details, or start a new session with reviewed context." },
+    text: "Choose New session, pick a project folder, then choose an AI agent. Once it opens, send your first instruction." },
+  { id: "dashboard-review", title: "Review an update",
+    text: "Select a live session and open Preview. Read Your instruction, then Agent update. Next review jumps to completed work, and Next attention jumps to sessions waiting for input." },
+  { id: "dashboard-follow-up", title: "Send a follow-up",
+    text: "Write a follow-up in Preview and press Enter to send. Use Shift+Enter for a new line. When Queue follow-up is available, you can line up a message while the agent works." },
 ] as const;
 
 function placeCallout(target: DOMRect, card: DOMRect, width: number, height: number) {
@@ -63,6 +57,8 @@ export function GettingStarted({ onClose }: {
       const bounds = target?.getBoundingClientRect();
       ring.hidden = !bounds;
       element.toggleAttribute("data-anchored", Boolean(bounds));
+      if (bounds) element.dataset.highlight = step.id;
+      else delete element.dataset.highlight;
       if (!bounds) {
         tip.style.removeProperty("left");
         tip.style.removeProperty("top");
@@ -89,7 +85,7 @@ export function GettingStarted({ onClose }: {
   const finished = index === steps.length - 1;
   return (
     <dialog ref={dialog} className="getting-started" aria-label="Getting started"
-      onCancel={(event) => { event.preventDefault(); onClose(); }}>
+      onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
       <div ref={highlight} className="tour-highlight" aria-hidden="true" hidden />
       <section ref={card} className="tour-card" aria-labelledby="tour-title">
         <div aria-live="polite">

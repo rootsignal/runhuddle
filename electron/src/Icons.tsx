@@ -17,6 +17,7 @@ export function Icon({
     | "sidebar"
     | "layout"
     | "folder"
+    | "filter"
     | "chevron"
     | "search"
     | "arrow"
@@ -35,6 +36,7 @@ export function Icon({
   size?: number;
 }) {
   const paths = {
+    filter: <path d="M4 5h16l-6 7v5l-4 2v-7Z" />,
     layout: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M13 4v16M13 12h8" /></>,
     browser: <><rect x="2.5" y="4" width="19" height="16" rx="2.5" /><path d="M3 9h18m-14-2h.1m3 0h.1" /></>,
     branch: <><circle cx="7" cy="5" r="2" /><circle cx="7" cy="19" r="2" /><circle cx="17" cy="7" r="2" /><path d="M7 7v10m10-8c0 5-4 6-10 6" /></>,
@@ -113,7 +115,6 @@ export const launchOptions = [
     name: "Claude",
     label: "Claude session",
     detail: "Start a new conversation with Claude",
-    glyph: "C",
     color: "#d8a88e",
   },
   {
@@ -121,7 +122,6 @@ export const launchOptions = [
     name: "Codex",
     label: "Codex session",
     detail: "Start a new conversation with Codex",
-    glyph: "⌘",
     color: "#c4cbd1",
   },
   {
@@ -129,7 +129,6 @@ export const launchOptions = [
     name: "Copilot",
     label: "Copilot session",
     detail: "Start a new conversation with Copilot",
-    glyph: "Co",
     color: "#b6acd9",
   },
   {
@@ -137,21 +136,30 @@ export const launchOptions = [
     name: "Terminal",
     label: "Terminal",
     detail: "A plain shell for commands and dev servers",
-    glyph: "",
     color: "#a9b6bf",
   },
 ];
+const agentMarks = {
+  claude: <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" />,
+  codex: <><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-2-15-4 18" /></>,
+  copilot: <><path d="M12 4v3m-5 2h10a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-3a3 3 0 0 1 3-3Zm-5 4h2m16 0h2m-13 0h.1m5.9 0h.1" /></>,
+};
+
 export function AgentIcon({ agent }: { agent: string }) {
-  const option = launchOptions.find((o) => o.id === agent.toLowerCase());
+  const id = agent.toLowerCase();
+  const option = launchOptions.find((o) => o.id === id);
+  const mark = agentMarks[id as keyof typeof agentMarks];
   return (
     <span
       className="agent-icon"
+      aria-hidden="true"
       style={{ "--agent-color": option?.color || "#b7bdc5" } as CSSProperties}
     >
-      {agent === "shell" ? (
+      {id === "shell" ? (
         <Icon name="terminal" size={16} />
       ) : (
-        option?.glyph || agent.slice(0, 1)
+        mark ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{mark}</svg> : agent.slice(0, 1)
       )}
     </span>
   );

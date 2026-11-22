@@ -47,7 +47,10 @@ test("repository watcher emits for edits and stops cleanly", async () => {
     let calls = 0;
     stop = await watchRepository(dir, () => calls++);
     fs.writeFileSync(path.join(dir, "change.txt"), "one");
-    await new Promise(r => setTimeout(r, 1100));
+    const deadline = Date.now() + 5000;
+    while (calls === 0 && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     assert.ok(calls > 0);
     stop(); const before = calls;
     fs.writeFileSync(path.join(dir, "change.txt"), "two");

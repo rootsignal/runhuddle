@@ -10,6 +10,9 @@
   --app-muted: light-dark(#566474, #a0a0ac);
 
   --app-accent-base: #8fcbd0;
+}
+
+:root, .app-accent-sample {
   --app-on-accent: #17222a;
   --app-accent: color-mix(in srgb, var(--app-accent-base) 70%, white);
   --app-accent-hover: color-mix(in srgb, var(--app-accent-base) 52%, white);
@@ -24,6 +27,9 @@
   --app-accent-soft: color-mix(in srgb, var(--app-accent-base) 14%, var(--app-surface));
   --app-accent-selected: color-mix(in srgb, var(--app-accent-base) 30%, var(--app-surface));
 
+}
+
+:root {
   --app-error-text: light-dark(#9a2634, #f1a6ae);
   --app-error-surface: light-dark(#fde8ec, #38252a);
   --app-success-text: light-dark(#2c6a43, #a6d9ac);
@@ -54,6 +60,22 @@
 }
 .app-accent-dialog input[type="color"] { width: 60px; height: 34px; padding: 3px; }
 .app-accent-dialog footer { justify-content: flex-end; margin-top: 16px; }
+.app-accent-sample {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--app-canvas);
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  font-size: 12px;
+}
+.app-accent-sample span { padding: 5px 7px; border-radius: 4px; }
+.accent-sample-selection { background: var(--app-accent-selected); color: var(--app-accent-text); }
+.accent-sample-focus { outline: 2px solid var(--app-accent-text); outline-offset: 1px; }
+.accent-sample-primary { background: var(--app-accent); color: var(--app-on-accent); }
 
 :root[data-app-theme="light"] { color-scheme: light; }
 :root[data-app-theme="dark"] { color-scheme: dark; }

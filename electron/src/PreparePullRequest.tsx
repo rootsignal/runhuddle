@@ -5,6 +5,13 @@ import type { GitPullRequestDraft, Session } from "./types";
 
 const errorText = (error: unknown) => String(error).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 
+export function PullRequestRoute({ head, target }: { head: string; target: string }) {
+  return <div className="pull-request-route">
+    <Icon name="branch" size={16} />
+    <div><small>Source → Base</small><strong>{head} → {target}</strong></div>
+  </div>;
+}
+
 export function PreparePullRequest({ cwd, targetRef, session, onClose }: {
   cwd: string;
   targetRef: string;
@@ -15,6 +22,7 @@ export function PreparePullRequest({ cwd, targetRef, session, onClose }: {
   const [draft, setDraft] = useState<GitPullRequestDraft>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [opened, setOpened] = useState(false);
   const [agents, setAgents] = useState<string[]>();
   const [agent, setAgent] = useState("");
   const [includeHistory, setIncludeHistory] = useState(false);
@@ -80,11 +88,13 @@ export function PreparePullRequest({ cwd, targetRef, session, onClose }: {
   async function open() {
     if (!draft || busy || running.current) return;
     setBusy(true);
+    setOpened(false);
     setError("");
     try {
       await window.runhuddle.openGitPullRequest(cwd, targetRef, {
         head: draft.head, title: draft.title, body: draft.body,
       });
+      setOpened(true);
     } catch (error) {
       setError(errorText(error));
     } finally {
@@ -95,7 +105,7 @@ export function PreparePullRequest({ cwd, targetRef, session, onClose }: {
   return <dialog ref={dialog} className="appearance-dialog prepare-pr-dialog" aria-label="Prepare pull request"
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
     <header>
-      <div><h2>Prepare pull request</h2>{draft && <small>{draft.head} → {draft.target}</small>}</div>
+      <h2>Prepare pull request</h2>
       <button type="button" autoFocus aria-label="Close pull request draft" onClick={onClose}><Icon name="close" size={18} /></button>
     </header>
     {error && <p role="alert">{error}</p>}
@@ -103,8 +113,10 @@ export function PreparePullRequest({ cwd, targetRef, session, onClose }: {
       event.preventDefault();
       void open();
     }}>
+      <PullRequestRoute head={draft.head} target={draft.target} />
       {draft.unpublished > 0 && <p className="prepare-pr-note">{draft.unpublished} {draft.unpublished === 1 ? "local commit is" : "local commits are"} outside the published branch.</p>}
-      <div className="prepare-pr-generate">
+      <details className="prepare-pr-generate">
+        <summary>Draft with an agent</summary>
         <div>
           {!!agents?.length && <select aria-label="Drafting agent" value={agent} disabled={generating || busy}
             onChange={(event) => setAgent(event.target.value)}>
@@ -112,7 +124,7 @@ export function PreparePullRequest({ cwd, targetRef, session, onClose }: {
           </select>}
           {generating ? <><span role="status">Reading the diff…</span>
             <button type="button" onClick={() => void cancelDraft()}>Cancel drafting</button></>
-            : !!agents?.length && <button type="button" className={generated ? undefined : "primary"} disabled={busy || !agent} onClick={() => void generate()}>{generated ? "Regenerate summary" : "Generate PR summary"}</button>}
+            : !!agents?.length && <button type="button" className="secondary" disabled={busy || !agent} onClick={() => void generate()}>{generated ? "Regenerate summary" : "Generate PR summary"}</button>}
         </div>
         {session && !!agents?.length && <label className="prepare-pr-include-history">
           <input type="checkbox" checked={includeHistory} disabled={busy || generating} onChange={(event) => setIncludeHistory(event.target.checked)} />
@@ -120,13 +132,18 @@ export function PreparePullRequest({ cwd, targetRef, session, onClose }: {
         </label>}
         <small>{agents?.length ? "Sends published diff excerpts and any selected session context to the agent. The result replaces the draft below."
           : agents ? "An installed Codex, Claude, or Copilot CLI can draft a description from the diff." : "Checking for drafting agents…"}</small>
-      </div>
-      <label>Title<input value={draft.title} maxLength={256} required disabled={generating}
-        onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-      <label>Description <small>{draft.templatePath ? `Uses ${draft.templatePath}` : generated ? "Markdown" : "Starter draft · generate a summary or edit below"}</small>
-        <textarea value={draft.body} rows={13} disabled={generating} onChange={(event) => setDraft({ ...draft, body: event.target.value })} />
-      </label>
+      </details>
+      <section className="prepare-pr-editor" aria-label="Review draft">
+        <h3>Review draft</h3>
+        <label>Title<input value={draft.title} maxLength={256} required disabled={generating}
+          onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
+        <label>Description <small>{draft.templatePath ? `Uses ${draft.templatePath}` : generated ? "Markdown" : "Starter draft"}</small>
+          <textarea value={draft.body} rows={13} disabled={generating} onChange={(event) => setDraft({ ...draft, body: event.target.value })} />
+        </label>
+      </section>
+      {opened && <p className="prepare-pr-note" role="status">Draft opened in GitHub.</p>}
       <footer>
+        <small>Review and create the pull request in GitHub.</small>
         <button type="button" onClick={onClose}>Close</button>
         <button className="primary" disabled={busy || generating || !draft.title.trim()}>{busy ? "Opening…" : "Open in GitHub"}</button>
       </footer>

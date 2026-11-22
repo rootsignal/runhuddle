@@ -4,6 +4,7 @@ import path from "node:path";
 import xterm from "@xterm/xterm";
 
 const conversationLocked = /Close it there and press R to continue here/i;
+const maxFollowUpLength = 16000;
 const replayLimit = 512 * 1024;
 
 async function readTerminalScreen(replay, codex = false) {
@@ -46,13 +47,22 @@ export async function codexPromptReady(replay) {
 
 export const screenshotReferences = /\n\nScreenshots to inspect:\n(?:- "[^"\r\n]*[\\/]runhuddle-screenshots-[^"\r\n]+[\\/]screenshot-\d+\.png"(?:\n|$))+$/;
 
-export async function sendDashboardFollowUp(service, entry, terminalId, message, stillCurrent, images = [], toPng, queued = false) {
-  const text = typeof message === "string" ? message.trim() : "";
+const nextStepsRequest = "If concrete work remains, end your reply with one line starting “Next step:” and name the action. If you need my decision, use “Needs your decision:” and state the choice instead. If neither applies, omit both.";
+
+export function stripDashboardNextSteps(text) {
+  const screenshots = text.match(screenshotReferences)?.[0] ?? "";
+  const instruction = screenshots ? text.slice(0, -screenshots.length) : text;
+  const suffix = "\n\n" + nextStepsRequest;
+  return instruction.endsWith(suffix) ? instruction.slice(0, -suffix.length) + screenshots : text;
+}
+
+export async function sendDashboardFollowUp(service, entry, terminalId, message, stillCurrent, images = [], toPng, queued = false, suggestNextSteps = false) {
+  const text = typeof message === "string" ? message.replace(/\r\n/g, "\n").trim() : "";
   if (!Array.isArray(images) || images.length > 8 ||
       images.some((image) => !(image instanceof ArrayBuffer) || !image.byteLength || image.byteLength > 10 * 1024 * 1024))
     throw Error("Attach up to 8 screenshots of 10 MB each.");
-  if ((!text && !images.length) || text.length > 2000 || /[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(text) || /^[!/]/.test(text)) {
-    throw Error("Enter a single-line message of up to 2,000 characters.");
+  if ((!text && !images.length) || text.length > maxFollowUpLength || /[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(text) || /^[!/]/.test(text)) {
+    throw Error("Enter a message of up to 16,000 characters without control characters or terminal commands.");
   }
   const target = "This session is no longer ready for a follow-up. Open it to continue.";
   const currentRow = (rows) => rows.find((row) => row.provider === entry.provider &&
@@ -75,6 +85,7 @@ export async function sendDashboardFollowUp(service, entry, terminalId, message,
 
   let directory;
   let messageToPaste = text || "Review the attached screenshots.";
+  if (suggestNextSteps === true) messageToPaste += "\n\n" + nextStepsRequest;
   let writeStarted = false;
   try {
     if (images.length) {

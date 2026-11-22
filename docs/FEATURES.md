@@ -2,6 +2,8 @@
 
 This checklist covers the macOS release through 0.40.0. Update this checklist when a feature ships or a proposal changes.
 
+Track design audit follow-through in the [UX polish checklist](UX-POLISH.md).
+
 ## Shipped in 0.38.0 or earlier
 
 | Area | What you can do |

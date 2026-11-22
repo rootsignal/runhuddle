@@ -64,14 +64,20 @@ export function ReplyReferences({ answer, onFile, onBrowser }: {
   return <section className="dashboard-reply-references" aria-label="Referenced files and links">
     <h3>Referenced files and links</h3>
     <ul>{references.map(({ target, label, web }) => <li key={target}>
-      <span className="dashboard-reference-icon"><Icon name={web ? "browser" : "notes"} size={17} /></span>
-      <span className="dashboard-reference-label" title={target}><strong>{label}</strong><small>{target}</small></span>
-      {web ? <>
-        <button className="dashboard-tool-icon" aria-label={`Open ${label} in RunHuddle Browser`} data-tooltip="Open in RunHuddle Browser"
-          onClick={() => void open(() => onBrowser(target))}><Icon name="browser" size={17} /></button>
-        <button className="dashboard-tool-icon" aria-label={`Open ${label} in default browser`} data-tooltip="Open in default browser"
-          onClick={() => void open(() => window.runhuddle.openTerminalLink(target))}><Icon name="external-link" size={17} /></button>
-      </> : <button className="secondary" aria-label={`View ${label}`} onClick={() => onFile(target)}>View file</button>}
+      <span className="dashboard-reference-icon" data-web={web}><Icon name={web ? "browser" : "notes"} size={17} /></span>
+      <span className="dashboard-reference-label" title={target}>
+        <strong>{label}</strong>{label !== target && <small>{target}</small>}
+      </span>
+      <div className="dashboard-reference-actions">
+        {web ? <>
+          <button className="secondary" aria-label={`Open ${label} in RunHuddle Browser`} title="Open in RunHuddle Browser"
+            onClick={() => void open(() => onBrowser(target))}><Icon name="browser" size={15} /> Open link</button>
+          <button className="dashboard-tool-icon" aria-label={`Open ${label} in default browser`} title="Open in default browser"
+            onClick={() => void open(() => window.runhuddle.openTerminalLink(target))}><Icon name="external-link" size={17} /></button>
+        </> : <button className="secondary" aria-label={`View ${label}`} onClick={() => onFile(target)}>
+          <Icon name="notes" size={15} /> View file
+        </button>}
+      </div>
     </li>)}</ul>
     {error && <p role="alert">{error}</p>}
   </section>;
@@ -86,7 +92,10 @@ export function ProjectFileDialog({ source, file, onClose }: {
   const [preview, setPreview] = useState<ProjectFilePreview>();
   const [error, setError] = useState("");
   const [revealError, setRevealError] = useState("");
-  const filename = file.split(/[\\/]/).at(-1) || file;
+  const displayPath = preview?.path ?? file;
+  const filename = displayPath.split(/[\\/]/).at(-1) || displayPath;
+  const directory = displayPath.slice(0, -filename.length).replace(/[\\/]$/, "");
+  const markdown = preview?.markdown ?? /\.(?:md|markdown)$/i.test(filename);
   useLayoutEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
@@ -100,7 +109,13 @@ export function ProjectFileDialog({ source, file, onClose }: {
   }, [source.provider, source.sessionID, file]);
   return <dialog ref={ref} aria-label="File preview" className="appearance-dialog dashboard-file-preview"
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
-    <header><div><small>File preview</small><h2 title={file}>{preview?.path ?? filename}</h2></div>
+    <header>
+      <span className="dashboard-reference-icon"><Icon name="notes" size={19} /></span>
+      <div className="dashboard-file-identity">
+        <small>{markdown ? "Markdown" : "File preview"}</small>
+        <h2 title={displayPath}>{filename}</h2>
+        {directory && <small title={directory}>{directory}</small>}
+      </div>
       <button autoFocus onClick={onClose} aria-label="Close file preview"><Icon name="close" size={18} /></button>
     </header>
     {error ? <div className="dashboard-file-preview-error">
@@ -112,11 +127,13 @@ export function ProjectFileDialog({ source, file, onClose }: {
           .catch((reason) => setRevealError(plainError(reason)));
       }}>{navigator.platform.startsWith("Mac") ? "Show in Finder" : "Show in folder"}</button>
       {revealError && <p role="alert">{revealError}</p>}
-    </div> : preview ? <article>
-      {preview.markdown ? <Suspense fallback={<p role="status">Formatting Markdown…</p>}>
-        <MarkdownFile text={preview.text} />
-      </Suspense> : <pre>{preview.text}</pre>}
-      {preview.truncated && <p>Preview limited to the first 256 KB.</p>}
-    </article> : <p role="status">Opening file…</p>}
+    </div> : preview ? <>
+      <article className="dashboard-file-reader" aria-label={preview.markdown ? "Markdown document" : "File contents"} tabIndex={0}>
+        {preview.markdown ? <Suspense fallback={<p role="status">Formatting Markdown…</p>}>
+          <MarkdownFile text={preview.text} />
+        </Suspense> : <pre>{preview.text}</pre>}
+      </article>
+      {preview.truncated && <footer>Preview limited to the first 256 KB.</footer>}
+    </> : <p role="status">Opening file…</p>}
   </dialog>;
 }

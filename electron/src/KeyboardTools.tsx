@@ -44,6 +44,7 @@ type PaletteChoice = {
   id: string;
   label: string;
   hint?: string;
+  shortcut?: string;
   search?: string;
   icon: Parameters<typeof Icon>[0]["name"];
   provider?: string;
@@ -61,16 +62,16 @@ export function CommandPalette({ bindings, projects, sessions, onChoose, onClose
   const [selection, setSelection] = useState(0);
   const list = useRef<HTMLDivElement>(null);
   const commands: PaletteChoice[] = [
-    { id: "new", label: "New session", hint: bindingText("CmdOrCtrl+N"), icon: "plus", action: "new-session" },
-    { id: "terminal", label: "Quick Terminal", hint: bindingText(bindings.terminal), icon: "terminal", action: "quick-terminal" },
+    { id: "new", label: "New session", shortcut: "CmdOrCtrl+N", icon: "plus", action: "new-session" },
+    { id: "terminal", label: "Quick Terminal", shortcut: bindings.terminal, icon: "terminal", action: "quick-terminal" },
     { id: "browser", label: "Open Browser", icon: "browser", action: "open-browser" },
     { id: "projects", label: "Browse projects", icon: "folder", action: "projects" },
     { id: "notes", label: "Project notes", icon: "notes", action: "project-notes" },
     { id: "terminal-appearance", label: "Terminal appearance", icon: "terminal", action: "terminal-appearance" },
     { id: "recent", label: "Recent sessions", icon: "history", action: "recent" },
     { id: "review", label: "Next review", icon: "inbox", action: "next-review" },
-    { id: "attention", label: "Next attention", hint: bindingText("Alt+Shift+→"), icon: "attention", action: "next-attention" },
-    { id: "return", label: "Return to interrupted session", hint: bindingText("Alt+Shift+←"), icon: "arrow", action: "return-session" },
+    { id: "attention", label: "Next attention", shortcut: "Alt+Shift+→", icon: "attention", action: "next-attention" },
+    { id: "return", label: "Return to interrupted session", shortcut: "Alt+Shift+←", icon: "arrow", action: "return-session" },
     { id: "dashboard", label: "Project dashboard", icon: "activity", action: "dashboard" },
     { id: "github-mcp", label: "Connect or manage GitHub MCP", icon: "branch", action: "mcp-settings" },
     { id: "shortcuts", label: "Keyboard shortcuts", icon: "pencil", action: "keyboard-shortcuts" },
@@ -88,11 +89,16 @@ export function CommandPalette({ bindings, projects, sessions, onChoose, onClose
       search: row.cwd, provider: row.provider, icon: "notes",
       action: { command: "open-session", session: row.provider + ":" + row.sessionID },
     })).filter(matches).slice(0, terms.length ? 12 : 4) : [];
-  const projectRows = !commandsOnly && terms.length ? projects.map((folder): PaletteChoice => ({
-    id: "project:" + folder, label: folderName(folder), search: folder, hint: "Project", icon: "folder",
+  const projectRows = !commandsOnly ? projects.map((folder): PaletteChoice => ({
+    id: "project:" + folder, label: folderName(folder), search: folder, hint: folder, icon: "folder",
     action: { command: "open-project", folder },
-  })).filter(matches).slice(0, 8) : [];
-  const results = [...matchingCommands, ...sessionRows, ...projectRows];
+  })).filter(matches).slice(0, terms.length ? 8 : 4) : [];
+  const groups = [
+    { label: "Commands", rows: matchingCommands },
+    { label: "Sessions", rows: sessionRows },
+    { label: "Projects", rows: projectRows },
+  ].filter(({ rows }) => rows.length > 0);
+  const results = groups.flatMap(({ rows }) => rows);
   const active = Math.min(selection, Math.max(0, results.length - 1));
   function move(step: number) {
     if (!results.length) return;
@@ -114,16 +120,25 @@ export function CommandPalette({ bindings, projects, sessions, onChoose, onClose
             onChoose(results[active].action);
           }
         }} />
+      <kbd className="shortcut-keycap" title="Command Palette shortcut">{bindingText(bindings.palette)}</kbd>
       <button aria-label="Close Command Palette" onClick={onClose}><Icon name="close" size={17} /></button>
     </div>
     <div ref={list} className="command-palette-results">
-      {results.map((row, index) => <button key={row.id} data-active={index === active} onClick={() => onChoose(row.action)}>
-        {row.provider ? <AgentIcon agent={row.provider.toLowerCase()} /> : <Icon name={row.icon} size={17} />}
-        <span>{row.label}</span>{row.hint && <small>{row.hint}</small>}
-      </button>)}
+      {groups.map(({ label, rows }) => {
+        const first = results.indexOf(rows[0]);
+        return <section key={label} className="command-palette-group" aria-label={label}>
+          <h3>{label}</h3>
+          {rows.map((row, index) => <button key={row.id} data-active={first + index === active} onClick={() => onChoose(row.action)}>
+            {row.provider ? <AgentIcon agent={row.provider.toLowerCase()} /> : <Icon name={row.icon} size={17} />}
+            <span>{row.label}</span>
+            {row.shortcut ? <kbd className="shortcut-keycap">{bindingText(row.shortcut)}</kbd>
+              : row.hint && <small title={row.hint}>{row.hint}</small>}
+          </button>)}
+        </section>;
+      })}
       {!results.length && <p>No matches.</p>}
     </div>
-    <footer><span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open</span><span><kbd>&gt;</kbd> Commands only</span></footer>
+    <footer><span><kbd className="shortcut-keycap">↑</kbd> <kbd className="shortcut-keycap">↓</kbd> Navigate</span><span><kbd className="shortcut-keycap">↵</kbd> Open</span><span><kbd className="shortcut-keycap">&gt;</kbd> Commands only</span></footer>
   </Overlay>;
 }
 
@@ -154,7 +169,7 @@ export function KeyboardShortcutSettings({ bindings, onSave, onClose }: {
   return <Overlay label="Keyboard Shortcuts" className="keyboard-shortcuts" onClose={onClose}>
     <header><h2>Keyboard Shortcuts</h2><button autoFocus aria-label="Close keyboard shortcuts" onClick={onClose}><Icon name="close" /></button></header>
     {([["palette", "Command Palette"], ["terminal", "Quick Terminal"]] as const).map(([id, label]) => <div key={id} className="keyboard-shortcut-row">
-      <span>{label}</span><kbd>{bindingText(draft[id])}</kbd>
+      <span>{label}</span><kbd className="shortcut-keycap">{bindingText(draft[id])}</kbd>
       {recording === id
         ? <input autoFocus readOnly aria-label={`Record shortcut for ${label}`} placeholder="Press a shortcut"
           onBlur={() => setRecording(undefined)}
@@ -177,9 +192,10 @@ export function KeyboardShortcutSettings({ bindings, onSave, onClose }: {
   </Overlay>;
 }
 
-export function QuickTerminal({ terminal, cwd, connected, animate, onAnimate, onStart, onEnd, onClose }: {
+export function QuickTerminal({ terminal, cwd, shortcut, connected, animate, onAnimate, onStart, onEnd, onClose }: {
   terminal?: TerminalInfo;
   cwd: string;
+  shortcut: string;
   connected: boolean;
   animate: boolean;
   onAnimate: (enabled: boolean) => void;
@@ -209,17 +225,22 @@ export function QuickTerminal({ terminal, cwd, connected, animate, onAnimate, on
     attempted.current = true;
     void run(onStart);
   }, [connected, terminal, cwd, onStart]);
+  const shellDirectory = directory || terminal?.cwd || cwd;
   return <Overlay label="Quick Terminal" className={`quick-terminal-overlay${animate && animateOnOpen.current ? " quick-terminal-animated" : ""}`} onClose={onClose}>
     <header>
       <Icon name="terminal" size={18} />
-      <div><h2>Quick Terminal</h2><small title={directory || terminal?.cwd || cwd}>{directory || terminal?.cwd || cwd}</small></div>
-      {terminal && <button disabled={busy} onClick={() => {
+      <div><h2>Quick Terminal</h2><small title={shellDirectory}>
+        Separate shell{shellDirectory && ` · ${shellDirectory}`}
+      </small></div>
+      <kbd className="shortcut-keycap" title="Quick Terminal shortcut">{bindingText(shortcut)}</kbd>
+      {terminal && <button className="end-shell" title="Stop this shell and its running commands" disabled={busy} onClick={() => {
         void run(async () => { if (await onEnd(terminal.id)) setDirectory(""); });
       }}>End shell…</button>}
       <button className="dashboard-tool-icon quick-terminal-motion" aria-label="Animate Quick Terminal"
         aria-pressed={animate} data-tooltip={animate ? "Disable entrance animation" : "Enable entrance animation"}
         onClick={() => onAnimate(!animate)}><Icon name="activity" size={17} /></button>
-      <button autoFocus aria-label="Dismiss Quick Terminal" onClick={onClose}><Icon name="close" size={18} /></button>
+      <button className="quick-terminal-dismiss" autoFocus aria-label="Dismiss Quick Terminal"
+        title="Dismiss the overlay and keep the shell running" onClick={onClose}>Dismiss <Icon name="close" size={15} /></button>
     </header>
     {error && <p role="alert">{error}</p>}
     <div className="quick-terminal-surface">
