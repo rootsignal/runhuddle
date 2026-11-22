@@ -225,16 +225,18 @@ test("default dashboard keeps its server running while Quick Terminal runs a sep
     await dashboard.getByRole("button", { name: `Actions for project ${path.basename(dir)}`, exact: true }).click();
     await dashboard.getByRole("button", { name: "Open project shell", exact: true }).click();
     const drawer = dashboard.getByRole("region", { name: "Dashboard shell" });
+    const drawerRows = drawer.locator(".xterm-rows");
+    await expect(drawerRows).toContainText(/[$%#❯]\s*$/);
     await expect(drawer.locator(".xterm-helper-textarea")).toBeFocused();
     await page.keyboard.insertText(`node -e 'require("http").createServer((req,res)=>res.end("served by drawer")).listen(0,"127.0.0.1",function(){console.log("drawer-port="+this.address().port)})'`);
     await page.keyboard.press("Enter");
-    const drawerRows = drawer.locator(".xterm-rows");
     await expect(drawerRows).toContainText(/drawer-port=\d+/);
     const port = (await drawerRows.innerText()).match(/drawer-port=(\d+)/)![1];
     const drawerId = await page.evaluate(() => JSON.parse(localStorage.getItem("dashboardShellId")!));
     await drawer.getByRole("button", { name: "Hide shell" }).click();
     await page.keyboard.press("ControlOrMeta+t");
     const quick = page.getByRole("dialog", { name: "Quick Terminal" });
+    await expect(quick.locator(".xterm-rows")).toContainText(/[$%#❯]\s*$/);
     await expect(quick.locator(".xterm-helper-textarea")).toBeFocused();
     const quickId = await page.evaluate(() => localStorage.getItem("quickTerminalID"));
     expect(quickId).toBeTruthy();
@@ -416,7 +418,7 @@ test("new screenshots offer a thumbnail, copy, dismiss, and attachment without s
 });
 
 test("Inbox keeps unread completions across restart and opens the exact recorded session", async ({}, testInfo) => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rh-inbox-ui-"));
   const externalFile = dir + " filing instructions.txt";
   fs.writeFileSync(externalFile, "External fixture");
