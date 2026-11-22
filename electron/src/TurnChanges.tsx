@@ -32,12 +32,11 @@ export function TurnChangedFiles({ changes }: { changes: TurnChanges }) {
       aria-label={selected ? "Captured checkout diff" : "Changed during this turn"}
       onCancel={(event) => { event.preventDefault(); event.stopPropagation(); close(); }}>
       {selected ? <>
-        <button type="button" className="dashboard-turn-back" onClick={() => setSelected(undefined)}>← Back to changed files</button>
         <p>{selected.file.area === "committed"
           ? "Diff between the commits at the start and end of this turn."
           : "Checkout diff captured at turn end. It may include earlier edits to this file."}</p>
-        <DiffReview key={selected.file.path} root={changes.root} file={selected.file}
-          diff={selected.diff!} loading={false} onClose={close} />
+        <DiffReview inline key={selected.file.path} root={changes.root} file={selected.file}
+          diff={selected.diff!} loading={false} onBackToFiles={() => setSelected(undefined)} onClose={close} />
       </> : <>
         <header><h2>Changed during this turn</h2><button type="button" aria-label="Close turn changes" onClick={close}>
           <Icon name="close" size={18} />

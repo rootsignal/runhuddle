@@ -48,6 +48,7 @@ export function ChangesPanel({
   const position = useRef<ChangesPosition>(initial);
   const filePositions = useRef(new Map<string, number>());
   const fileList = useRef<HTMLElement>(null);
+  const scopeSelect = useRef<HTMLSelectElement>(null);
   const fileKey = (file: GitFile) => JSON.stringify([mode, data?.comparison?.targetRef, data?.revision ?? revision, file.area, file.path]);
   const [mode, setMode] = useState(initial.mode);
   const [revision, setRevision] = useState(initial.revision);
@@ -306,12 +307,16 @@ export function ChangesPanel({
 
   const scopes = [["working", "Uncommitted"], ["compare", "Compare branch"], ["recent", "Recent commits"]];
   const comparison = data?.comparison;
+  const hasComparison = !!comparison?.targetRef && !comparison.problem;
+  const emptyDiff = loading ? "Loading changes…" : error ? "Changes unavailable"
+    : !data ? "No repository selected"
+    : data.files.length ? "Select a changed file"
+    : mode === "working" ? "Working tree is clean"
+    : mode === "recent" ? data.commits?.length ? "This commit has no file changes" : "No commits yet"
+    : hasComparison ? "No committed differences" : "Choose a comparison base";
   const list = <aside className="changes-panel" aria-label="Project changes" tabIndex={inline ? 0 : undefined}>
       <header>
         <strong>{inline ? "Files" : "Changes"}{inline && !!data?.files.length && <small className="change-file-total">{data.files.length}</small>}</strong>
-        {inline && <select className="changes-review-scope" aria-label="Review scope" value={mode} onChange={(event) => showMode(event.target.value)}>
-          {scopes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>}
         <button aria-label="Refresh changes" title={inline ? "Refresh changes" : undefined} disabled={loading || !cwd} onClick={() => { setPrRefresh((value) => value + 1); void refresh(true, inline); }}>
           {inline ? <Icon name="refresh" size={16} /> : "Refresh changes"}
         </button>
@@ -319,6 +324,11 @@ export function ChangesPanel({
           <Icon name="close" size={15} />
         </button>
       </header>
+      {inline && <label className="changes-scope-field">Review scope
+        <select ref={scopeSelect} className="changes-review-scope" value={mode} onChange={(event) => showMode(event.target.value)}>
+          {scopes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>}
       {!inline && actionError && <p role="alert">{actionError}</p>}
       {notice && <p role="status">{notice}</p>}
       {!inline && <div className="review-modes" role="group" aria-label="Review scope">
@@ -351,6 +361,32 @@ export function ChangesPanel({
       ) : (
         data && (
           <>
+            {mode === "compare" && <div className="changes-compare">
+              <label>Compare against
+                <select value={comparison?.targetRef ?? ""} onChange={(event) => {
+                  savePosition(comparisonKey(data), event.target.value);
+                  saveChanges({ mode, revision });
+                  selectedRef.current = null;
+                  openRef.current = false;
+                  setOpen(false);
+                  setSelected(null);
+                  void refresh();
+                }}>
+                  <option value="" disabled>Choose a target branch</option>
+                  {comparison?.refs.map((ref) => <option value={ref} key={ref}>{branchLabel(ref)}</option>)}
+                </select>
+              </label>
+              <small>{comparison?.problem || (data.base && comparison?.targetRef
+                ? `${data.branch} → ${branchLabel(comparison.targetRef)} · Merge base ${data.base.slice(0, 7)}`
+                : "Choose the branch your PR will merge into.")}</small>
+              {!!data.uncommittedFiles && <>
+                <small>{data.uncommittedFiles} {data.uncommittedFiles === 1 ? "file has" : "files have"} uncommitted changes outside this comparison.</small>
+                <button type="button" className="changes-uncommitted-link" onClick={() => { showMode("working"); scopeSelect.current?.focus(); }}>
+                  <Icon name="changes" size={15} /> Uncommitted <span>{data.uncommittedFiles}</span>
+                  <Icon name="arrow" size={14} />
+                </button>
+              </>}
+            </div>}
             <div className="changes-repo">
               <div className="changes-branch-row">
                 <strong title={data.root}>{data.branch}</strong>
@@ -363,26 +399,6 @@ export function ChangesPanel({
                 <small>{data.upstream ? `Push upstream · ${data.upstream}` : "No push upstream configured"}</small>
                 {data.upstream && <small>{data.ahead ?? 0} ahead · {data.behind ?? 0} behind at last fetch</small>}
               </details>
-              {mode === "compare" && <div className="changes-compare">
-                <label>Compare against
-                  <select value={comparison?.targetRef ?? ""} onChange={(event) => {
-                    savePosition(comparisonKey(data), event.target.value);
-                    saveChanges({ mode, revision });
-                    selectedRef.current = null;
-                    openRef.current = false;
-                    setOpen(false);
-                    setSelected(null);
-                    void refresh();
-                  }}>
-                    <option value="" disabled>Choose a target branch</option>
-                    {comparison?.refs.map((ref) => <option value={ref} key={ref}>{branchLabel(ref)}</option>)}
-                  </select>
-                </label>
-                <small>{comparison?.problem || (data.base && comparison?.targetRef
-                  ? `${data.branch} → ${branchLabel(comparison.targetRef)} · Merge base ${data.base.slice(0, 7)}`
-                  : "Choose the branch your PR will merge into.")}</small>
-                {!!data.uncommittedFiles && <small>{data.uncommittedFiles} {data.uncommittedFiles === 1 ? "file has" : "files have"} uncommitted changes outside this comparison.</small>}
-              </div>}
             </div>
             {mode === "working" && (inline ? <details className="changes-commit-controls"><summary>Commit and push</summary>{commitForm}</details> : commitForm)}
             {!data.files.length ? (
@@ -465,7 +481,11 @@ export function ChangesPanel({
       <div className="changes-review-detail">
         {review ?? <div className="changes-review-empty">
           <Icon name="changes" size={25} />
-          <p>{data?.files.length ? "Select a changed file to review its diff." : "File diff"}</p>
+          <strong>{emptyDiff}</strong>
+          {mode === "compare" && !loading && !error && hasComparison && !data?.files.length &&
+            <p>{data?.uncommittedFiles
+              ? "Use Uncommitted to review the edits still in your working tree."
+              : `No committed file changes against ${branchLabel(comparison.targetRef)}.`}</p>}
         </div>}
       </div>
     </div>

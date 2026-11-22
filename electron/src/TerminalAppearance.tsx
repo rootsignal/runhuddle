@@ -272,9 +272,9 @@ export function TerminalAppearance({
   return (
     <dialog
       ref={dialog}
-      className="appearance-dialog"
+      className="appearance-dialog terminal-appearance-dialog"
       aria-label="Terminal appearance"
-      onCancel={onDismiss}
+      onCancel={(event) => { event.preventDefault(); event.stopPropagation(); onDismiss(); }}
     >
       <header>
         <div>
@@ -288,104 +288,115 @@ export function TerminalAppearance({
           ×
         </button>
       </header>
-      <Preview value={value} />
+      <section className="terminal-appearance-preview" aria-label="Live preview">
+        <h3>Live preview</h3>
+        <Preview value={value} />
+      </section>
       <div className="appearance-fields">
-        <label>
-          Theme
-          <input
-            type="search"
-            aria-label="Search terminal themes"
-            placeholder="Search themes…"
-            value={themeSearch}
-            onChange={(e) => setThemeSearch(e.target.value)}
+        <fieldset className="terminal-theme-group">
+          <legend>Theme</legend>
+          <label>Color preset
+            <input
+              type="search"
+              aria-label="Search terminal themes"
+              placeholder="Search themes…"
+              value={themeSearch}
+              onChange={(e) => setThemeSearch(e.target.value)}
+            />
+            <select
+              aria-label="Terminal theme"
+              value={value.preset}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  preset: e.target.value,
+                  colors: { ...presets[e.target.value] },
+                })
+              }
+            >
+              {presets[value.preset] &&
+                !matchingThemes.includes(value.preset) && (
+                  <option>{value.preset}</option>
+                )}
+              {matchingThemes.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
+              {!presets[value.preset] && <option>Custom</option>}
+            </select>
+            <small>
+              {matchingThemes.length} themes · bundled for offline use
+            </small>
+          </label>
+        </fieldset>
+        <fieldset className="terminal-typography-group">
+          <legend>Typography</legend>
+          <FontPicker
+            value={value.fontFamily}
+            systemFont={defaults.fontFamily}
+            onChange={(font) => change("fontFamily", font)}
           />
-          <select
-            aria-label="Terminal theme"
-            value={value.preset}
-            onChange={(e) =>
-              onChange({
-                ...value,
-                preset: e.target.value,
-                colors: { ...presets[e.target.value] },
-              })
-            }
-          >
-            {presets[value.preset] &&
-              !matchingThemes.includes(value.preset) && (
-                <option>{value.preset}</option>
-              )}
-            {matchingThemes.map((p) => (
-              <option key={p}>{p}</option>
-            ))}
-            {!presets[value.preset] && <option>Custom</option>}
-          </select>
-          <small>
-            {matchingThemes.length} themes · bundled for offline use
-          </small>
-        </label>
-        <FontPicker
-          value={value.fontFamily}
-          systemFont={defaults.fontFamily}
-          onChange={(font) => change("fontFamily", font)}
-        />
-        <label>
-          Font size
-          <input
-            aria-label="Terminal font size"
-            type="number"
-            min="10"
-            max="30"
-            value={value.fontSize}
-            onChange={(e) =>
-              change(
-                "fontSize",
-                Math.max(10, Math.min(30, Number(e.target.value) || 14)),
-              )
-            }
-          />
-        </label>
-        <label>
-          Line spacing
-          <input
-            aria-label="Terminal line spacing"
-            type="number"
-            min="1"
-            max="1.8"
-            step="0.05"
-            value={value.lineHeight}
-            onChange={(e) =>
-              change(
-                "lineHeight",
-                Math.max(1, Math.min(1.8, Number(e.target.value) || 1)),
-              )
-            }
-          />
-        </label>
-        <label>
-          Cursor
-          <select
-            aria-label="Terminal cursor style"
-            value={value.cursorStyle}
-            onChange={(e) =>
-              change("cursorStyle", e.target.value as Appearance["cursorStyle"])
-            }
-          >
-            <option value="block">Block</option>
-            <option value="bar">Bar</option>
-            <option value="underline">Underline</option>
-          </select>
-        </label>
-        <label className="cursor-check">
-          <input
-            type="checkbox"
-            checked={value.cursorBlink}
-            onChange={(e) => change("cursorBlink", e.target.checked)}
-          />
-          Blink cursor
-        </label>
+          <label>
+            Font size
+            <input
+              aria-label="Terminal font size"
+              type="number"
+              min="10"
+              max="30"
+              value={value.fontSize}
+              onChange={(e) =>
+                change(
+                  "fontSize",
+                  Math.max(10, Math.min(30, Number(e.target.value) || 14)),
+                )
+              }
+            />
+          </label>
+          <label>
+            Line spacing
+            <input
+              aria-label="Terminal line spacing"
+              type="number"
+              min="1"
+              max="1.8"
+              step="0.05"
+              value={value.lineHeight}
+              onChange={(e) =>
+                change(
+                  "lineHeight",
+                  Math.max(1, Math.min(1.8, Number(e.target.value) || 1)),
+                )
+              }
+            />
+          </label>
+        </fieldset>
+        <fieldset className="terminal-cursor-group">
+          <legend>Cursor</legend>
+          <label>
+            Shape
+            <select
+              aria-label="Terminal cursor style"
+              value={value.cursorStyle}
+              onChange={(e) =>
+                change("cursorStyle", e.target.value as Appearance["cursorStyle"])
+              }
+            >
+              <option value="block">Block</option>
+              <option value="bar">Bar</option>
+              <option value="underline">Underline</option>
+            </select>
+          </label>
+          <label className="cursor-check">
+            <input
+              type="checkbox"
+              checked={value.cursorBlink}
+              onChange={(e) => change("cursorBlink", e.target.checked)}
+            />
+            Blink cursor
+          </label>
+        </fieldset>
       </div>
       <details>
-        <summary>Customize colors · text, background and ANSI palette</summary>
+        <summary>Customize text, background, and ANSI colors</summary>
         <div className="appearance-colors">
           {colorKeys.map((k) => (
             <ColorControl
@@ -403,8 +414,7 @@ export function TerminalAppearance({
           ))}
         </div>
         <p>
-          Explicit RGB colors emitted by an agent remain unchanged by the ANSI
-          palette.
+          The ANSI palette applies to output that uses standard terminal color codes.
         </p>
       </details>
       <footer>

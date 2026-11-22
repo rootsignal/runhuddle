@@ -1,3 +1,5 @@
+import { createQuickReplies } from "./quick-replies.mjs";
+import { readSessionContext } from "./session-context.mjs";
 import { turnCaptureStore } from "./turn-captures.mjs";
 import { githubActionsFailure, githubMcpAccount, githubPullRequest } from "./github-mcp.mjs";
 import { readProjectPreview, resolveFileToReveal } from "./preview-file.mjs";
@@ -42,6 +44,7 @@ import { generateRecap, installedReviewAgents, recapStore, runRecapPrompt } from
 import { historyIndexClient } from "./history-index-client.mjs";
 import { providers, validateID } from "./lifecycle.mjs";
 const root = path.dirname(fileURLToPath(import.meta.url));
+const quickReplies = createQuickReplies(runRecapPrompt);
 app.setName("RunHuddle");
 app.setPath(
   "userData",
@@ -644,13 +647,23 @@ else {
         if (!row) throw Error("This session is no longer available.");
         shell.showItemInFolder(await resolveFileToReveal(row.cwd, file));
       });
-      handle("live-session-preview", (provider, sessionID, terminalId) => {
+      handle("suggest-quick-replies", (provider, sessionID, terminalId, instruction, answer) => {
+        const row = liveDashboardSession(provider, sessionID, terminalId);
+        if (connection !== "connected" || !row || row.simulated || row.state !== "idle" ||
+            inbox.list().some((entry) => entry.kind === "input" && sessionKey(entry) === sessionKey(row))) return [];
+        return quickReplies.suggest(sessionKey(row), row.provider.toLowerCase(), instruction, answer);
+      });
+      handle("live-session-preview", async (provider, sessionID, terminalId) => {
         const row = liveDashboardSession(provider, sessionID, terminalId);
         if (!row || connection !== "connected") return {};
-        return runHistoryWorker({ session: historySource(row),
-          attentionKind: row.state === "needsInput" ? "input" : "completion", includeTurns: true }, 10000).result;
+        const session = historySource(row);
+        const [preview, context] = await Promise.all([
+          runHistoryWorker({ session, attentionKind: row.state === "needsInput" ? "input" : "completion", includeTurns: true }, 10000).result,
+          readSessionContext(session).catch(() => undefined),
+        ]);
+        return { ...preview, context };
       });
-      async function dashboardFollowUp(row, terminalId, message, review, images, queued) {
+      async function dashboardFollowUp(row, terminalId, message, review, images, queued, suggestNextSteps) {
         const key = sessionKey(row);
         if (connection !== "connected" || followingUp.has(key) || (review && sentFollowUps.has(review)))
           throw Error("This session is no longer available for a follow-up.");
@@ -659,7 +672,7 @@ else {
           const result = await sendDashboardFollowUp(service, row, terminalId, message, () =>
             connection === "connected" && (!review || inbox.list().includes(review)) &&
               (!queued || !inbox.list().some((entry) => entry.kind === "input" && sessionKey(entry) === key)),
-            images, (bytes) => nativeImage.createFromBuffer(Buffer.from(bytes)).toPNG(), queued === true);
+            images, (bytes) => nativeImage.createFromBuffer(Buffer.from(bytes)).toPNG(), queued === true, suggestNextSteps === true);
           if (result === "waiting") return result;
           if (!review) return;
           sentFollowUps.add(review);
@@ -673,11 +686,11 @@ else {
           followingUp.delete(key);
         }
       }
-      handle("live-session-follow-up", (provider, sessionID, terminalId, message, images, queued) => {
+      handle("live-session-follow-up", (provider, sessionID, terminalId, message, images, queued, suggestNextSteps) => {
         const row = liveDashboardSession(provider, sessionID, terminalId);
         if (!row) throw Error("This session is no longer available.");
         const review = inbox.list().find((entry) => entry.kind === "completion" && sessionKey(entry) === sessionKey(row));
-        return dashboardFollowUp(row, terminalId, message, review, images, queued);
+        return dashboardFollowUp(row, terminalId, message, review, images, queued, suggestNextSteps);
       });
       handle("copy-inbox-reply", (id, text) => {
         if (!inbox.list().some((entry) => entry.id === id && entry.kind === "input") ||
@@ -790,6 +803,11 @@ else {
         });
         if (!result.canceled && result.filePath)
           await fs.promises.writeFile(result.filePath, text, "utf8");
+      });
+      handle("handoff-history", (provider, sessionID) => {
+        const row = managed.find((session) => session.provider === provider && session.sessionID === sessionID);
+        if (!row || row.simulated) throw Error("Session not available");
+        return runHistoryWorker({ session: historySource(row), handoff: true }, 10000).result;
       });
       handle("history", (provider, sessionID, anchor) => {
         const row = managed.find(
@@ -1195,11 +1213,11 @@ else {
         const isAgent = terminal.agent !== "shell";
         const result = await dialog.showMessageBox(window, {
           type: "question",
-          message: isAgent ? "End this AI session?" : "Close this terminal?",
+          message: isAgent ? "End this AI session?" : "End this shell?",
           detail: isAgent
             ? "This stops the agent terminal. The saved conversation stays in your history."
             : "Any process running in this terminal will be stopped.",
-          buttons: ["Cancel", isAgent ? "End session" : "Close terminal"],
+          buttons: ["Cancel", isAgent ? "End session" : "End shell"],
           defaultId: 0,
           cancelId: 0,
         });
@@ -1312,12 +1330,13 @@ else {
           {
             label: "View",
             submenu: [
-              dashboardItem("dashboard", "Project Dashboard"),
+              dashboardItem("dashboard", "Project dashboard"),
+              dashboardItem("terminal-appearance", "Terminal appearance…"),
               { type: "separator" },
               { role: "reload" },
               { role: "toggleDevTools" },
               {
-                label: "App Theme",
+                label: "App theme",
                 submenu: themeChoices.map((theme) => ({
                   id: "app-theme-" + theme,
                   label: theme[0].toUpperCase() + theme.slice(1),
@@ -1331,7 +1350,7 @@ else {
                 })),
               },
               {
-                label: "Accent Color",
+                label: "Accent color",
                 submenu: [
                   ...Object.entries(accentChoices).map(([label, accent]) => ({
                     id: "app-accent-" + label,
@@ -1341,7 +1360,7 @@ else {
                     click: () => setAppAccent(accent),
                   })),
                   { type: "separator" },
-                  { id: "custom-app-accent", label: "Custom Color…", click: () => publish({ event: "custom-app-accent" }) },
+                  { id: "custom-app-accent", label: "Custom accent color…", click: () => publish({ event: "custom-app-accent" }) },
                 ],
               },
               {
@@ -1447,6 +1466,7 @@ else {
     browserAgent.close();
     screenshots.stop();
     recapRequest?.controller.abort();
+    quickReplies.close();
     stopHistorySearch();
     clearTimeout(historySyncTimer);
     void providerHistoryWorker?.terminate();

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "./Icons";
 import { readPosition, savePosition } from "./dashboard-position";
 import { TerminalPane } from "./Terminal";
 import type { TerminalInfo } from "./types";
@@ -59,7 +60,7 @@ export function DashboardShell({ project, terminal, visible, connected, opening,
         resize(size + (event.key === "ArrowUp" ? 5 : -5));
       }} />
     <header>
-      <strong>Dashboard shell</strong>
+      <strong title="A separate shell beside the agent session"><Icon name="terminal" size={15} /> Dashboard shell</strong>
       {terminal && <span title={cwd || terminal.cwd}>{cwd || `Started in ${terminal.cwd}`}</span>}
       {compactShell === true && <label title="Applies when you start a fresh shell.">
         <input type="checkbox" checked={compactPrompt} disabled={opening}
@@ -67,9 +68,9 @@ export function DashboardShell({ project, terminal, visible, connected, opening,
       </label>}
       <button disabled={!connected || opening || closing} title={`Start a new shell in ${project}`}
         onClick={() => { setTerminalError(""); onStart(); }}>Start shell here</button>
-      {terminal && <button disabled={!connected || opening || closing}
+      {terminal && <button className="end-shell" title="Stop this shell and its running commands" disabled={!connected || opening || closing}
         onClick={() => void stop(() => onEnd(terminal.id))}>End shell…</button>}
-      <button onClick={onHide} title="Hide shell and keep it running">Hide shell</button>
+      <button onClick={onHide} title="Keep this shell running in the background">Hide shell</button>
     </header>
     {visible && (terminalServiceUpdate || compactShell === false) && <div className="dashboard-shell-hint">
       {terminalServiceUpdate ? <>

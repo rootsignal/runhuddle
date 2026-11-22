@@ -1,4 +1,4 @@
-import { screenshotReferences } from "./dashboard-follow-up.mjs";
+import { screenshotReferences, stripDashboardNextSteps } from "./dashboard-follow-up.mjs";
 import fs from "node:fs/promises";
 import { transcriptPath } from "./lifecycle.mjs";
 const text = (content) =>
@@ -46,6 +46,7 @@ export function historyMessage(agent, line) {
     agent === "claude" &&
     !e.isSidechain &&
     !e.isMeta &&
+    !e.isCompactSummary &&
     ["user", "assistant"].includes(e.type)
   ) {
     role = e.type;
@@ -59,7 +60,7 @@ export function historyMessage(agent, line) {
     body = text(p.content);
   }
   if (role && typeof body === "string" && body.trim())
-    return { role, text: body, time: e.timestamp || "", fallback };
+    return { role, text: role === "user" ? stripDashboardNextSteps(body) : body, time: e.timestamp || "", fallback };
 }
 
 export function parseHistory(agent, source) {

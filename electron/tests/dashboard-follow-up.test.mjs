@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { screenshotReferences, sendDashboardFollowUp } from "../main/dashboard-follow-up.mjs";
+import { screenshotReferences, sendDashboardFollowUp, stripDashboardNextSteps } from "../main/dashboard-follow-up.mjs";
 
 const entry = { provider: "Codex", sessionID: "conversation-1" };
 const terminalId = "terminal-1";
@@ -26,6 +26,15 @@ test("dashboard follow-up writes one bracketed paste to the exact idle terminal"
   const { service, writes } = fixture();
   await sendDashboardFollowUp(service, entry, terminalId, "Check the mobile layout.", () => true);
   assert.deepEqual(writes, [{ id: terminalId, data: "\x1b[200~Check the mobile layout.\x1b[201~\r" }]);
+});
+
+test("dashboard preserves multiline follow-up text in one bracketed paste", async () => {
+  const { service, writes } = fixture();
+  const draft = "Checklist:\r\n" + "  - Review the update.\r\n".repeat(130) + "\tVerify it.";
+  await sendDashboardFollowUp(service, entry, terminalId, draft, () => true);
+  assert.equal(writes[0].data, "\x1b[200~" + draft.replace(/\r\n/g, "\n") + "\x1b[201~\r");
+  await assert.rejects(sendDashboardFollowUp(service, entry, terminalId, "Line one\n\x1b[201~", () => true));
+  assert.equal(writes.length, 1);
 });
 
 test("resumed Codex accepts dashboard follow-up only at a verified empty prompt", { skip: process.platform === "win32" }, async () => {
@@ -78,12 +87,15 @@ test("dashboard follow-up saves screenshot references in the same explicit submi
   const { service, writes } = fixture();
   const images = [Uint8Array.of(1).buffer, Uint8Array.of(2).buffer];
   await sendDashboardFollowUp(service, entry, terminalId, "Compare these.", () => true,
-    images, (image) => Buffer.from(image));
+    images, (image) => Buffer.from(image), false, true);
   assert.equal(writes.length, 1);
   assert.equal(writes[0].id, terminalId);
   assert.ok(writes[0].data.startsWith("\x1b[200~Compare these.\n"));
   assert.ok(writes[0].data.endsWith("\x1b[201~\r"));
-  const references = writes[0].data.slice(6, -7).match(screenshotReferences)?.[0] ?? "";
+  const sent = writes[0].data.slice(6, -7);
+  const references = sent.match(screenshotReferences)?.[0] ?? "";
+  assert.match(sent, /Next step:.*Needs your decision:/);
+  assert.equal(stripDashboardNextSteps(sent), "Compare these." + references);
   const files = Array.from(references.matchAll(/^- "(.+)"$/gm), ([, file]) => file);
   try {
     assert.equal(files.length, 2);

@@ -126,7 +126,7 @@ function App() {
   const [dashboardSubmitted, setDashboardSubmitted] = useState<Record<string, { text: string; at: number; screenshots?: number }>>({});
   const dashboardDrafts = useDashboardDrafts();
   const [dashboardTerminal, setDashboardTerminal] = useState<string | null>(null);
-  const [dashboardDraftTerminal, setDashboardDraftTerminal] = useState<string | null>(null);
+  const [dashboardDraftTarget, setDashboardDraftTarget] = useState<{ id: string; queued: boolean } | null>(null);
   const [openedSessions, setOpenedSessions] = useState(() => readSetting<Record<string, number>>("dashboardOpenedSessions", {}));
   const [renameTarget, setRenameTarget] = useState<string>();
   const [sessionDetails, setSessionDetails] = useState(() => readSetting<Record<string, SessionDetails>>("projectSessionDetails", {}));
@@ -295,15 +295,26 @@ function App() {
   useEffect(() => {
     localStorage.setItem("dashboardOpenedSessions", JSON.stringify(openedSessions));
   }, [openedSessions]);
-  const dashboardAttachment = snapshot.terminals.find((t) => t.id === dashboardDraftTerminal && !t.exited);
+  const dashboardAttachment = snapshot.terminals.find((t) => t.id === dashboardDraftTarget?.id && !t.exited);
   const dashboardAttachmentSession = dashboardAttachment && allSessions.find((row) => row.terminalId === dashboardAttachment.id);
   const screenshotDraftID = dashboardAttachmentSession ? key(dashboardAttachmentSession) : undefined;
   const screenshotTarget = dashboardAttachment && dashboardAttachmentSession && connection === "connected" ? {
     id: dashboardAttachment.id,
     title: dashboardAttachmentSession.title,
     locked: lockedTerminals.has(dashboardAttachment.id),
-    busy: dashboardAttachmentSession.state !== "idle",
+    busy: dashboardAttachmentSession.state === "working",
   } : undefined;
+  const screenshotBlocked = screenshotTarget?.locked ? "This conversation is open elsewhere."
+    : dashboardDraftTarget?.queued ? "Cancel the queued follow-up to add more screenshots."
+    : !screenshotDraftID ? undefined
+    : !dashboardDrafts.ready ? "The follow-up draft is loading."
+    : (dashboardDrafts.drafts[screenshotDraftID]?.files.length ?? 0) >= 8 ? "This draft already has 8 screenshots."
+    : undefined;
+  const noteBeingEdited = noteDraft?.id ? snapshot.notes.find((note) => note.id === noteDraft.id) : undefined;
+  const draftSource = noteDraft?.source;
+  const noteSourceTitle = draftSource
+    ? allSessions.find((row) => key(row) === key(draftSource))?.title || draftSource.provider
+    : noteBeingEdited?.sourceSessionID ? noteBeingEdited.sourceTitle || noteBeingEdited.sourceProvider || "Saved conversation" : undefined;
   const viewedTerminal = connection === "connected" ? dashboardTerminal : null;
   useEffect(() => {
     void window.runhuddle.viewedTerminal(viewedTerminal).catch(() => {});
@@ -315,10 +326,6 @@ function App() {
     else setError("This session is no longer available.");
     setOpenAlert(undefined);
   }, [loaded, openAlert, visibleSessions]);
-  async function restoreHistory(kind: "projects" | "sessions", id: string) {
-    try { await window.runhuddle.setHistoryHidden(kind, id, false); }
-    catch (error) { setError(String(error)); }
-  }
   async function create(agent: string, cwd: string, sessionName = "") {
     if (hiddenHistory.projects.includes(cwd)) await window.runhuddle.setHistoryHidden("projects", cwd, false);
     const t = await window.runhuddle.create(cwd, agent);
@@ -327,12 +334,15 @@ function App() {
       ...old,
       terminals: [...old.terminals.filter((x) => x.id !== t.id), t],
     }));
-    setLastUsed(agent);
-    localStorage.setItem("lastLaunchType", JSON.stringify(agent));
+    if (agent !== "shell") {
+      setLastUsed(agent);
+      localStorage.setItem("lastLaunchType", JSON.stringify(agent));
+    }
     return t;
   }
   function continueWithContext(source: Session, anotherAgent = false) {
-    setContinuation({ id: ++continuationID.current, source, anotherAgent, recap: snapshot.recaps?.[key(source)] });
+    setContinuation({ id: ++continuationID.current, source, anotherAgent,
+      recap: snapshot.recaps?.[key(source)], nextStep: sessionDetails[key(source)]?.next });
   }
   async function resumeSession(provider: string, sessionID: string) {
     const terminal = await window.runhuddle.resume(provider, sessionID);
@@ -387,8 +397,10 @@ function App() {
             return terminal;
           }}
           onClose={() => setContinuation((current) => current === continuation ? undefined : current)} />}
-        {showHiddenHistory && <HiddenHistoryDialog hidden={hiddenHistory} sessions={allSessions}
-          onRestore={(kind, id) => void restoreHistory(kind, id)} onClose={() => setShowHiddenHistory(false)} />}
+        {showHiddenHistory && <HiddenHistoryDialog hidden={hiddenHistory} sessions={allSessions} names={sessionDetails}
+          onVisibilityChange={(kind, id, hide) => kind === "sessions"
+            ? window.runhuddle.setSessionsHidden([id], hide)
+            : window.runhuddle.setHistoryHidden(kind, id, hide)} onClose={() => setShowHiddenHistory(false)} />}
         {!loaded && error && <p role="alert">{error}</p>}
         <ProjectsDashboard connectionStatus={connection} appError={error} onDismissError={() => setError("")}
           onReconnect={() => void window.runhuddle.reconnect().catch((reason) => setError(String(reason)))}
@@ -413,7 +425,7 @@ function App() {
           onSubmitted={(id, instruction) => setDashboardSubmitted((previous) => ({ ...previous, [id]: instruction }))}
           connected={connection === "connected"}
           followUps={dashboardDrafts}
-          onDraftTerminal={setDashboardDraftTerminal}
+          onDraftTerminal={setDashboardDraftTarget}
           onViewTerminal={setDashboardTerminal}
           onTerminalLock={updateConversationLock}
           onEndSession={async (id) => {
@@ -470,7 +482,7 @@ function App() {
           onSave={(next) => { setKeyboardBindings(next); setKeyboardTool(undefined); }}
           onClose={() => setKeyboardTool(undefined)} />}
         {keyboardTool === "mcp-settings" && <McpSettings onClose={() => setKeyboardTool(undefined)} />}
-        {keyboardTool === "quick-terminal" && <QuickTerminal terminal={quickTerminal} cwd={quickDirectory}
+        {keyboardTool === "quick-terminal" && <QuickTerminal terminal={quickTerminal} cwd={quickDirectory} shortcut={keyboardBindings.terminal}
           connected={connection === "connected"} animate={animateQuickTerminal} onAnimate={setAnimateQuickTerminal}
           onStart={startQuickTerminal} onEnd={endQuickTerminal}
           onClose={() => setKeyboardTool(undefined)} />}
@@ -498,7 +510,7 @@ function App() {
           onClose={() => setRenameTarget(undefined)}
           onSave={(name) => { saveSessionName(renameTarget, name); setRenameTarget(undefined); }} />}
         {noteDraft && (
-          <NoteEditor initial={noteDraft} projects={projects}
+          <NoteEditor initial={noteDraft} projects={projects} sourceTitle={noteSourceTitle}
             onCancel={() => setNoteDraft(undefined)}
             onSaved={(saved) => {
               setSnapshot((old) => ({
@@ -508,16 +520,14 @@ function App() {
               setNoteDraft(undefined);
             }} />
         )}
-          <ScreenshotPopup target={screenshotTarget} attachToDraft={screenshotDraftID
-            ? async (_terminalId, screenshot) => {
-                const bytes = await window.runhuddle.screenshotDraft(screenshot.id);
-                const file = new File([new Uint8Array(bytes)], screenshot.name, { type: "image/png" });
-                dashboardDrafts.updateDraft(screenshotDraftID, (draft) => {
-                  if (draft.files.length >= 8) throw Error("This draft already has 8 screenshots.");
-                  return { ...draft, files: [...draft.files, file] };
-                });
-              } : undefined}
-            draftFull={!!screenshotDraftID && (!dashboardDrafts.ready || (dashboardDrafts.drafts[screenshotDraftID]?.files.length ?? 0) >= 8)} />
+          <ScreenshotPopup target={screenshotTarget} blockedReason={screenshotBlocked}
+            onAttach={(file) => {
+              if (!screenshotDraftID) throw Error("Select an open AI session to attach this screenshot.");
+              dashboardDrafts.updateDraft(screenshotDraftID, (draft) => {
+                if (draft.files.length >= 8) throw Error("This draft already has 8 screenshots.");
+                return { ...draft, files: [...draft.files, file] };
+              });
+            }} />
       </div>
     </AppearanceContext.Provider>
   );

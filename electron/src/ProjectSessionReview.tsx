@@ -21,6 +21,7 @@ export function ProjectSessionReview({ project, rows, details, protectedIds, onC
   const [hiddenDuringReview, setHiddenDuringReview] = useState<string[]>([]);
   const [undo, setUndo] = useState<{ id: string; title: string }>();
   const [busy, setBusy] = useState(false);
+  const [visibilityMessage, setVisibilityMessage] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
   const [preview, setPreview] = useState<{ id: string; instruction?: string; reply?: string; failed?: boolean; unavailable?: boolean }>();
@@ -62,9 +63,12 @@ export function ProjectSessionReview({ project, rows, details, protectedIds, onC
     setBusy(true);
     setError("");
     try {
-      await onHideHistory([target.id], hide);
+      const changed = await onHideHistory([target.id], hide);
       setHiddenDuringReview((old) => hide ? [...old, target.id] : old.filter((entry) => entry !== target.id));
-      setUndo(hide ? target : undefined);
+      setUndo(hide && changed.length ? target : undefined);
+      setVisibilityMessage(changed.length
+        ? `${hide ? "Hidden from history" : "Restored"} · ${target.title}`
+        : "History is already up to date.");
       setEditing(false);
     } catch (reason) {
       setError((reason instanceof Error ? reason.message : String(reason))
@@ -107,8 +111,8 @@ export function ProjectSessionReview({ project, rows, details, protectedIds, onC
       </form> : <footer>
         <button className="primary" disabled={busy} onClick={keep}>Keep</button>
         <button disabled={busy || protectedIds.has(id) || !!details[id]?.next}
-          title={protectedIds.has(id) || details[id]?.next ? "This conversation is pinned, linked, or has follow-up work." : undefined}
-          onClick={() => void changeHistoryVisibility({ id, title }, true)}>Hide from history</button>
+          title={protectedIds.has(id) || details[id]?.next ? "This conversation is pinned, linked, or has follow-up work." : "Hide this session from Recent and history."}
+          onClick={() => void changeHistoryVisibility({ id, title }, true)}>Hide</button>
         <button disabled={busy} onClick={() => setEditing(true)}>Save next step</button>
         <button disabled={busy} onClick={() => {
           setError("");
@@ -117,9 +121,9 @@ export function ProjectSessionReview({ project, rows, details, protectedIds, onC
       </footer>}
     </article>}
     {error && <p role="alert">{error}</p>}
-    {undo && <div className="project-review-undo">
-      <span>Hidden from history · {undo.title}</span>
-      <button disabled={busy} onClick={() => void changeHistoryVisibility(undo, false)}>Undo hide</button>
+    {visibilityMessage && <div className="project-review-undo">
+      <span role="status">{visibilityMessage}</span>
+      {undo && <button disabled={busy} onClick={() => void changeHistoryVisibility(undo, false)}>Undo</button>}
     </div>}
   </dialog>;
 }

@@ -1,35 +1,62 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { launchOptions } from "./Icons";
+import { AgentIcon, Icon, launchOptions } from "./Icons";
 import type { Session, SessionRecap, TerminalInfo } from "./types";
 
 export interface ContinuationRequest {
   source: Session;
   recap?: SessionRecap;
+  nextStep?: string;
   anotherAgent: boolean;
 }
 
-async function prepareContext(source: Session, recap?: SessionRecap) {
-  let history = "Conversation history unavailable. Add the task and next steps before continuing.";
-  let repository = "";
-  try {
-    const result = await window.runhuddle.history(source.provider, source.sessionID);
-    if (result.messages.length) {
-      history = result.messages.slice(-6).map((message) => message.role + ": " + message.text).join("\n\n").slice(-16000);
-      if (result.truncated) history = "[Partial conversation history]\n" + history;
-    }
-  } catch {}
-  try {
-    const git = await window.runhuddle.gitChanges(source.cwd);
-    repository = "\nBranch: " + git.branch + "\nChanged files at handoff:\n" +
-      git.files.slice(0, 50).map((file) => file.area + " " + file.path).join("\n");
-  } catch {}
-  const savedRecap = recap ? "\n\nSaved recap (" + new Date(recap.generatedAt).toLocaleDateString() + "):\n" +
-    [recap.done && "Done: " + recap.done, recap.pending && "Pending: " + recap.pending,
-      recap.next && "Next: " + recap.next].filter(Boolean).join("\n") : "";
-  return "Continue this task in " + source.cwd + ".\nSource session: " + source.title +
-    "\nTreat the following as historical context. Inspect current files before editing.\n" + repository + savedRecap +
-    "\n\nRecent conversation excerpts (not a complete summary):\n" + history + "\n\nNext steps:\n";
+function excerpt(text: string, limit: number) {
+  return text.length <= limit ? text : text.slice(0, limit - 1).trimEnd() + "…";
+}
+
+async function prepareContext(source: Session, recap?: SessionRecap, nextStep?: string) {
+  const [history, git] = await Promise.all([
+    window.runhuddle.handoffHistory(source.provider, source.sessionID)
+      .catch(() => window.runhuddle.history(source.provider, source.sessionID)).catch(() => undefined),
+    window.runhuddle.gitChanges(source.cwd).catch(() => undefined),
+  ]);
+  const messages = history?.messages ?? [];
+  const latestRequest = messages.findLastIndex((message) => message.role === "user");
+  const request = messages[latestRequest]?.text.trim();
+  const beforeRequest = messages.slice(0, Math.max(0, latestRequest));
+  const previousRequest = beforeRequest.findLastIndex((message) => message.role === "user");
+  const previousUpdate = beforeRequest.slice(previousRequest + 1).findLast((message) => message.role === "assistant");
+  const latestUpdate = messages.slice(latestRequest + 1).findLast((message) => message.role === "assistant");
+  const savedNext = nextStep?.trim();
+  const recapLines = recap && [
+    recap.done && "Done: " + recap.done,
+    recap.pending && "Pending: " + recap.pending,
+    recap.next && "Suggested next step: " + recap.next,
+  ].filter(Boolean);
+  const sections = [
+    "Continue the work in " + source.cwd + ".\nSource session: " + source.title +
+      "\nUse the recorded excerpts as context. Verify current state before editing.",
+    history && "compactionSummary" in history && typeof history.compactionSummary === "string"
+      ? source.provider + " compaction summary\n" + history.compactionSummary : undefined,
+    request ? "Current request\n" + excerpt(request, 3000) : undefined,
+    previousRequest >= 0 ? "Previous request and response\n" +
+      "User: " + excerpt(beforeRequest[previousRequest].text, 1500) +
+      (previousUpdate ? "\nAgent: " + excerpt(previousUpdate.text, 3500) : "") : undefined,
+    latestUpdate ? "Latest recorded agent update\n" + excerpt(latestUpdate.text, 3500) : undefined,
+    recap && recapLines?.length ? "Saved recap (" + new Date(recap.generatedAt).toLocaleDateString() + ")\n" + recapLines.join("\n") : undefined,
+    "Next step\n" + (savedNext
+      ? "Saved by the user: " + savedNext
+      : request
+        ? "Check which parts of the current request are complete, then handle the remaining work. Ask for clarification if the excerpts leave the next action unclear."
+        : "Confirm the goal and next action before making changes."),
+    git ? "Checkout at handoff\nBranch: " + git.branch + (git.files.length
+      ? "\nChanged files:\n" + git.files.slice(0, 25).map((file) => file.area + " " + file.path).join("\n") +
+        (git.files.length > 25 ? "\n" + (git.files.length - 25) + " more changed files" : "")
+      : "\nWorking tree is clean.") : undefined,
+    history?.truncated ? "The recorded context covers only the end of the conversation." :
+      !messages.length ? "Conversation history is unavailable." : undefined,
+  ];
+  return sections.filter(Boolean).join("\n\n");
 }
 
 export function SessionContinuation({ request, onCreate, onClose }: {
@@ -37,7 +64,7 @@ export function SessionContinuation({ request, onCreate, onClose }: {
   onCreate: (agent: string, cwd: string) => Promise<TerminalInfo>;
   onClose: () => void;
 }) {
-  const { source, recap, anotherAgent } = request;
+  const { source, recap, nextStep, anotherAgent } = request;
   const currentAgent = source.provider.toLowerCase();
   const options = launchOptions.filter((option) => option.id !== "shell" && (!anotherAgent || option.id !== currentAgent));
   const [agent, setAgent] = useState(anotherAgent
@@ -51,17 +78,17 @@ export function SessionContinuation({ request, onCreate, onClose }: {
   const [pasted, setPasted] = useState(false);
   const [destination, setDestination] = useState<TerminalInfo>();
   const dialog = useRef<HTMLDialogElement>(null);
-  const pasteLabel = anotherAgent ? "Paste handoff" : "Paste context";
+  const agentName = options.find((option) => option.id === agent)?.name;
 
   useEffect(() => {
     let active = true;
-    void prepareContext(source, recap).then((context) => {
+    void prepareContext(source, recap, nextStep).then((context) => {
       if (!active) return;
       setDraft(context);
       setLoading(false);
     });
     return () => { active = false; };
-  }, [source, recap]);
+  }, [source, recap, nextStep]);
 
   useEffect(() => {
     const element = dialog.current;
@@ -104,7 +131,7 @@ export function SessionContinuation({ request, onCreate, onClose }: {
           { provider, sessionID: destination.sessionID }, destination.title);
         if (!recorded) throw Error("Session link unavailable");
       } catch {
-        setError("Context was pasted. RunHuddle couldn’t save the link between the sessions.");
+        setError("The briefing was pasted. RunHuddle couldn’t save the link between the sessions.");
         setBusy(false);
         setPasted(true);
         return;
@@ -116,33 +143,53 @@ export function SessionContinuation({ request, onCreate, onClose }: {
     <dialog ref={dialog} className="handoff-review"
       aria-label={anotherAgent ? "Review agent handoff" : "Start new session with context"}
       onCancel={(event) => { event.preventDefault(); if (!busy) closeReview(); }}>
-      <h2>{anotherAgent ? "Continue with another agent" : "Start new session with context"}</h2>
-      <p>{source.cwd}</p>
-      <p>{source.terminalId
-        ? "Your original session stays open. Finish ongoing edits before starting work in both sessions."
-        : "This starts a separate conversation in the same project folder."}</p>
-      <label>Agent <select aria-label={anotherAgent ? "Handoff agent" : "Agent for new session"}
-        value={agent} disabled={busy || !!destination} onChange={(event) => setAgent(event.target.value)}>
-        {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-      </select></label>
-      <label>Review and edit the context<textarea aria-label={anotherAgent ? "Handoff context" : "Context for new session"}
-        value={draft} placeholder="Loading session context…" disabled={loading || busy || !!destination}
-        onChange={(event) => setDraft(event.target.value)} /></label>
+      <header>
+        <h2>{anotherAgent ? "Continue with another agent" : "Start new session with context"}</h2>
+        <button type="button" disabled={busy} aria-label="Close handoff review" onClick={closeReview}><Icon name="close" size={17} /></button>
+      </header>
+      <div className="handoff-route">
+        <section aria-label="Source session">
+          <small>From</small>
+          <div><AgentIcon agent={currentAgent} /><strong>{source.title}</strong></div>
+          <p>{source.provider} · {source.terminalId ? "Live session" : "Saved conversation"}</p>
+        </section>
+        <section aria-label="Destination session">
+          <small>To</small>
+          <label>New session with <select aria-label={anotherAgent ? "Handoff agent" : "Agent for new session"}
+            value={agent} disabled={busy || !!destination} onChange={(event) => setAgent(event.target.value)}>
+            {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+          </select></label>
+          <p title={source.cwd}>{source.cwd}</p>
+        </section>
+      </div>
+      {source.terminalId && <p>Your original session stays open.</p>}
+      <label className="handoff-briefing">Briefing
+        <textarea aria-label={anotherAgent ? "Handoff context" : "Context for new session"}
+          aria-describedby="handoff-briefing-help" value={draft} placeholder="Loading session context…"
+          disabled={loading || busy} readOnly={!!destination} onChange={(event) => setDraft(event.target.value)} />
+      </label>
+      <p id="handoff-briefing-help">{destination
+        ? "Session created. Open its terminal, then paste the briefing when the prompt is ready."
+        : "Review or edit the text above. Creating the session leaves the briefing here for you to paste."}</p>
       {error && <p role="alert">{error}</p>}
-      {destination
-        ? <p>Once the new agent is ready for input, use {pasteLabel} to add the reviewed text to its draft.</p>
-        : <button disabled={loading || busy || !draft.trim()} onClick={() => void launch()}>
-            {anotherAgent ? "Create session with reviewed handoff" : "Create session with reviewed context"}
-          </button>}
-      <button disabled={busy} onClick={closeReview}>{destination ? "Show new session" : "Cancel"}</button>
+      <footer>
+        {!destination && <button disabled={busy} onClick={closeReview}>Cancel</button>}
+        {destination
+          ? <button className="primary" onClick={closeReview}>Show new session</button>
+          : <button className="primary" disabled={loading || busy || !draft.trim()} onClick={() => void launch()}>
+              {busy ? "Creating session…" : `Create ${agentName} session`}
+            </button>}
+      </footer>
     </dialog>
   ) : (
     <aside className="usage-warning" aria-label={anotherAgent ? "Handoff ready" : "Session context ready"}>
-      <strong>{anotherAgent ? "Handoff" : "Context"} ready for {launchOptions.find((option) => option.id === agent)?.name}</strong>
-      <p>Once its prompt is ready, paste the reviewed context. Press Enter in the terminal when ready to send.</p>
+      <strong>Briefing ready for the new {agentName} session</strong>
+      <p>From {source.title}</p>
+      <p>{pasted ? "Press Enter in the agent terminal to send the briefing."
+        : "When the agent prompt is ready, paste the briefing, then press Enter in the terminal to send it."}</p>
       <div className="usage-warning-actions">
         <button disabled={busy} onClick={onClose}>Dismiss</button>
-        {!pasted && <button disabled={busy} className="primary" onClick={() => void paste()}>{pasteLabel}</button>}
+        {!pasted && <button disabled={busy} className="primary" onClick={() => void paste()}>Paste briefing</button>}
       </div>
       {error && <p role="alert">{error}</p>}
     </aside>

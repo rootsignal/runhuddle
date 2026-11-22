@@ -110,7 +110,7 @@ export function ConversationSearch({
                   {[project, result.provider, result.updated ? `Active ${resultDate.format(result.updated * 1000)}` : undefined]
                     .filter(Boolean).join(" · ")}
                 </small>}
-                <small className="conversation-result-excerpt">{detailed ? highlightedSnippet(result.snippet, search) : result.snippet}</small>
+                <small className="conversation-result-excerpt">{highlightedSnippet(result.snippet, search)}</small>
               </span>
               {detailed && <span className="conversation-result-open" title="Jump to matching message"><Icon name="arrow" size={16} /></span>}
             </button>;

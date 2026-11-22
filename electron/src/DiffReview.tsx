@@ -54,7 +54,8 @@ const rowSelector = "tbody tr[data-anchor]";
 const layoutKey = "dashboardDiffLayout";
 
 export function DiffReview({ file, diff, loading, onClose, root, inline = false, active = true, scrollTop, onScrollPosition, filePosition,
-  onPreviousFile, onNextFile, onPreviousChangeFile, onNextChangeFile, entryHunk }: {
+  onPreviousFile, onNextFile, onPreviousChangeFile, onNextChangeFile, entryHunk, onBackToFiles }: {
+  onBackToFiles?: () => void;
   filePosition?: { index: number; total: number };
   onPreviousFile?: () => void; onNextFile?: () => void;
   onPreviousChangeFile?: () => void; onNextChangeFile?: () => void;
@@ -187,7 +188,7 @@ export function DiffReview({ file, diff, loading, onClose, root, inline = false,
         else nextChange();
       }
     }}>
-    <header><div><strong>{file.path}</strong><small>{file.area}{deleted ? " · Deleted file" : ""}</small></div>
+    <header className="diff-review-toolbar"><div><strong>{file.path}</strong><small>{file.area}{deleted ? " · Deleted file" : ""}</small></div>
       <EditorButton key={target} line={deleted ? undefined : line} target={target} project={deleted} />
       {filePosition && <div className="diff-file-navigation" role="group" aria-label="Navigate files">
         <button className="dashboard-tool-icon diff-previous-file" type="button" aria-label="Previous file" data-tooltip="Previous file"
@@ -196,7 +197,10 @@ export function DiffReview({ file, diff, loading, onClose, root, inline = false,
         <button className="dashboard-tool-icon diff-next-file" type="button" aria-label="Next file" data-tooltip="Next file"
           disabled={!onNextFile} onClick={onNextFile}><Icon name="chevron" size={17} /></button>
       </div>}
-      <button aria-label={inline ? "Back to files" : "Close diff"} onClick={onClose}>{inline ? "Back to files" : "Close · Esc"}</button>
+      {(inline || onBackToFiles) && <button onClick={onBackToFiles ?? onClose}>Back to files</button>}
+      {(!inline || onBackToFiles) && <button aria-label="Close diff" title="Close diff (Esc)" onClick={onClose}>
+        <Icon name="close" size={16} />
+      </button>}
     </header>
     {inline && <div className="diff-hunk-navigation">
       <div className="diff-layout-toggle" role="group" aria-label="Diff layout">

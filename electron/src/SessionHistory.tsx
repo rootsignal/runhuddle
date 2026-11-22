@@ -8,10 +8,12 @@ export function SessionHistory({
   onLatest,
   recap,
   inline = false,
+  focusOnOpen = false,
 }: {
   session: Session;
   onSaveExcerpt?: (text: string) => void;
   inline?: boolean;
+  focusOnOpen?: boolean;
   anchor?: HistoryAnchor;
   onLatest?: () => void;
   recap?: Recap;
@@ -28,6 +30,9 @@ export function SessionHistory({
   const [matchMissing, setMatchMissing] = useState(false);
   const [query, setQuery] = useState(""),
     [revision, setRevision] = useState(0);
+  useEffect(() => {
+    if (focusOnOpen) history.current?.focus({ preventScroll: true });
+  }, [focusOnOpen]);
   useEffect(() => setQuery(""), [anchor]);
   useEffect(() => {
     let active = true;

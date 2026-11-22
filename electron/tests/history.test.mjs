@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { parseHistory, pendingQuestions, readAttentionPreview } from "../main/history.mjs";
+import { readHandoffHistory } from "../main/handoff-history.mjs";
+import { readSessionContext } from "../main/session-context.mjs";
 import { HistoryIndex } from "../main/history-index.mjs";
 import { historyIndexClient } from "../main/history-index-client.mjs";
 
@@ -10,6 +12,102 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 const lines = (rows) => rows.map(JSON.stringify).join("\n");
+
+test("handoffs keep readable provider summaries alongside new messages", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "runhuddle-handoff-"));
+  const keys = ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "COPILOT_HOME"];
+  const previous = keys.map((key) => process.env[key]);
+  for (const key of keys) process.env[key] = home;
+  const sessionID = "11111111-1111-4111-8111-111111111111";
+  const codex = path.join(home, "rollout.jsonl");
+  const claude = path.join(home, "projects", home.replace(/[^a-zA-Z0-9]/g, "-"), sessionID + ".jsonl");
+  const copilot = path.join(home, "session-state", sessionID, "events.jsonl");
+  const checkpoints = path.join(path.dirname(copilot), "checkpoints");
+  try {
+    const db = new DatabaseSync(path.join(home, "state_5.sqlite"));
+    try {
+      db.exec("CREATE TABLE threads (id TEXT, rollout_path TEXT)");
+      db.prepare("INSERT INTO threads VALUES (?, ?)").run(sessionID, codex);
+    } finally { db.close(); }
+    const codexProgress = { type: "event_msg", payload: { type: "user_message", message: "Continue with tests." } };
+    fs.writeFileSync(codex, lines([
+      { type: "compacted", payload: { message: "Preserve the old route." } },
+      codexProgress,
+    ]));
+    fs.mkdirSync(path.dirname(claude), { recursive: true });
+    fs.writeFileSync(claude, lines([
+      { type: "user", isCompactSummary: true, isMeta: true, message: { content: "Preserve the public API." } },
+      { type: "user", message: { content: "Continue with tests." } },
+      { type: "user", isCompactSummary: true, isSidechain: true, message: { content: "Unrelated subagent." } },
+    ]));
+    fs.mkdirSync(checkpoints, { recursive: true });
+    const copilotProgress = { type: "user.message", data: { content: "Continue with tests." } };
+    fs.writeFileSync(copilot, lines([
+      { type: "session.compaction_complete", data: { success: true, summaryContent: "Keep the old schema." } },
+      copilotProgress,
+      { type: "session.compaction_complete", data: { success: false, summaryContent: "Ignore failed summary." } },
+    ]));
+    const handoff = (provider) => readHandoffHistory({ provider, sessionID, cwd: home });
+    for (const [provider, expected] of [
+      ["Codex", "Preserve the old route."], ["Claude", "Preserve the public API."], ["Copilot", "Keep the old schema."],
+    ]) {
+      const result = await handoff(provider);
+      assert.equal(result.compactionSummary, expected);
+      assert.deepEqual(result.messages.map((message) => message.text), ["Continue with tests."]);
+    }
+
+    fs.writeFileSync(codex, lines([
+      { type: "compacted", payload: { message: "", replacement_history: [{ type: "compaction", encrypted_content: "opaque" }] } },
+      codexProgress,
+    ]));
+    assert.equal((await handoff("Codex")).compactionSummary, undefined);
+    fs.writeFileSync(copilot, lines([copilotProgress]));
+    fs.writeFileSync(path.join(checkpoints, "index.md"), "| 1 | Old | [Read](001.md) |\n| 2 | New | [Read](002.md) |\n");
+    fs.writeFileSync(path.join(checkpoints, "002.md"), "Checkpoint with the latest decision.");
+    assert.equal((await handoff("Copilot")).compactionSummary, "Checkpoint with the latest decision.");
+  } finally {
+    keys.forEach((key, index) => {
+      if (previous[index] === undefined) delete process.env[key];
+      else process.env[key] = previous[index];
+    });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("Codex session context counts rollout records across the entire transcript and follows appends", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "runhuddle-context-"));
+  const previousHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = home;
+  try {
+    const file = path.join(home, "rollout.jsonl");
+    const session = { provider: "Codex", sessionID: "11111111-1111-4111-8111-111111111111", cwd: home };
+    const db = new DatabaseSync(path.join(home, "state_5.sqlite"));
+    try {
+      db.exec("CREATE TABLE threads (id TEXT, rollout_path TEXT)");
+      db.prepare("INSERT INTO threads VALUES (?, ?)").run(session.sessionID, file);
+    } finally { db.close(); }
+    const timestamp = "2026-11-19T18:00:00.000Z";
+    const compaction = { type: "compacted", payload: { message: "Context summary" } };
+    fs.writeFileSync(file, lines([
+      { type: "session_meta", timestamp },
+      compaction,
+      { type: "event_msg", payload: { type: "context_compacted" } },
+      { type: "response_item", payload: { type: "compacted", text: "é".repeat(3 * 1024 * 1024) } },
+    ]) + "\n" + JSON.stringify(compaction).slice(0, -1));
+    assert.deepEqual(await readSessionContext(session), { startedAt: Date.parse(timestamp), compactions: 1 });
+    fs.appendFileSync(file, "}\n");
+    assert.deepEqual(await readSessionContext(session), { startedAt: Date.parse(timestamp), compactions: 2 });
+    assert.equal(await readSessionContext({ ...session, provider: "Claude" }), undefined);
+    fs.writeFileSync(file, lines([{ type: "session_meta", timestamp }]) + "\n");
+    assert.deepEqual(await readSessionContext(session), { startedAt: Date.parse(timestamp), compactions: 0 });
+    fs.rmSync(file);
+    assert.equal(await readSessionContext(session), undefined);
+  } finally {
+    if (previousHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
 
 test("Codex preview recovers recent turns behind large tool output", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "runhuddle-preview-"));

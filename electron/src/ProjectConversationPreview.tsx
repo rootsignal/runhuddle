@@ -6,8 +6,9 @@ import { ReplyExcerpt } from "./AttentionPreview";
 import { latestConversationTurn } from "./conversation-turn";
 import type { HistoryAnchor, Session, SessionRecap as Recap } from "./types";
 
-export function ProjectConversationPreview({ row, title, metadata, next, onSave, onOpen, onResume, onReview, onProject, inlineHistory, anchor, onSaveExcerpt, linkedSessions, recap }: {
+export function ProjectConversationPreview({ row, connected, title, metadata, next, onSave, onOpen, onResume, onReview, onProject, inlineHistory, anchor, onSaveExcerpt, linkedSessions, recap }: {
   row: Session;
+  connected: boolean;
   title: string;
   metadata?: string;
   next?: string;
@@ -60,24 +61,37 @@ export function ProjectConversationPreview({ row, title, metadata, next, onSave,
   }
 
   const historyLabel = readingHistory ? "Back to summary" : inlineHistory ? "Read conversation" : "Open full conversation";
+  const suggestedNext = recap && recap.sourceUpdated >= updated ? recap.next : "";
   const nextLabel = next ? "Edit next step" : "Save next step";
   return <section className="dashboard-conversation-preview" aria-label="Conversation preview">
-    {metadata ? <div className="dashboard-preview-identity">
-      <AgentIcon agent={provider.toLowerCase()} />
-      <div><h3>{title}</h3><p className="dashboard-preview-meta">{metadata}</p></div>
-    </div> : <h3>{title}</h3>}
+    <div className="dashboard-preview-heading">
+      {metadata ? <div className="dashboard-preview-identity">
+        <AgentIcon agent={provider.toLowerCase()} />
+        <div><h3>{title}</h3><p className="dashboard-preview-meta">{metadata}</p></div>
+      </div> : <h3>{title}</h3>}
+      <button className="primary dashboard-preview-resume" disabled={resuming || !connected} onClick={() => void resume()}>
+        {inlineHistory && <Icon name={row.terminalId ? "terminal" : "play"} size={17} />}
+        {row.terminalId ? "Open live session" : resuming ? "Resuming…" : "Resume session"}
+      </button>
+    </div>
+    {error && <p role="alert">{error}</p>}
+    {!connected && <p role="status">Reconnect the terminal service to {row.terminalId ? "open" : "resume"} this session. You can still read its conversation.</p>}
+    {onReview && <p className="dashboard-review-reason"><Icon name="inbox" size={15} /> Agent finished a turn · Ready for review</p>}
+    {(next || (onReview && !suggestedNext)) && <p className="dashboard-preview-next">
+      <strong>{next ? "Saved next step" : "Next action"}</strong>
+      <br />{next || "Review the agent’s reply"}
+    </p>}
     {readingHistory ? <SessionHistory session={row} inline onSaveExcerpt={onSaveExcerpt} anchor={match} onLatest={() => setMatch(undefined)} /> : turn === undefined ? <p role="status">Loading conversation…</p>
       : !turn || turn.unavailable ? <p>Transcript unavailable.</p>
       : <dl>
         <div><dt>Last instruction</dt><dd>{turn.instruction || "No instruction recorded."}</dd></div>
         <div><dt>Last agent reply</dt><dd>{turn.reply ? <ReplyExcerpt text={turn.reply} /> : "No reply recorded after the last instruction."}</dd></div>
       </dl>}
-    {(recap || recapMessages.length > 0) && <details className="dashboard-conversation-recap">
+    {(recap || recapMessages.length > 0) && <details className="dashboard-conversation-recap" open={onReview && recap && recap.sourceUpdated >= updated ? true : undefined}>
       <summary>Recap</summary>
       <SessionRecap session={row} messages={recapMessages} recap={recap} loading={turn === undefined} showExcerpts={false} />
     </details>}
     {linkedSessions}
-    {next && <p><strong>Saved next step</strong><br />{next}</p>}
     {editing && <form onSubmit={(event) => {
       event.preventDefault();
       onSave(String(new FormData(event.currentTarget).get("next") ?? "").trim());
@@ -88,10 +102,6 @@ export function ProjectConversationPreview({ row, title, metadata, next, onSave,
       <button type="button" onClick={() => setEditing(false)}>Cancel</button>
     </form>}
     <footer>
-      <button className="primary dashboard-preview-resume" disabled={resuming} onClick={() => void resume()}>
-        {inlineHistory && <Icon name={row.terminalId ? "terminal" : "play"} size={17} />}
-        {row.terminalId ? "Open live session" : resuming ? "Resuming…" : "Resume session"}
-      </button>
       <div className="dashboard-preview-tools" role="group" aria-label="Conversation actions">
         {turn && !turn.unavailable && <button className={inlineHistory ? "dashboard-tool-icon" : undefined}
           aria-label={historyLabel} data-tooltip={inlineHistory ? historyLabel : undefined}
@@ -111,16 +121,14 @@ export function ProjectConversationPreview({ row, title, metadata, next, onSave,
         </button>}
       </div>
     </footer>
-    {error && <p role="alert">{error}</p>}
   </section>;
 }
 
-export function RecentConversationDialog({ children, actions, onBack, onClose, backLabel = "Back to Recent" }: {
+export function RecentConversationDialog({ children, actions, onBack, backLabel = "Back to Recent" }: {
   children: ReactNode;
   actions?: ReactNode;
   backLabel?: string;
   onBack: () => void;
-  onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -134,7 +142,7 @@ export function RecentConversationDialog({ children, actions, onBack, onClose, b
       <button className="dashboard-preview-back" autoFocus onClick={onBack}><Icon name="arrow" size={15} /> {backLabel}</button>
       <div className="dashboard-preview-chrome">
         {actions}
-        <button className="dashboard-tool-icon" aria-label="Close recent session details" data-tooltip="Close preview" onClick={onClose}>
+        <button className="dashboard-tool-icon" aria-label="Close recent session details" data-tooltip="Close preview" onClick={onBack}>
           <Icon name="close" size={17} />
         </button>
       </div>

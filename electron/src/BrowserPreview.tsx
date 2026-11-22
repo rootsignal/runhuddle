@@ -1,16 +1,17 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./Icons";
-import { pasteTerminalPath } from "./Terminal";
 import type { AttachmentTarget, BrowserPreviewState } from "./types";
 
 const cover = "dialog[open], [popover]:popover-open, .dashboard-project-picker-panel, .screenshot-popup, .usage-warning";
 
-export function BrowserPreview({ target, enabled = true, canGrantControl = true, onShareReport, onClose, onReopenSession }: {
+export function BrowserPreview({ target, enabled = true, canGrantControl = true, agentTitle, onAttachReport, onClose, onReopenSession, onOpenAgentTerminal }: {
   target?: AttachmentTarget;
   enabled?: boolean;
   canGrantControl?: boolean;
-  onShareReport?: (target: AttachmentTarget, file: string) => void;
+  agentTitle: (id: string) => string | undefined;
+  onAttachReport: (target: AttachmentTarget, file: string) => void;
   onClose: () => void;
+  onOpenAgentTerminal?: () => void;
   onReopenSession: (id: string) => Promise<void>;
 }) {
   const [state, setState] = useState<BrowserPreviewState>();
@@ -21,7 +22,10 @@ export function BrowserPreview({ target, enabled = true, canGrantControl = true,
   const [granting, setGranting] = useState(false);
   const [attached, setAttached] = useState("");
   const agentSession = state?.agentSession;
-  const shareHelp = useId();
+  const attachmentHelp = useId();
+  const accessHelp = useId();
+  const site = state?.url ? new URL(state.url).origin : "";
+  const controllingTitle = agentSession ? agentTitle(agentSession) || "Agent session" : undefined;
   const host = useRef<HTMLDivElement>(null);
   const currentTarget = useRef(target);
   const active = useRef(false);
@@ -45,7 +49,7 @@ export function BrowserPreview({ target, enabled = true, canGrantControl = true,
     };
   }, [enabled]);
 
-  useEffect(() => { setAttached(""); }, [target?.id]);
+  useEffect(() => { setAttached(""); }, [target?.id, state?.url]);
 
   useEffect(() => {
     if (state?.url) setAddress(state.url);
@@ -111,19 +115,16 @@ export function BrowserPreview({ target, enabled = true, canGrantControl = true,
   }
 
   async function attach() {
-    if (!target || target.busy || !state?.ready || attaching) return;
+    if (!target || target.busy || target.locked || !state?.ready || attaching) return;
     setAttaching(true);
     setError("");
     setAttached("");
     try {
       const { file } = await window.runhuddle.captureBrowser();
-      if (!active.current || currentTarget.current?.id !== target.id || currentTarget.current.busy)
+      if (!active.current || currentTarget.current?.id !== target.id || currentTarget.current.busy || currentTarget.current.locked)
         throw Error("Select a session ready for input and try again.");
-      if (onShareReport) onShareReport(target, file);
-      else await pasteTerminalPath(target.id, file, "Inspect the page screenshot, visible text, and console diagnostics in ");
-      if (active.current) setAttached(onShareReport
-        ? `Report added to the follow-up draft for ${target.title}.`
-        : `Report added to ${target.title}. Press Enter in the terminal to send.`);
+      onAttachReport(target, file);
+      if (active.current) setAttached(`Page report added to the follow-up draft for ${target.title}.`);
     } catch (reason) {
       if (active.current) setError(displayError(reason));
     } finally {
@@ -164,13 +165,20 @@ export function BrowserPreview({ target, enabled = true, canGrantControl = true,
   return (
     <section className="browser-preview" aria-label="Browser preview">
       <header>
-        <strong>Browser</strong>
+        <strong><Icon name="browser" size={16} /> Browser</strong>
+        {agentSession && <span className="browser-control-badge" title={`${controllingTitle} · ${site}`}>Agent control on</span>}
         <button type="button" aria-label="Close browser preview" onClick={onClose}><Icon name="close" size={16} /></button>
       </header>
       <form className="browser-address-bar" onSubmit={(event) => { event.preventDefault(); void navigate(); }}>
-        <button type="button" aria-label="Go back" disabled={!state?.back} onClick={() => control("back")}>←</button>
-        <button type="button" aria-label="Go forward" disabled={!state?.forward} onClick={() => control("forward")}>→</button>
-        <button type="button" aria-label="Reload page" disabled={!state?.url || state.loading} onClick={() => control("reload")}>↻</button>
+        <button type="button" aria-label="Go back" title="Go back" disabled={!state?.back} onClick={() => control("back")}>
+          <Icon name="arrow" size={16} />
+        </button>
+        <button type="button" aria-label="Go forward" title="Go forward" disabled={!state?.forward} onClick={() => control("forward")}>
+          <Icon name="arrow" size={16} />
+        </button>
+        <button type="button" aria-label="Reload page" title="Reload page" disabled={!state?.url || state.loading} onClick={() => control("reload")}>
+          <Icon name="refresh" size={16} />
+        </button>
         <input aria-label="Browser address" placeholder="localhost:3000" value={address}
           autoComplete="off" spellCheck={false} maxLength={4096} onChange={(event) => setAddress(event.target.value)} />
         <button type="submit" disabled={!address.trim()}>Open</button>
@@ -182,38 +190,47 @@ export function BrowserPreview({ target, enabled = true, canGrantControl = true,
         {(error || state?.error) && <p role="alert">{error || state?.error}</p>}
         {state?.loading && <p role="status">Loading page…</p>}
         {attached && <p role="status">{attached}</p>}
-        <button type="button" className="primary browser-share" disabled={!target || target.busy || !state?.ready || attaching}
-          aria-describedby={shareHelp} onClick={() => void attach()} title={target?.title}>
-          {attaching ? "Capturing…" : target ? `Share page with ${target.title}` : "Share page"}
-        </button>
-        <p id={shareHelp} className="muted browser-share-help">
-          {!target ? "Select an AI session to share this page." :
-            target.locked ? "Close the conversation in the other app and retry in Codex." :
-            target.busy ? "Wait until the active session is ready for input." :
-            onShareReport ? "Adds a page report to the follow-up draft." : "Adds a screenshot, page text, and console errors to your draft. Press Enter to send."}
-        </p>
+        <div className="browser-attachment-controls">
+          <button type="button" className="primary browser-attach" disabled={!target || target.busy || target.locked || !state?.ready || attaching}
+            aria-describedby={attachmentHelp} onClick={() => void attach()}>
+            <Icon name="notes" size={15} /> {attaching ? "Capturing page…" : "Attach page to draft"}
+          </button>
+          <p id={attachmentHelp} className="muted">
+            {!target ? "Select an AI session to attach a page report." :
+              target.locked ? "Close the conversation in the other app and retry in Codex." :
+              target.busy ? "Wait until the selected session is ready for input." :
+              <>Adds a screenshot, page text, and console errors to <strong>{target.title}</strong>’s draft.</>}
+          </p>
+        </div>
         <div className="browser-agent-controls">
           {(agentSession || (canGrantControl && state?.url && target?.browserTools && !target.locked)) && (
-            <button type="button" disabled={granting || (!agentSession && !state?.ready)}
+            <button type="button" disabled={granting || (!agentSession && !state?.ready)} aria-describedby={accessHelp}
               onClick={() => void agentAccess(agentSession ? null : target!.id)}>
+              <Icon name={agentSession ? "stop" : "play"} size={15} />
               {agentSession ? "Stop agent control" : "Allow agent control"}
             </button>
           )}
-          {canGrantControl && state?.url && target && !target.locked && !target.browserTools && (
-            <button type="button" disabled={reopening} onClick={() => void reopenSession(target.id)}>
-              {target.canResume ? "Reopen with browser control" : "Start session with browser control"}
+          {!agentSession && state?.url && target && !target.locked && !canGrantControl && onOpenAgentTerminal && (
+            <button type="button" aria-describedby={accessHelp} onClick={onOpenAgentTerminal}>
+              <Icon name="terminal" size={15} /> Open agent terminal
             </button>
           )}
-          <p className="muted" aria-live="polite">
-            {reopening ? "Opening a session with browser tools…" : agentSession ? "This session can interact with this site. Stop control to take over." :
-              !state?.url ? "Open a page to allow agent control." :
-              !target ? "Select an AI session to allow browser control." :
-              target.locked ? "This Codex conversation is in use elsewhere." :
-              !canGrantControl ? "Open the session’s Terminal tab to allow agent control." :
-              !target.browserTools ? target.canResume
-                ? "Reopen the saved conversation to load live browser tools."
-                : "Start a new conversation in this folder with live browser tools." :
-              "Lets this session inspect and interact with this site. Switching sites or sessions ends access."}
+          {!agentSession && canGrantControl && state?.url && target && !target.locked && !target.browserTools && (
+            <button type="button" disabled={reopening} aria-describedby={accessHelp} onClick={() => void reopenSession(target.id)}>
+              <Icon name="browser" size={15} />
+              {target.canResume ? "Reopen with browser tools" : "Start session with browser tools"}
+            </button>
+          )}
+          <p id={accessHelp} className="muted" aria-live="polite">
+            {reopening ? "Opening a session with browser tools…" : agentSession
+              ? <><strong>{controllingTitle}</strong> can interact with <strong>{site}</strong>.</>
+              : !state?.url ? "Open a page to allow agent control."
+              : !target ? "Select an AI session to allow agent control."
+              : target.locked ? "This Codex conversation is in use elsewhere."
+              : !canGrantControl ? "Open Agent terminal to allow control for this session."
+              : !target.browserTools ? "Once browser tools are loaded, you can grant control."
+              : <><strong>{target.title}</strong> can inspect and interact with <strong>{site}</strong> if you allow it.
+                Switching sites or sessions ends access.</>}
           </p>
         </div>
       </footer>

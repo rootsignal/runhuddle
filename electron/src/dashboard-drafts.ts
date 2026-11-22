@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type FollowUpDraft = { text: string; files: File[] };
+export type FollowUpDraft = { text: string; files: File[]; pastedWords?: number };
+export const maxFollowUpLength = 16000;
 export const emptyDraft: FollowUpDraft = { text: "", files: [] };
 
 function openDrafts() {
@@ -33,7 +34,7 @@ export function useDashboardDrafts() {
           request.onerror = () => reject(request.error);
         });
         if (disposed) return;
-        current.current = Object.fromEntries(entries.map(({ id, text, files }) => [id, { text, files }]));
+        current.current = Object.fromEntries(entries.map(({ id, text, files, pastedWords }) => [id, { text, files, pastedWords }]));
         setDrafts(current.current);
       } catch {
         if (!disposed) setError("Saved follow-up drafts couldn’t be loaded. Drafts may be lost when RunHuddle closes.");

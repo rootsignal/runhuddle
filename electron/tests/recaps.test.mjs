@@ -1,3 +1,4 @@
+import { createQuickReplies } from "../main/quick-replies.mjs";
 import { reviewProjectHistory } from "../main/project-history-review.mjs";
 import { readHistoryAround } from "../main/history-search.mjs";
 import { test } from "node:test";
@@ -6,6 +7,31 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { generateRecap, installedReviewAgents, parseRecap, recapPrompt, recapStore } from "../main/recaps.mjs";
+
+test("AI quick replies cap context and reuse a turn request", async () => {
+  let calls = 0;
+  const service = createQuickReplies(async (prompt, agent) => {
+    calls++;
+    assert.equal(agent, "claude");
+    const context = JSON.parse(prompt.slice(prompt.lastIndexOf("\n\n") + 2));
+    assert.equal(context.instruction.length, 600);
+    assert.ok(context.answer.length <= 3000);
+    assert.match(context.answer, /Next up is project search\.$/);
+    return { output: JSON.stringify([
+      { label: "Improve project search", draft: "Please improve project search." },
+      { label: "Summarize what changed", draft: "Summarize what changed." },
+      { label: "Command", draft: "/compact" },
+    ]) };
+  });
+  const run = () => service.suggest("Claude:fixture", "claude", "x".repeat(1000),
+    "Recap. " + "x".repeat(5000) + " Next up is project search.");
+  const first = run();
+  assert.equal(run(), first);
+  assert.deepEqual(await first, [{ label: "Improve project search", draft: "Please improve project search." }]);
+  assert.equal(run(), first);
+  assert.equal(calls, 1);
+  service.close();
+});
 
 const draft = { done: "Reviewed workspace navigation.", pending: "", next: "Open the terminal." };
 test("recaps bound conversation context and persist only validated text", () => {

@@ -44,6 +44,8 @@ function claudeActivity(id, sessionID, args) {
   if (process.platform === "win32") return null;
   const file = path.join(directory, "activity", id + ".jsonl");
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  // Attach the activity watcher to an existing file before the first Claude hook.
+  fs.closeSync(fs.openSync(file, "a", 0o600));
   const script = fileURLToPath(new URL("./claude-activity.cjs", import.meta.url));
   const command = "ELECTRON_RUN_AS_NODE=1 " +
     [process.execPath, script, file, sessionID].map(quote).join(" ");

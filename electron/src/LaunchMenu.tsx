@@ -17,7 +17,8 @@ export function LaunchMenu({
   const dialog = useRef<HTMLDialogElement>(null);
   const [sessionName, setSessionName] = useState("");
   const [folder, setFolder] = useState(cwd);
-  const [busy, setBusy] = useState(false);
+  const [starting, setStarting] = useState<string>();
+  const busy = !!starting;
   const [error, setError] = useState("");
   useEffect(() => {
     const node = dialog.current!;
@@ -34,50 +35,57 @@ export function LaunchMenu({
     }
   }
   async function launch(agent: string) {
-    setBusy(true);
+    if (!folder || busy) return;
+    setStarting(agent);
     setError("");
     try {
-      const destination = folder || (await window.runhuddle.chooseFolder());
-      if (!destination) return;
-      setFolder(destination);
-      await onLaunch(agent, destination, agent === "shell" ? "" : sessionName.trim());
+      await onLaunch(agent, folder, agent === "shell" ? "" : sessionName.trim());
       onDismiss();
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      setStarting(undefined);
     }
   }
   const folders = [...new Set([folder, ...projects])].filter(Boolean);
+  const agents = launchOptions.filter(({ id }) => id !== "shell");
+  const previousAgent = agents.find(({ id }) => id === lastUsed);
+  const orderedAgents = previousAgent ? [previousAgent, ...agents.filter(({ id }) => id !== lastUsed)] : agents;
+  function renderChoice(option: (typeof launchOptions)[number]) {
+    const terminal = option.id === "shell";
+    return <button key={option.id} type="button" className="launch-choice" data-recent={previousAgent?.id === option.id}
+      aria-label={`Start ${option.label}`} disabled={busy || !folder} onClick={() => void launch(option.id)}>
+      <AgentIcon agent={option.id} />
+      <span className="launch-choice-label">
+        <strong>{option.label}</strong>
+        {terminal && <small>{option.detail}</small>}
+      </span>
+      {previousAgent?.id === option.id && <span className="last-used">Last used</span>}
+      <Icon name="arrow" size={16} />
+    </button>;
+  }
   return (
     <dialog
       ref={dialog}
       className="launch-menu"
       aria-label="New session or terminal"
       onCancel={(e) => {
-        if (busy) e.preventDefault();
-        else onDismiss();
+        e.preventDefault();
+        e.stopPropagation();
+        if (!busy) onDismiss();
       }}
       onClick={(e) => {
         if (e.target === dialog.current && !busy) onDismiss();
       }}
     >
       <div className="launch-heading">
-        <div>
-          <h2>
-            New session
-          </h2>
-          <p>
-            {!folder ? "Choose an existing project or browse to another folder."
-              : "Starts in the selected project folder."}
-          </p>
-        </div>
+        <h2>New session or terminal</h2>
         <button aria-label="Close launcher" disabled={busy} onClick={onDismiss}>
           <Icon name="close" />
         </button>
       </div>
       <div className="launch-destination">
-        <label htmlFor="launch-folder">PROJECT FOLDER</label>
+        <label htmlFor="launch-folder">Project folder</label>
         <div>
           <Icon name="folder" />
           <select
@@ -98,44 +106,27 @@ export function LaunchMenu({
             Browse…
           </button>
         </div>
-        <p title={folder}>{folder || "Choose a folder before starting."}</p>
+        {folder && <p title={folder}>{folder}</p>}
       </div>
-      <label className="launch-session-name">Session name <small>Optional</small>
-        <input value={sessionName} maxLength={100} placeholder="Use automatic title"
-          disabled={busy} onChange={(event) => setSessionName(event.target.value)} />
-      </label>
-      <div className="launch-choices">
-        {launchOptions
-          .map((option) => (
-            <button
-              key={option.id}
-              className="launch-choice"
-              aria-label={`Start ${option.label}`}
-              disabled={busy || !folder}
-              onClick={() => launch(option.id)}
-            >
-              <AgentIcon agent={option.id} />
-              <span>
-                <strong>{option.label}</strong>
-                <small>{option.detail}</small>
-              </span>
-              {lastUsed === option.id && (
-                <span className="last-used">Last used</span>
-              )}
-              <Icon name="arrow" size={16} />
-            </button>
-          ))}
-      </div>
+      <section className="launch-agent-section" aria-labelledby="launch-agent-heading">
+        <h3 id="launch-agent-heading">AI session</h3>
+        <div className="session-name-field">
+          <label htmlFor="launch-session-name">Session name <small>Optional</small></label>
+          <input id="launch-session-name" value={sessionName} maxLength={100} placeholder="Automatic title"
+            aria-describedby="launch-session-name-help" disabled={busy} onChange={(event) => setSessionName(event.target.value)} />
+          <small id="launch-session-name-help">Enter a fixed name or leave blank for an automatic title.</small>
+        </div>
+        <div className="launch-choices">{orderedAgents.map(renderChoice)}</div>
+      </section>
+      <section className="launch-shell-section" aria-label="Plain terminal">
+        {launchOptions.filter(({ id }) => id === "shell").map(renderChoice)}
+      </section>
       {error && (
         <p className="launch-error" role="alert">
           {error}
         </p>
       )}
-      <footer>
-        {busy
-          ? "Starting…"
-          : "Uses your installed CLI and existing login."}
-      </footer>
+      {starting && <p className="launch-progress" role="status">Starting {launchOptions.find(({ id }) => id === starting)?.label}…</p>}
     </dialog>
   );
 }

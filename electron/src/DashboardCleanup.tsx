@@ -33,7 +33,8 @@ export function DashboardCleanup({ suggestions, onOpen, onCleanup }: {
         ? `${hide ? "Hid" : "Restored"} ${changed.length} ${changed.length === 1 ? "session" : "sessions"}.`
         : "History is already up to date.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      const text = reason instanceof Error ? reason.message : String(reason);
+      setError(text.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ""));
     } finally {
       setBusy(false);
     }
@@ -83,7 +84,7 @@ export function DashboardCleanup({ suggestions, onOpen, onCleanup }: {
                   ))}
                 </ul>
                 <div className="dashboard-cleanup-actions">
-                  <p>Hidden sessions can be restored from the Projects menu.</p>
+                  <p>{selected.length} of {group.sessions.length} selected</p>
                   <button className="primary" disabled={busy || !selected.length}
                     onClick={() => void apply(selected.map(({ id }) => id), true)}>
                     Hide {selected.length} {selected.length === 1 ? "session" : "sessions"}
