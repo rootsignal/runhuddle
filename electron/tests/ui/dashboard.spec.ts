@@ -1,4 +1,4 @@
-import { test, expect, _electron as electron } from "@playwright/test";
+import { test, expect, _electron as electron, type Locator } from "@playwright/test";
 import fs from "node:fs";
 import { once } from "node:events";
 import net from "node:net";
@@ -224,10 +224,17 @@ test("default dashboard keeps its server running while Quick Terminal runs a sep
     await page.evaluate((folder) => window.runhuddle.create(folder, "shell"), dir);
     await dashboard.getByRole("button", { name: `Actions for project ${path.basename(dir)}`, exact: true }).click();
     await dashboard.getByRole("button", { name: "Open project shell", exact: true }).click();
+    async function waitForShell(shell: Locator) {
+      await expect(shell.locator(".xterm-helper-textarea")).toBeFocused();
+      await expect(async () => {
+        await page.keyboard.insertText("printf 'runhuddle-%s\\n' ready");
+        await page.keyboard.press("Enter");
+        await expect(shell.locator(".xterm-rows")).toContainText("runhuddle-ready", { timeout: 500 });
+      }).toPass({ timeout: 5000 });
+    }
     const drawer = dashboard.getByRole("region", { name: "Dashboard shell" });
     const drawerRows = drawer.locator(".xterm-rows");
-    await expect(drawerRows).toContainText(/[$%#❯]\s*$/);
-    await expect(drawer.locator(".xterm-helper-textarea")).toBeFocused();
+    await waitForShell(drawer);
     await page.keyboard.insertText(`node -e 'require("http").createServer((req,res)=>res.end("served by drawer")).listen(0,"127.0.0.1",function(){console.log("drawer-port="+this.address().port)})'`);
     await page.keyboard.press("Enter");
     await expect(drawerRows).toContainText(/drawer-port=\d+/);
@@ -236,8 +243,7 @@ test("default dashboard keeps its server running while Quick Terminal runs a sep
     await drawer.getByRole("button", { name: "Hide shell" }).click();
     await page.keyboard.press("ControlOrMeta+t");
     const quick = page.getByRole("dialog", { name: "Quick Terminal" });
-    await expect(quick.locator(".xterm-rows")).toContainText(/[$%#❯]\s*$/);
-    await expect(quick.locator(".xterm-helper-textarea")).toBeFocused();
+    await waitForShell(quick);
     const quickId = await page.evaluate(() => localStorage.getItem("quickTerminalID"));
     expect(quickId).toBeTruthy();
     expect(quickId).not.toBe(drawerId);
